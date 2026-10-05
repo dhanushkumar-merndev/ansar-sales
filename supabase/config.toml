@@ -1,0 +1,25 @@
+# Supabase CLI configuration (local stack and `supabase config push`).
+# Hosted projects: also verify these settings in the Dashboard (see README).
+project_id = "simple-crm"
+
+[api]
+schemas = ["public", "graphql_public"]
+
+[auth]
+site_url = "http://localhost:3000"
+# Staff accounts are created by an Admin only.
+enable_signup = false
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+# Users re-enter their current password in the CRM instead of an email nonce.
+secure_password_change = false
+
+[auth.rate_limit]
+sign_in_sign_ups = 30
+
+[functions.reminder-worker]
+# Called by pg_cron with a dedicated secret header (x-worker-secret), not a user JWT.
+verify_jwt = false
