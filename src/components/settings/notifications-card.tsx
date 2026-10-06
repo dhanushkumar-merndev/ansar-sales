@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { BellRing, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { useProfile } from "@/components/providers/profile-provider";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -12,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { notificationKindsFor, type NotificationKind } from "@/lib/notifications";
 import { fetchNotificationSettings } from "@/lib/queries";
-import { sendTestNotification, setNotificationPref } from "@/server/actions/telegram";
+import { setNotificationPref } from "@/server/actions/telegram";
 
 /** Per-type Telegram notification switches for the signed-in user's role. */
 export function NotificationsCard({ connected }: { connected: boolean }) {
@@ -22,7 +21,6 @@ export function NotificationsCard({ connected }: { connected: boolean }) {
   // Optimistic overrides until the saved list comes back.
   const [overrides, setOverrides] = useState<Partial<Record<NotificationKind, boolean>>>({});
   const [saving, setSaving] = useState<NotificationKind | null>(null);
-  const [testing, startTest] = useTransition();
 
   const enabled = (kind: NotificationKind) => overrides[kind] ?? !(settings.data ?? []).includes(kind);
 
@@ -64,17 +62,6 @@ export function NotificationsCard({ connected }: { connected: boolean }) {
             ))}
           </ul>
         )}
-        <Button
-          variant="outline"
-          disabled={!connected || testing}
-          onClick={() => startTest(async () => {
-            const r = await sendTestNotification();
-            if (!r.ok) return void toast.error(r.error);
-            toast.success("Test message queued. It should arrive within about a minute.");
-          })}
-        >
-          {testing ? <Loader2 className="animate-spin" /> : <BellRing />} Send test message
-        </Button>
       </CardContent>
     </Card>
   );

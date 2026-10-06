@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle2, ExternalLink, Loader2, QrCode, Send, Unplug } from "lucide-react";
+import { BellRing, CheckCircle2, ExternalLink, Loader2, QrCode, Send, Unplug } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { BrandName } from "@/components/app/brand";
@@ -24,7 +24,7 @@ import { ROLE_LABELS, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { fetchTelegramStatus } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
 import { changePassword } from "@/server/actions/auth";
-import { createTelegramLink, disconnectTelegram } from "@/server/actions/telegram";
+import { createTelegramLink, disconnectTelegram, sendTestNotification } from "@/server/actions/telegram";
 
 export function SettingsView() {
   const profile = useProfile();
@@ -156,6 +156,7 @@ function AccountSettings() {
 
 function TelegramCard() {
   const [pending, start] = useTransition();
+  const [testing, startTest] = useTransition();
   const isMobile = useIsMobile();
   const [link, setLink] = useState<{ url: string; previousConnectedAt: string | null } | null>(null);
   // Telegram connection is not published over Realtime; poll briefly while a link is outstanding.
@@ -206,6 +207,19 @@ function TelegramCard() {
                 {pending ? <Loader2 className="animate-spin" /> : <Send />}
                 {connected ? "Reconnect Telegram" : "Connect Telegram"}
               </Button>
+              {connected ? (
+                <Button
+                  variant="outline"
+                  disabled={testing}
+                  onClick={() => startTest(async () => {
+                    const r = await sendTestNotification();
+                    if (!r.ok) return void toast.error(r.error);
+                    toast.success("Test message queued. It should arrive within about a minute.");
+                  })}
+                >
+                  {testing ? <Loader2 className="animate-spin" /> : <BellRing />} Send test message
+                </Button>
+              ) : null}
               {conn ? (
                 <ConfirmDialog
                   trigger={<Button variant="outline"><Unplug /> Disconnect</Button>}

@@ -63,7 +63,7 @@ async function checkLeadConnection(companyId: string): Promise<{ steps: ConnectS
   const steps: ConnectStep[] = [];
   let pageName: string | undefined;
   const fail = async (message: string) => {
-    await createAdminClient().rpc("set_meta_status", { p_company_id: companyId, p_status: "error", p_error: message });
+    await createAdminClient().rpc("set_meta_status", { p_company_id: companyId, p_status: "error", p_error: message.slice(0, 500) });
     return { steps, connected: false };
   };
   const step = async (label: string, run: () => Promise<string | undefined>) => {

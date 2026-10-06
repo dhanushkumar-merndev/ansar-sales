@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { after } from "next/server";
 import { headers } from "next/headers";
 import { cache } from "react";
-import { Download, ExternalLink, FileText, Link2Off } from "lucide-react";
+import { Download, ExternalLink, FileText, Link2Off, ShieldCheck } from "lucide-react";
 import { BRAND_NAME, BrandMark, BrandName } from "@/components/app/brand";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,11 +12,17 @@ import { describeDevice, PREVIEW_BOT_RE } from "@/lib/device";
 import { formatBytes, isImageMime } from "@/lib/library";
 import { createAnonClient } from "@/lib/supabase/anon";
 import { formatDate, formatDateTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { notifyShareOpened } from "@/server/share-notify";
 
 const TOKEN_RE = /^[a-f0-9]{64}$/;
 
 type Brand = { name: string; highlight: string | null; logoUrl: string | null };
+
+/** Clean raw internal UUID or hash prefixes for customer-facing display */
+function cleanFileName(name: string) {
+  return name.replace(/^[a-f0-9]{8,}(-[a-f0-9]{4}){0,4}-/i, "");
+}
 
 /** The lead's company, for the header and the link preview. Falls back to the platform brand. */
 const loadBrand = cache(async (token: string): Promise<Brand> => {
@@ -64,86 +70,189 @@ export default async function SharePage({ params }: PageProps<"/s/[token]">) {
   const [share, brand] = await Promise.all([loadShare(token), loadBrand(token)]);
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
-      <div className="mx-auto w-full max-w-lg px-4 pt-8 pb-16">
-        <header className="mb-6 flex items-center gap-3">
-          <BrandMark size={36} logoUrl={brand.logoUrl} />
-          <BrandName name={brand.name} highlight={brand.highlight} className="text-base font-semibold tracking-tight" />
-        </header>
+    <main className="relative min-h-svh bg-[#141414] text-foreground flex flex-col justify-between selection:bg-white/20 selection:text-white">
+      {/* Background ambient lighting */}
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(120,119,198,0.12),transparent)]" />
 
+      {/* Top Navbar */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#1a1a1a]/85 backdrop-blur-md">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-2.5">
+            <BrandMark size={32} logoUrl={brand.logoUrl} />
+            <BrandName name={brand.name} highlight={brand.highlight} className="text-sm font-semibold tracking-tight text-white" />
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-400">
+            <ShieldCheck className="size-3.5" />
+            <span>Verified document link</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <div className="relative z-10 mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
         {!share ? (
-          <Card className="items-center gap-2 px-6 py-12 text-center">
-            <Link2Off className="size-8 text-muted-foreground" aria-hidden />
-            <h1 className="text-lg font-semibold">This link has expired or is no longer available</h1>
-            <p className="max-w-sm text-sm text-muted-foreground">Please ask the person who sent it for a new link.</p>
+          <Card className="items-center gap-3 border-white/[0.08] bg-[#1c1c1c] px-6 py-16 text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-muted-foreground">
+              <Link2Off className="size-6 text-zinc-400" aria-hidden />
+            </div>
+            <h1 className="text-lg font-semibold text-white">This link has expired or is no longer available</h1>
+            <p className="max-w-sm text-sm text-muted-foreground">Please ask the person who shared it to provide a new link.</p>
           </Card>
         ) : (
           <>
-            <div className="mb-4">
-              <h1 className="text-xl font-semibold tracking-tight">Your documents</h1>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {share.shared_by ? `Shared by ${share.shared_by} · ` : ""}{formatDate(share.created_at)}
+            {/* Header info */}
+            <div className="mb-6 text-center">
+              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Shared Documents</h1>
+              <p className="mt-1.5 text-xs text-muted-foreground sm:text-sm">
+                {share.shared_by ? `Shared by ${share.shared_by} · ` : ""}
+                {formatDate(share.created_at)}
                 {share.expires_at ? ` · Available until ${formatDateTime(share.expires_at)}` : ""}
               </p>
             </div>
 
             {!share.files.length ? (
-              <Card className="px-6 py-10 text-center text-sm text-muted-foreground">These files are no longer available.</Card>
+              <Card className="border-white/[0.08] bg-[#1c1c1c] px-6 py-12 text-center text-sm text-muted-foreground">
+                These files are no longer available.
+              </Card>
             ) : (
-              <ul className="space-y-3.5">
+              <div className="space-y-6">
                 {share.files.map((f) => {
                   const href = `/s/${token}/f/${f.id}`;
                   const image = isImageMime(f.mime_type);
+                  const pdf = f.mime_type === "application/pdf";
+                  const displayName = cleanFileName(f.name);
+
                   return (
-                    <li key={f.id}>
-                      <Card className="gap-0 overflow-hidden py-0 border-white/[0.08] bg-[#262626]">
-                        {image ? (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="flex h-44 sm:h-52 w-full items-center justify-center overflow-hidden bg-zinc-950/70 p-2">
-                            {/* eslint-disable-next-line @next/next/no-img-element -- redirects to a short-lived signed URL */}
-                            <img src={`${href}?preview=1`} alt={f.name} loading="lazy" className="max-h-full max-w-full rounded-md object-contain" />
-                          </a>
-                        ) : f.has_preview ? (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="group relative flex h-44 sm:h-52 w-full items-center justify-center overflow-hidden bg-zinc-950/70 p-3">
-                            <div className="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white shadow-md transition-transform duration-200 group-hover:scale-[1.02]">
-                              {/* eslint-disable-next-line @next/next/no-img-element -- page 1 preview via a short-lived signed URL */}
-                              <img src={`${href}?thumb=1`} alt={`First page of ${f.name}`} loading="lazy" className="max-h-36 sm:max-h-44 w-auto object-contain object-top" />
-                            </div>
-                            <span className="absolute bottom-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-black/80 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-xs">
-                              <FileText className="size-3.5 text-zinc-300" aria-hidden /> PDF · tap to open
-                            </span>
-                          </a>
-                        ) : (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="flex h-28 w-full items-center justify-center gap-3 bg-zinc-900/50 px-4 text-muted-foreground hover:bg-zinc-900">
-                            <div className="flex size-10 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-zinc-300">
-                              <FileText className="size-5" aria-hidden />
-                            </div>
-                            <span className="text-sm font-medium text-foreground">PDF document</span>
-                          </a>
-                        )}
-                        <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground" title={f.name}>{f.name}</p>
-                            <p className="text-xs text-muted-foreground">{image ? "Image" : "PDF"} · {formatBytes(f.size_bytes)}</p>
+                    <div
+                      key={f.id}
+                      className="overflow-hidden rounded-2xl border border-white/[0.1] bg-[#1e1e1e] shadow-2xl shadow-black/80 transition-all duration-200"
+                    >
+                      {/* Top Document Toolbar */}
+                      <div className="flex flex-col gap-3 border-b border-white/[0.08] bg-[#242424] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div
+                            className={cn(
+                              "flex size-9 shrink-0 items-center justify-center rounded-lg border text-[11px] font-bold tracking-wider uppercase",
+                              pdf
+                                ? "border-red-500/30 bg-red-500/10 text-red-400"
+                                : "border-sky-500/30 bg-sky-500/10 text-sky-400",
+                            )}
+                          >
+                            {pdf ? "PDF" : "IMG"}
                           </div>
-                          <div className="flex gap-2 shrink-0">
-                            <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none text-xs">
-                              <a href={href} target="_blank" rel="noopener noreferrer"><ExternalLink className="size-3.5" /> Open</a>
-                            </Button>
-                            <Button asChild size="sm" className="flex-1 sm:flex-none text-xs">
-                              <a href={`${href}?download=1`}><Download className="size-3.5" /> Download</a>
-                            </Button>
+                          <div className="min-w-0">
+                            <h2 className="truncate text-sm font-semibold text-white sm:text-base" title={f.name}>
+                              {displayName}
+                            </h2>
+                            <p className="text-[11px] text-zinc-400">
+                              {formatBytes(f.size_bytes)} · {pdf ? "PDF Document" : "Image File"}
+                            </p>
                           </div>
                         </div>
-                      </Card>
-                    </li>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-8.5 gap-1.5 rounded-lg border-white/10 bg-white/[0.05] text-xs font-medium text-zinc-200 hover:bg-white/10 hover:text-white"
+                          >
+                            <a href={href} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="size-3.5" />
+                              <span>Open in new tab</span>
+                            </a>
+                          </Button>
+                          <Button
+                            asChild
+                            size="sm"
+                            className="h-8.5 gap-1.5 rounded-lg bg-white text-xs font-medium text-black hover:bg-zinc-200"
+                          >
+                            <a href={`${href}?download=1`}>
+                              <Download className="size-3.5" />
+                              <span>Download</span>
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Document Viewer Desk / Stage */}
+                      <div className="relative flex items-center justify-center overflow-hidden bg-[#121212] p-4 sm:p-8">
+                        {/* Subtle dot pattern background for document canvas */}
+                        <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
+
+                        {image ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative max-w-xl w-full overflow-hidden rounded-xl bg-black/60 shadow-2xl ring-1 ring-white/10 transition-transform duration-200 hover:scale-[1.01]"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element -- redirects to short-lived signed URL */}
+                            <img
+                              src={`${href}?preview=1`}
+                              alt={f.name}
+                              loading="lazy"
+                              className="max-h-[500px] w-full object-contain block mx-auto"
+                            />
+                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center bg-gradient-to-t from-black/80 to-transparent p-4 opacity-0 transition-opacity group-hover:opacity-100">
+                              <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/20 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-md shadow-lg">
+                                <ExternalLink className="size-3.5" /> Click to view full image
+                              </span>
+                            </div>
+                          </a>
+                        ) : f.has_preview ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative max-w-md w-full overflow-hidden rounded-lg bg-white shadow-2xl ring-1 ring-white/10 transition-transform duration-200 hover:scale-[1.01]"
+                          >
+                            {/* Paper sheet preview with realistic shadow */}
+                            {/* eslint-disable-next-line @next/next/no-img-element -- page 1 preview via short-lived signed URL */}
+                            <img
+                              src={`${href}?thumb=1`}
+                              alt={`First page of ${f.name}`}
+                              loading="lazy"
+                              className="w-full h-auto object-contain object-top block"
+                            />
+                            {/* Floating bottom overlay bar */}
+                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center bg-gradient-to-t from-black/85 via-black/40 to-transparent p-4 transition-all">
+                              <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/75 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-md shadow-lg transition-transform group-hover:scale-105">
+                                <FileText className="size-3.5 text-zinc-300" />
+                                <span>Tap anywhere to open full document</span>
+                              </span>
+                            </div>
+                          </a>
+                        ) : (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground hover:text-white"
+                          >
+                            <div className="flex size-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-zinc-300">
+                              <FileText className="size-7" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-white">{displayName}</p>
+                              <p className="text-xs text-zinc-400 mt-0.5">{formatBytes(f.size_bytes)} · PDF Document</p>
+                            </div>
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
-              </ul>
+              </div>
             )}
           </>
         )}
-        <footer className="mt-8 text-center text-xs text-muted-foreground">Sent to you by {brand.name}. Please don&apos;t forward this link.</footer>
       </div>
+
+      {/* Footer */}
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#141414] py-6 text-center text-xs text-zinc-500">
+        <p>Sent to you securely by {brand.name}. Single-use private link.</p>
+      </footer>
     </main>
   );
 }

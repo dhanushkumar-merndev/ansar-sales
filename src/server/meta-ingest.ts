@@ -16,9 +16,30 @@ export async function loadMetaSecrets(companyId: string): Promise<MetaSecrets | 
 
 /** The Page access token, from the (non-expiring) system-user token. */
 export async function pageToken(secrets: MetaSecrets) {
-  const page = await graph<{ id: string; name: string; access_token?: string }>(secrets.page_id, secrets.access_token, { params: { fields: "name,access_token" } });
-  if (!page.access_token) throw new GraphError("The token can't manage this Page. Assign the Page to the system user with full control.");
+  const page = await graph<{ id: string; name: string; access_token?: string }>(secrets.page_id, secrets.access_token, { params: { fields: "name,access_token" } })
+    .catch(async (e) => {
+      if (!(e instanceof GraphError) || !e.message.includes("nonexisting field (access_token)")) throw e;
+      // A Page token pasted in place of the system-user token is still usable for its own Page.
+      const me = await graph<{ id: string; name: string }>("me", secrets.access_token, { params: { fields: "id,name" } }).catch(() => null);
+      if (me?.id === secrets.page_id) return { ...me, access_token: secrets.access_token };
+      throw new GraphError(await wrongPageMessage(secrets));
+    });
+  if (!page.access_token) throw new GraphError(`The token can't manage this Page. Assign the Page to the system user with full control.${await pagesHint(secrets.access_token)}`);
   return { token: page.access_token, name: page.name };
+}
+
+/** Explains a Page ID that isn't a Page: what Meta says it is, and the Pages the token can use. */
+async function wrongPageMessage(secrets: MetaSecrets) {
+  const node = await graph<{ metadata?: { type?: string } }>(secrets.page_id, secrets.access_token, { params: { metadata: "1", fields: "id" } }).catch(() => null);
+  const type = node?.metadata?.type;
+  const what = type && type !== "page" ? ` Meta says ${secrets.page_id} is a ${type.replace(/_/g, " ")}, not a Page.` : "";
+  return `Page ID ${secrets.page_id} isn't a Facebook Page this token can use.${what}${await pagesHint(secrets.access_token)}`;
+}
+
+async function pagesHint(token: string) {
+  const pages = await graph<{ data?: { id: string; name: string }[] }>("me/accounts", token, { params: { fields: "id,name", limit: "10" } }).catch(() => null);
+  const list = (pages?.data ?? []).map((p) => `${p.name} (${p.id})`);
+  return list.length ? ` Pages this token can manage: ${list.join(", ")}.` : " This token can't manage any Page yet: in Business settings, assign the Page to the system user with full control, then generate a new token.";
 }
 
 /**

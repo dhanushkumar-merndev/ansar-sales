@@ -3230,6 +3230,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      telegram_bot_summary: {
+        Args: {
+          p_chat_id: number
+        }
+        Returns: Json
+      }
       track_share_file: {
         Args: {
           p_token: string

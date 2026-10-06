@@ -1,7 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { serverEnv } from "@/lib/env";
+import { publicEnv, serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseSilenceCallback, parseStartCommand, safeEqual, withoutCallbackButtons } from "@/lib/telegram";
+import {
+  botCommandsFor,
+  buildHelp,
+  buildTestReply,
+  buildToday,
+  commandOf,
+  NOT_CONNECTED_TEXT,
+  parseIncomingText,
+  type BotReply,
+  type BotSummary,
+} from "@/lib/telegram-bot";
 
 /** Best-effort Bot API call; the CRM shows connection and delivery state either way. */
 async function botApi(method: string, body: Record<string, unknown>) {
@@ -17,7 +28,23 @@ async function botApi(method: string, body: Record<string, unknown>) {
   }
 }
 
-const reply = (chatId: number, text: string) => botApi("sendMessage", { chat_id: chatId, text });
+const reply = (chatId: number, text: string, extra: Omit<BotReply, "text"> = {}) =>
+  botApi("sendMessage", { chat_id: chatId, text, ...extra, link_preview_options: { is_disabled: true } });
+const send = (chatId: number, r: BotReply) => reply(chatId, r.text, { reply_markup: r.reply_markup });
+
+const appUrl = () => publicEnv.appUrl || null;
+
+/** The connected user's role summary, or not connected. */
+async function summaryFor(chatId: number): Promise<BotSummary> {
+  const { data, error } = await createAdminClient().rpc("telegram_bot_summary", { p_chat_id: chatId });
+  return error || !data ? { connected: false } : (data as unknown as BotSummary);
+}
+
+/** Help menu, plus Telegram's "/" command list for this chat's role (best effort). */
+async function welcome(chatId: number, summary: Extract<BotSummary, { connected: true }>) {
+  await botApi("setMyCommands", { commands: botCommandsFor(summary.role), scope: { type: "chat", chat_id: chatId } });
+  await send(chatId, buildHelp(summary, appUrl()));
+}
 
 /** Telegram webhook: only accepts requests carrying our secret token header. */
 export async function POST(request: NextRequest) {
@@ -57,9 +84,18 @@ export async function POST(request: NextRequest) {
 
   const start = parseStartCommand(update);
   if (!start) {
-    const chatId = (update as { message?: { chat?: { id?: number; type?: string } } })?.message?.chat;
-    if (chatId?.type === "private" && typeof chatId.id === "number") {
-      await reply(chatId.id, "To receive CRM reminders, open Settings in the CRM and use “Connect Telegram”.");
+    // Any other private message: connected users get their role's menu or summary.
+    const incoming = parseIncomingText(update);
+    if (incoming) {
+      const summary = await summaryFor(incoming.chatId);
+      if (!summary.connected) {
+        await reply(incoming.chatId, NOT_CONNECTED_TEXT);
+      } else {
+        const command = commandOf(incoming.text);
+        if (command === "today") await send(incoming.chatId, buildToday(summary, appUrl()));
+        else if (command === "test") await send(incoming.chatId, buildTestReply(summary));
+        else await welcome(incoming.chatId, summary);
+      }
     }
     return NextResponse.json({ ok: true });
   }
@@ -73,7 +109,9 @@ export async function POST(request: NextRequest) {
   if (error || !result?.ok) {
     await reply(start.chatId, "This link is invalid or has expired. Generate a new one from CRM Settings.");
   } else {
-    await reply(start.chatId, `Connected. Hi ${result.display_name}! Follow-up reminders will arrive here.`);
+    await reply(start.chatId, `Connected. Hi ${result.display_name}! Your CRM alerts will arrive here.`);
+    const summary = await summaryFor(start.chatId);
+    if (summary.connected) await welcome(start.chatId, summary);
   }
   // Always 200 so Telegram does not retry the update.
   return NextResponse.json({ ok: true });
