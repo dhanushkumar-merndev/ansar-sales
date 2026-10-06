@@ -1,7 +1,6 @@
 "use client";
 
 import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
-import { STATUS_LABELS, type LeadStatus } from "@/lib/constants";
 import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
 import type { Activity } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
@@ -27,7 +26,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   share_opened: Eye,
 };
 
-const status = (s: unknown) => STATUS_LABELS[s as LeadStatus] ?? String(s ?? "—");
+/** Stage names are stored in the history itself, so it stays readable after a stage is renamed. */
+const status = (s: unknown) => String(s ?? "—");
 const dt = (s: unknown) => (typeof s === "string" ? formatDateTime(s) : "—");
 
 /** Turns an activity row into a readable sentence (never raw JSON). */
@@ -35,13 +35,16 @@ function describe(a: Activity): { title: string; detail?: React.ReactNode } {
   const m = a.meta ?? {};
   switch (a.type) {
     case "lead_created":
-      return { title: "created the lead", detail: [m.niche && `Niche: ${m.niche}`, m.owner && `Owner: ${m.owner}`, `Status: ${status(m.status)}`].filter(Boolean).join(" · ") };
+      if (m.source === "facebook") {
+        return { title: `came in from a Facebook lead form${m.form ? ` (${m.form})` : ""}`, detail: [m.owner && `Assigned to ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
+      }
+      return { title: "created the lead", detail: [m.niche && `Niche: ${m.niche}`, m.owner && `Owner: ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
     case "note":
       return { title: a.edited_at ? "added a note (edited)" : "added a note", detail: <p className="whitespace-pre-wrap text-foreground">{a.body}</p> };
     case "note_corrected":
       return { title: "corrected a note", detail: <p className="whitespace-pre-wrap line-through decoration-muted-foreground/60">{String(m.previous_body ?? "")}</p> };
     case "status_changed":
-      return { title: `changed status from ${status(m.from)} to ${status(m.to)}` };
+      return { title: `moved the lead from ${status(m.from)} to ${status(m.to)}` };
     case "assigned":
       return { title: `reassigned the lead from ${m.from ?? "—"} to ${m.to ?? "—"}` };
     case "lead_updated": {
@@ -114,7 +117,7 @@ export function Timeline({ items, renderNoteActions }: { items: Activity[]; rend
             </span>
             <div className="min-w-0 flex-1 pt-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
-                <p><span className="font-medium">{a.actor?.display_name ?? (a.type === "share_opened" ? "Customer" : "System")}</span> <span className="text-muted-foreground">{title}</span></p>
+                <p><span className="font-medium">{a.actor?.display_name ?? (a.type === "share_opened" ? "Customer" : a.type === "lead_created" && a.meta?.source === "facebook" ? "New lead" : "System")}</span> <span className="text-muted-foreground">{title}</span></p>
                 <time className="text-xs text-muted-foreground" dateTime={a.created_at}>{formatDateTime(a.created_at)}</time>
               </div>
               {detail ? <div className={cn("mt-1 text-sm text-muted-foreground", isNote && "rounded-md border bg-card px-3 py-2")}>{detail}</div> : null}

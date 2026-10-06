@@ -11,6 +11,7 @@ set session_replication_role = replica;
 do $$
 declare
   s1 uuid; s2 uuid; s3 uuid; s4 uuid; acc uuid;
+  t text;
   sales uuid[];
   sales_names text[];
   today date := (now() at time zone 'Asia/Kolkata')::date;
@@ -42,7 +43,11 @@ declare
     'Asked for 10% discount; told him max 5%.'];
   long_note text := repeat('Long note to check wrapping and the 5,000 character limit. ', 80);
   call_outcomes text[] := array['connected','no_answer','busy','wrong_number','connected','connected'];
-  stages public.lead_status[] := array['new','contacted','interested','proposal_sent','won']::public.lead_status[];
+  -- Path keys through the default pipeline; stage_of maps each key to the company's stage id, name and kind.
+  stages text[] := array['new','contacted','interested','proposal_sent','won'];
+  stage_of jsonb;
+  -- Category key (e.g. 'rent') → id in the demo company's books.
+  cat_of jsonb;
   edge_names text[] := array[
     'A',
     'Sri Lakshmi Venkateswara Textiles and Readymade Garments Wholesale and Retail Showroom Private Limited, Chennai South 12',
@@ -54,14 +59,14 @@ declare
     '+919555500055','+971501234567'];
   i integer; k integer; j integer;
   r double precision;
-  v_lead uuid; v_owner uuid; v_creator uuid; v_status public.lead_status; v_niche uuid;
+  v_lead uuid; v_owner uuid; v_creator uuid; v_status text; v_niche uuid;
   v_created timestamptz; v_t timestamptz; v_name text; v_phone text; v_email text;
-  v_path public.lead_status[]; v_archived boolean; v_reassign boolean; v_version integer; v_prev uuid;
+  v_path text[]; v_archived boolean; v_reassign boolean; v_version integer; v_prev uuid;
   v_fu uuid; v_due timestamptz; v_state public.follow_up_state; v_done timestamptz; v_task text;
   tasks text[] := array['Call back about pricing','Send brochure on WhatsApp','Demo at their office','Collect signed proposal',
     'Check if payment is done','Visit store with samples','Share case study PDF','Confirm meeting time','Follow up after festival',
     'Ask for referral'];
-  v_date date; v_amount numeric; v_cat public.expense_category; v_mode text; v_item text; v_qty integer; v_exp uuid;
+  v_date date; v_amount numeric; v_cat text; v_mode text; v_item text; v_qty integer; v_exp uuid;
   modes text[] := array['upi','upi','upi','bank_transfer','bank_transfer','cash','card','cheque','other'];
   v_rec uuid;
 begin
@@ -81,6 +86,30 @@ begin
     raise exception 'demo data already present: run the seed with --clean first';
   end if;
   perform setseed(0.4242);
+
+  select jsonb_object_agg(m.key, jsonb_build_object('id', st.id, 'name', st.name, 'kind', st.kind)) into stage_of
+  from (values ('new', 'New'), ('contacted', 'Contacted'), ('interested', 'Interested'), ('proposal_sent', 'Proposal sent'),
+               ('won', 'Won'), ('lost', 'Lost')) as m(key, name)
+  join public.pipeline_stages st on st.name = m.name and st.archived_at is null
+    and st.company_id = (select p.company_id from public.profiles p where p.id = s1);
+  select jsonb_object_agg(ec.normalized_name, ec.id) into cat_of
+  from public.expense_categories ec
+  join public.companies c on c.finance_group_id = ec.finance_group_id
+  where c.id = (select p.company_id from public.profiles p where p.id = s1) and ec.archived_at is null;
+  if (select count(*) from jsonb_object_keys(coalesce(cat_of, '{}'))
+      where jsonb_object_keys in ('salary', 'rent', 'software', 'marketing', 'utilities', 'miscellaneous')) <> 6 then
+    raise exception 'The demo company''s books need the default categories (Salary, Rent, Software, Marketing, Utilities, Miscellaneous).';
+  end if;
+  if stage_of is null or (select count(*) from jsonb_object_keys(stage_of)) <> 6 then
+    raise exception 'The demo company needs the default stages (New, Contacted, Interested, Proposal sent, Won, Lost).';
+  end if;
+
+  -- Demo rows belong to the demo users' company. Triggers (which normally pin company_id) are off,
+  -- so the column defaults point at that company until the block after this one resets them.
+  foreach t in array array['niches', 'leads', 'expenses', 'expense_recurrences', 'capital_entries', 'finance_activities'] loop
+    execute format('alter table public.%I alter column company_id set default %L::uuid', t,
+      (select p.company_id from public.profiles p where p.id = s1));
+  end loop;
 
   -- Niches: active ones, one archived (still used by old leads), one merged into another (no leads left).
   for i in 1 .. array_length(niche_names, 1) loop
@@ -124,7 +153,7 @@ begin
     r := random();
     k := case when r < 0.24 then 1 when r < 0.43 then 2 when r < 0.58 then 3 when r < 0.68 then 4 when r < 0.84 then 5 else -1 end;
     if k = -1 then
-      v_path := stages[1 : 1 + floor(random() * 4)::int] || array['lost']::public.lead_status[];
+      v_path := stages[1 : 1 + floor(random() * 4)::int] || array['lost'];
     else
       v_path := stages[1 : k];
     end if;
@@ -133,13 +162,14 @@ begin
     v_lead := gen_random_uuid();
     v_version := array_length(v_path, 1) + case when v_reassign then 1 else 0 end;
 
-    insert into public.leads (id, name, phone, phone_normalized, email, niche_id, status, owner_id, created_by, version, created_at, updated_at)
+    insert into public.leads (id, name, phone, phone_normalized, email, niche_id, stage_id, status, owner_id, created_by, version, created_at, updated_at)
     values (v_lead, v_name,
       case when i % 7 = 0 and v_phone like '+91%' then '+91 ' || substr(v_phone, 4, 5) || '-' || substr(v_phone, 9) else v_phone end,
-      v_phone, v_email, v_niche, v_status, v_owner, v_creator, v_version, v_created, v_created);
+      v_phone, v_email, v_niche, (stage_of -> v_status ->> 'id')::uuid, (stage_of -> v_status ->> 'kind')::public.lead_outcome,
+      v_owner, v_creator, v_version, v_created, v_created);
 
     insert into public.lead_activities (lead_id, actor_id, type, meta, created_at)
-    values (v_lead, v_creator, 'lead_created', jsonb_build_object('status', 'new',
+    values (v_lead, v_creator, 'lead_created', jsonb_build_object('status', stage_of -> 'new' ->> 'name', 'stage_id', stage_of -> 'new' ->> 'id',
       'owner', sales_names[array_position(sales, v_creator)],
       'niche', (select name from public.niches where id = v_niche)), v_created);
 
@@ -154,7 +184,10 @@ begin
     for j in 2 .. coalesce(array_length(v_path, 1), 1) loop
       v_t := v_t + least((now() - v_t) * (0.15 + random() * 0.3), (random() * 8 + 0.05) * interval '1 day');
       insert into public.lead_activities (lead_id, actor_id, type, meta, created_at)
-      values (v_lead, v_owner, 'status_changed', jsonb_build_object('from', v_path[j - 1], 'to', v_path[j]), v_t);
+      values (v_lead, v_owner, 'status_changed', jsonb_build_object(
+        'from', stage_of -> v_path[j - 1] ->> 'name', 'to', stage_of -> v_path[j] ->> 'name',
+        'from_kind', stage_of -> v_path[j - 1] ->> 'kind', 'to_kind', stage_of -> v_path[j] ->> 'kind',
+        'from_stage_id', stage_of -> v_path[j - 1] ->> 'id', 'to_stage_id', stage_of -> v_path[j] ->> 'id'), v_t);
     end loop;
 
     for j in 1 .. floor(random() * 4)::int loop
@@ -240,42 +273,42 @@ begin
     v_date := (date_trunc('month', today) - make_interval(months => i))::date;
     -- rent on the 1st, salaries on the last day, Canva and ChatGPT subscriptions
     for k in 1 .. 4 loop
-      v_cat := (array['rent','salary','software','software'])[k]::public.expense_category;
+      v_cat := (array['rent','salary','software','software'])[k];
       v_amount := (array[25000, 42000, 499, 1999])[k];
       v_item := (array[null, null, 'Canva', 'ChatGPT Plus'])[k];
       v_qty := (array[null, 2, case when i < 6 then 3 else 2 end, 1])[k];
       if k = 2 then v_item := 'Staff salary'; v_amount := 21000 * v_qty; end if;
       v_mode := case when i > 10 then null else (array['bank_transfer','bank_transfer','card','card'])[k] end;
       continue when (case when k = 2 then (v_date + interval '1 month - 1 day')::date else v_date + (array[0, 0, 4, 14])[k] end) > today;
-      insert into public.expenses (expense_date, category, amount, payment_mode, item, quantity, description, created_by, created_at, updated_at)
+      insert into public.expenses (expense_date, category, category_id, amount, payment_mode, item, quantity, description, created_by, created_at, updated_at)
       values (case when k = 2 then (v_date + interval '1 month - 1 day')::date else v_date + (array[0, 0, 4, 14])[k] end,
-        v_cat, v_amount, v_mode, v_item, v_qty,
+        initcap(v_cat), (cat_of ->> v_cat)::uuid, v_amount, v_mode, v_item, v_qty,
         (array['Office rent', 'Two sales staff', 'Design tool seats', 'AI assistant'])[k], acc,
         v_date::timestamp + interval '10 hours', v_date::timestamp + interval '10 hours');
     end loop;
     -- variable marketing, utilities and miscellaneous items
     for k in 1 .. 4 + floor(random() * 4)::int loop
-      v_cat := (array['marketing','utilities','miscellaneous','marketing','miscellaneous','utilities','software'])[k]::public.expense_category;
+      v_cat := (array['marketing','utilities','miscellaneous','marketing','miscellaneous','utilities','software'])[k];
       v_item := (array['Instagram ads','Electricity bill','Printer paper (A4 rims)','Google Ads','Tea & snacks','Internet','Figma'])[k];
       v_qty := (array[null, null, 2 + floor(random() * 8)::int, null, null, null, 1])[k];
       v_amount := round(((array[8000, 3200, 250, 6000, 1200, 1499, 1050])[k] * (0.6 + random() * 0.9))::numeric, 2);
-      insert into public.expenses (expense_date, category, amount, payment_mode, item, quantity, created_by, created_at, updated_at)
-      values (least(today, v_date + floor(random() * 27)::int), v_cat, v_amount, modes[1 + floor(random() * array_length(modes, 1))::int],
+      insert into public.expenses (expense_date, category, category_id, amount, payment_mode, item, quantity, created_by, created_at, updated_at)
+      values (least(today, v_date + floor(random() * 27)::int), initcap(v_cat), (cat_of ->> v_cat)::uuid, v_amount, modes[1 + floor(random() * array_length(modes, 1))::int],
         v_item, v_qty, acc, v_date::timestamp + interval '12 hours', v_date::timestamp + interval '12 hours');
     end loop;
   end loop;
   -- edge cases: one paisa, a huge archived amount, a long description, a unicode item, an archived entry
-  insert into public.expenses (expense_date, category, amount, payment_mode, item, quantity, description, created_by, archived_at, created_at, updated_at) values
-    (today - 3, 'miscellaneous', 0.01, 'upi', 'Rounding test', 1, 'Smallest possible amount', acc, null, now() - interval '3 days', now() - interval '3 days'),
-    (today - 40, 'miscellaneous', 999999999999.99, 'other', null, null, 'Archived: largest possible amount (should never count in totals)', acc, now() - interval '39 days', now() - interval '40 days', now() - interval '39 days'),
-    (today - 12, 'marketing', 15750.50, 'cheque', 'Flex banners', 25, repeat('Long description for wrapping checks. ', 13), acc, null, now() - interval '12 days', now() - interval '12 days'),
-    (today - 8, 'miscellaneous', 640, 'cash', 'பூஜை பொருட்கள் (Pooja items)', 1, 'Unicode item name', acc, null, now() - interval '8 days', now() - interval '8 days'),
-    (today - 25, 'utilities', 2310.75, 'upi', 'Water cans', 30, 'Archived by mistake', acc, now() - interval '20 days', now() - interval '25 days', now() - interval '20 days');
+  insert into public.expenses (expense_date, category, category_id, amount, payment_mode, item, quantity, description, created_by, archived_at, created_at, updated_at) values
+    (today - 3, 'Miscellaneous', (cat_of ->> 'miscellaneous')::uuid, 0.01, 'upi', 'Rounding test', 1, 'Smallest possible amount', acc, null, now() - interval '3 days', now() - interval '3 days'),
+    (today - 40, 'Miscellaneous', (cat_of ->> 'miscellaneous')::uuid, 999999999999.99, 'other', null, null, 'Archived: largest possible amount (should never count in totals)', acc, now() - interval '39 days', now() - interval '40 days', now() - interval '39 days'),
+    (today - 12, 'Marketing', (cat_of ->> 'marketing')::uuid, 15750.50, 'cheque', 'Flex banners', 25, repeat('Long description for wrapping checks. ', 13), acc, null, now() - interval '12 days', now() - interval '12 days'),
+    (today - 8, 'Miscellaneous', (cat_of ->> 'miscellaneous')::uuid, 640, 'cash', 'பூஜை பொருட்கள் (Pooja items)', 1, 'Unicode item name', acc, null, now() - interval '8 days', now() - interval '8 days'),
+    (today - 25, 'Utilities', (cat_of ->> 'utilities')::uuid, 2310.75, 'upi', 'Water cans', 30, 'Archived by mistake', acc, now() - interval '20 days', now() - interval '25 days', now() - interval '20 days');
 
   -- A stopped monthly series (shows the history; the job ignores inactive series).
   v_rec := gen_random_uuid();
-  insert into public.expense_recurrences (id, category, amount, payment_mode, item, quantity, description, day_of_month, next_date, active, created_by, created_at, updated_at)
-  values (v_rec, 'software', 499, 'card', 'Canva', 3, 'Design tool seats', 5, (date_trunc('month', today) + interval '1 month 4 days')::date, false, acc, now() - interval '400 days', now());
+  insert into public.expense_recurrences (id, category, category_id, amount, payment_mode, item, quantity, description, day_of_month, next_date, active, created_by, created_at, updated_at)
+  values (v_rec, 'Software', (cat_of ->> 'software')::uuid, 499, 'card', 'Canva', 3, 'Design tool seats', 5, (date_trunc('month', today) + interval '1 month 4 days')::date, false, acc, now() - interval '400 days', now());
   update public.expenses set recurrence_id = v_rec where created_by = acc and item = 'Canva';
 
   -- Capital: founders and partners (name variants that group together), a loan, items received with nos, one archived.
@@ -311,6 +344,16 @@ begin
   select 'expense', e.id, 'archived', acc, e.archived_at from public.expenses e where e.created_by = acc and e.archived_at is not null
   union all
   select 'capital', c.id, 'archived', acc, c.archived_at from public.capital_entries c where c.created_by = acc and c.archived_at is not null;
+end $$;
+
+-- Back to the normal default (the signed-in user's company; the guard trigger enforces it).
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['niches', 'leads', 'expenses', 'expense_recurrences', 'capital_entries', 'finance_activities'] loop
+    execute format('alter table public.%I alter column company_id set default private.current_company_id()', t);
+  end loop;
 end $$;
 
 set session_replication_role = origin;

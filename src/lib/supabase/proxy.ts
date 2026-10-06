@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { publicEnv } from "@/lib/env";
 
 // "/s" is the public share page: it reads data only through token-checked functions.
-const PUBLIC_PATHS = ["/login", "/api/telegram/webhook", "/s"];
+const PUBLIC_PATHS = ["/login", "/api/telegram/webhook", "/api/meta/webhook", "/api/ads/sync", "/s"];
 
 /** Refreshes the Supabase session cookie and redirects signed-out users to /login. */
 export async function updateSession(request: NextRequest) {

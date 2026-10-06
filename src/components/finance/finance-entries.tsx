@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, ArrowDownRight, ArrowUpRight, Download, History, Loader2, MoreHorizontal, Pencil, Repeat, Search } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -19,7 +19,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlSearch } from "@/hooks/use-url-search";
 import { useUrlState } from "@/hooks/use-url-state";
-import { CATEGORY_LABELS, EXPENSE_CATEGORIES, MAX_PAGE_SIZE, PAYMENT_MODE_LABELS, PAYMENT_MODES, type ExpenseCategory, type PaymentMode } from "@/lib/constants";
+import { CompanyTag, useFinanceBooks } from "@/components/finance/finance-books";
+import { MAX_PAGE_SIZE, PAYMENT_MODE_LABELS, PAYMENT_MODES, type PaymentMode } from "@/lib/constants";
 import { formatCount, formatINR } from "@/lib/format";
 import { lastPage, parsePaging } from "@/lib/pagination";
 import { fetchFinanceEntries, type CapitalRow, type ExpenseRow, type FinanceEntriesQuery, type FinanceKind, type FinanceSort } from "@/lib/queries";
@@ -29,13 +30,15 @@ import { setFinanceArchived } from "@/server/actions/finance";
 export function RowMenu({ archived, onEdit, onHistory, kind, id, onDone }: {
   archived: boolean; onEdit: () => void; onHistory: () => void; kind: FinanceKind; id: string; onDone: () => void;
 }) {
+  // View-only companies of merged books see the history only (the database refuses changes anyway).
+  const canEdit = useFinanceBooks().data?.canEdit ?? false;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Row actions"><MoreHorizontal /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {!archived ? <DropdownMenuItem onSelect={onEdit}><Pencil /> Edit</DropdownMenuItem> : null}
+        {!archived && canEdit ? <DropdownMenuItem onSelect={onEdit}><Pencil /> Edit</DropdownMenuItem> : null}
         <DropdownMenuItem onSelect={onHistory}><History /> History</DropdownMenuItem>
-        <ConfirmDialog
+        {canEdit ? <ConfirmDialog
           trigger={<DropdownMenuItem onSelect={(e) => e.preventDefault()}>{archived ? <><ArchiveRestore /> Restore</> : <><Archive /> Archive</>}</DropdownMenuItem>}
           title={archived ? "Restore this entry?" : "Archive this entry?"}
           description={archived ? "It will count in totals again." : "It is removed from totals but kept in history and can be restored."}
@@ -47,7 +50,7 @@ export function RowMenu({ archived, onEdit, onHistory, kind, id, onDone }: {
             toast.success(archived ? "Restored" : "Archived");
             onDone();
           }}
-        />
+        /> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -69,6 +72,7 @@ const SORTS: { value: FinanceSort; label: string }[] = [
   { value: "amount-asc", label: "Lowest amount" },
 ];
 const ALL = "__all";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expense or capital entries of one period: search, filters, sort and paging live in the URL. */
 export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapital, onHistory, onChanged }: {
@@ -79,8 +83,11 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
   const { params, set } = useUrlState();
   const { q, input, setInput } = useUrlSearch();
   const kind: FinanceKind = params.get("tab") === "capital" ? "capital" : "expense";
+  const books = useFinanceBooks().data;
   const rawCategory = params.get("category");
-  const category = kind === "expense" && EXPENSE_CATEGORIES.includes(rawCategory as ExpenseCategory) ? (rawCategory as ExpenseCategory) : null;
+  const category = kind === "expense" && rawCategory && UUID_RE.test(rawCategory) ? rawCategory : null;
+  const rawCompany = params.get("company");
+  const company = rawCompany && UUID_RE.test(rawCompany) ? rawCompany : null;
   const rawMode = params.get("mode");
   const mode = rawMode === "unspecified" || PAYMENT_MODES.includes(rawMode as PaymentMode) ? (rawMode as PaymentMode | "unspecified") : null;
   const recurring = kind === "expense" && params.get("recurring") === "1";
@@ -89,8 +96,8 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
   const { page, pageSize } = parsePaging(params);
 
   const query: FinanceEntriesQuery = useMemo(
-    () => ({ kind, from, to, q, category, mode, recurring, archived, sort, page, pageSize }),
-    [kind, from, to, q, category, mode, recurring, archived, sort, page, pageSize],
+    () => ({ kind, from, to, q, category, company, mode, recurring, archived, sort, page, pageSize }),
+    [kind, from, to, q, category, company, mode, recurring, archived, sort, page, pageSize],
   );
   const { data, error, isFetching, isInitialLoading, isStale, refetch } = useLiveQuery({
     queryKey: `finance-entries:${JSON.stringify(query)}`,
@@ -103,8 +110,16 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
     if (data && !isStale && data.items.length === 0 && data.total > 0 && page > 1) set({ page: String(lastPage(data.total, pageSize)) }, { replace: true });
   }, [data, isStale, page, pageSize, set]);
 
+  // The table scrolls inside a fixed height; a new period, filter or page starts at its top.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const queryKey = JSON.stringify(query);
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector<HTMLElement>("[data-slot=table-container]");
+    if (el) el.scrollTop = 0;
+  }, [queryKey]);
+
   const changed = () => { refetch(); onChanged(); };
-  const filtered = !!(q || category || mode || recurring || archived);
+  const filtered = !!(q || category || company || mode || recurring || archived);
 
   return (
     <Card role="region" aria-label="Entries">
@@ -130,7 +145,16 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
               <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-40" aria-label="Category"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>All categories</SelectItem>
-                {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>)}
+                {(books?.categories ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}{c.archived_at ? " (archived)" : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ) : null}
+          {books?.merged ? (
+            <Select value={company ?? ALL} onValueChange={(v) => set({ company: v === ALL ? null : v })}>
+              <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-44" aria-label="Company"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All companies</SelectItem>
+                {books.companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
           ) : null}
@@ -160,7 +184,10 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
           <EmptyState title={kind === "expense" ? "No expenses" : "No capital entries"} description={filtered ? "Nothing matches these filters." : "Nothing recorded in this period."} />
         ) : (
           <div className={isStale ? "opacity-60" : undefined}>
-            <div className="overflow-x-auto rounded-xl border">
+            <div
+              ref={scrollRef}
+              className="overflow-hidden rounded-xl border [&_[data-slot=table-container]]:max-h-[min(65vh,40rem)] [&_[data-slot=table-container]]:overflow-y-auto [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-card [&_thead]:shadow-[inset_0_-1px_0_var(--border)]"
+            >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -177,7 +204,8 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
                       <TableCell className="whitespace-nowrap">{formatCalendarDate(r.expense_date)}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-1.5">
-                          {CATEGORY_LABELS[r.category]}
+                          {r.category}
+                          {books?.merged ? <CompanyTag name={r.company?.name} /> : null}
                           {r.recurrence?.active ? <Badge variant="outline" className="gap-1 text-[10px]" title={`Next: ${formatCalendarDate(r.recurrence.next_date)}`}><Repeat className="size-3" />Monthly</Badge> : null}
                         </span>
                         <ItemLine item={r.item} quantity={r.quantity} />
@@ -192,7 +220,10 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
                   )) : (data.items as CapitalRow[]).map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="whitespace-nowrap">{formatCalendarDate(r.entry_date)}</TableCell>
-                      <TableCell className="font-medium text-foreground">{r.contributor}<ItemLine item={r.item} quantity={r.quantity} /></TableCell>
+                      <TableCell className="font-medium text-foreground">
+                        <span className="inline-flex items-center gap-1.5">{r.contributor}{books?.merged ? <CompanyTag name={r.company?.name} /> : null}</span>
+                        <ItemLine item={r.item} quantity={r.quantity} />
+                      </TableCell>
                       <TableCell className="hidden max-w-xs truncate text-muted-foreground sm:table-cell">{r.description ?? "—"}<span className="block text-xs">by {r.author?.display_name ?? "—"}</span></TableCell>
                       <TableCell className="text-right tabular-nums">
                         <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-400"><ArrowUpRight className="size-3.5 shrink-0" />+{formatINR(r.amount)}</span>
@@ -259,11 +290,11 @@ function cell(value: unknown) {
 export function toCsv(kind: FinanceKind, rows: (ExpenseRow | CapitalRow)[]) {
   const mode = (m: PaymentMode | null) => (m ? PAYMENT_MODE_LABELS[m] : "");
   const lines = kind === "expense"
-    ? [["Date", "Category", "Item", "Nos", "Amount (INR)", "Mode of payment", "Monthly", "Description", "Recorded by"],
-      ...(rows as ExpenseRow[]).map((r) => [r.expense_date, CATEGORY_LABELS[r.category], r.item, r.quantity, Number(r.amount).toFixed(2), mode(r.payment_mode),
+    ? [["Date", "Company", "Category", "Item", "Nos", "Amount (INR)", "Mode of payment", "Monthly", "Description", "Recorded by"],
+      ...(rows as ExpenseRow[]).map((r) => [r.expense_date, r.company?.name, r.category, r.item, r.quantity, Number(r.amount).toFixed(2), mode(r.payment_mode),
         r.recurrence?.active ? "Yes" : "", r.description, r.author?.display_name])]
-    : [["Date", "Contributor", "Item", "Nos", "Amount (INR)", "Mode of payment", "Description", "Recorded by"],
-      ...(rows as CapitalRow[]).map((r) => [r.entry_date, r.contributor, r.item, r.quantity, Number(r.amount).toFixed(2), mode(r.payment_mode),
+    : [["Date", "Company", "Contributor", "Item", "Nos", "Amount (INR)", "Mode of payment", "Description", "Recorded by"],
+      ...(rows as CapitalRow[]).map((r) => [r.entry_date, r.company?.name, r.contributor, r.item, r.quantity, Number(r.amount).toFixed(2), mode(r.payment_mode),
         r.description, r.author?.display_name])];
   return lines.map((l) => l.map(cell).join(",")).join("\r\n");
 }

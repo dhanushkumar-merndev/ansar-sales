@@ -5,6 +5,6 @@ import { requireProfile } from "@/lib/auth";
 export const metadata: Metadata = { title: "Reports" };
 
 export default async function ReportsPage() {
-  await requireProfile();
+  await requireProfile(["admin", "sales", "account"]);
   return <ReportsView />;
 }

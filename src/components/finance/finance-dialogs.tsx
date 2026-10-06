@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { CATEGORY_LABELS, EXPENSE_CATEGORIES, PAYMENT_MODE_LABELS, PAYMENT_MODES, type ExpenseCategory, type PaymentMode } from "@/lib/constants";
+import { CategoryCombobox, CompanySelect, useFinanceBooks, type CategoryValue } from "@/components/finance/finance-books";
+import { categoryLabel, PAYMENT_MODE_LABELS, PAYMENT_MODES, type PaymentMode } from "@/lib/constants";
 import { formatINR } from "@/lib/format";
 import { fetchFinanceHistory, fetchItemSuggestions, type CapitalRow, type ExpenseRow } from "@/lib/queries";
 import { formatCalendarDate, formatDateTime, istToday } from "@/lib/time";
@@ -30,7 +31,7 @@ const emptyPurchase = (row?: { payment_mode: PaymentMode | null; item: string | 
 
 /** Mode of payment, then an optional item (with suggestions from earlier entries) and its quantity in nos. */
 function PurchaseFields({ prefix, kind, category, value, onChange, errors }: {
-  prefix: string; kind: "expense" | "capital"; category: ExpenseCategory | null; value: Purchase;
+  prefix: string; kind: "expense" | "capital"; category: string | null; value: Purchase;
   onChange: (v: Purchase) => void; errors: Record<string, string[]>;
 }) {
   const listId = useId();
@@ -71,7 +72,9 @@ export function ExpenseDialog({ open, onOpenChange, expense, defaultDate, onDone
   open: boolean; onOpenChange: (o: boolean) => void; expense?: ExpenseRow | null; defaultDate?: string; onDone: () => void;
 }) {
   const [date, setDate] = useState("");
-  const [category, setCategory] = useState<ExpenseCategory>("miscellaneous");
+  const books = useFinanceBooks().data;
+  const [category, setCategory] = useState<CategoryValue>(null);
+  const [companyId, setCompanyId] = useState("");
   const [amount, setAmount] = useState("");
   const [purchase, setPurchase] = useState<Purchase>(emptyPurchase());
   const [repeat, setRepeat] = useState(false);
@@ -85,7 +88,8 @@ export function ExpenseDialog({ open, onOpenChange, expense, defaultDate, onDone
     setOpenedFor({ open, expense });
     if (open) {
       setDate(expense?.expense_date ?? defaultDate ?? istToday());
-      setCategory(expense?.category ?? "miscellaneous");
+      setCategory(expense ? { id: expense.category_id, label: expense.category } : null);
+      setCompanyId(expense?.company?.id ?? "");
       setAmount(expense ? amountText(Number(expense.amount)) : "");
       setPurchase(emptyPurchase(expense));
       setRepeat(!!expense?.recurrence?.active);
@@ -97,7 +101,10 @@ export function ExpenseDialog({ open, onOpenChange, expense, defaultDate, onDone
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     start(async () => {
-      const r = await saveExpense({ id: expense?.id, expenseDate: date, category, amount: amount.replace(/,/g, ""), ...purchasePayload(purchase), description, repeatMonthly: repeat });
+      const r = await saveExpense({
+        id: expense?.id, expenseDate: date, companyId: companyId || undefined,
+        category: category ? { id: category.id, newName: category.newName } : {}, amount: amount.replace(/,/g, ""), ...purchasePayload(purchase), description, repeatMonthly: repeat,
+      });
       if (!r.ok) {
         setErrors(r.fieldErrors ?? {});
         toast.error(r.error);
@@ -124,19 +131,24 @@ export function ExpenseDialog({ open, onOpenChange, expense, defaultDate, onDone
                 <FieldLabel htmlFor="exp-date">Date</FieldLabel>
                 <DateField id="exp-date" value={date} onChange={setDate} invalid={!!errors.expenseDate} />
               </Field>
-              <Field>
+              <Field data-invalid={!!errors.category}>
                 <FieldLabel htmlFor="exp-cat">Category</FieldLabel>
-                <Select value={category} onValueChange={(v) => setCategory(v as ExpenseCategory)}>
-                  <SelectTrigger id="exp-cat" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>{EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{CATEGORY_LABELS[c]}</SelectItem>)}</SelectContent>
-                </Select>
+                <CategoryCombobox id="exp-cat" value={category} onChange={setCategory} categories={books?.categories ?? []}
+                  allowCreate={books?.canEdit ?? false} invalid={!!errors.category} />
               </Field>
             </div>
+            {books?.merged ? (
+              <Field>
+                <FieldLabel htmlFor="exp-company">Company</FieldLabel>
+                <CompanySelect id="exp-company" value={companyId || books.currentCompanyId} onChange={setCompanyId} companies={books.companies} />
+                <FieldDescription>These books are shared. Pick the company this expense is for.</FieldDescription>
+              </Field>
+            ) : null}
             <Field data-invalid={!!errors.amount}>
               <FieldLabel htmlFor="exp-amount">Amount (₹)</FieldLabel>
               <Input id="exp-amount" inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={!!errors.amount} />
             </Field>
-            <PurchaseFields prefix="exp" kind="expense" category={category} value={purchase} onChange={setPurchase} errors={errors} />
+            <PurchaseFields prefix="exp" kind="expense" category={category?.id ?? null} value={purchase} onChange={setPurchase} errors={errors} />
             <Field>
               <FieldLabel htmlFor="exp-desc">Description <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
               <Textarea id="exp-desc" rows={2} maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -171,6 +183,8 @@ export function CapitalDialog({ open, onOpenChange, entry, defaultDate, onDone }
   const [amount, setAmount] = useState("");
   const [purchase, setPurchase] = useState<Purchase>(emptyPurchase());
   const [description, setDescription] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const books = useFinanceBooks().data;
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [pending, start] = useTransition();
 
@@ -183,6 +197,7 @@ export function CapitalDialog({ open, onOpenChange, entry, defaultDate, onDone }
       setAmount(entry ? amountText(Number(entry.amount)) : "");
       setPurchase(emptyPurchase(entry));
       setDescription(entry?.description ?? "");
+      setCompanyId(entry?.company?.id ?? "");
       setErrors({});
     }
   }
@@ -190,7 +205,7 @@ export function CapitalDialog({ open, onOpenChange, entry, defaultDate, onDone }
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     start(async () => {
-      const r = await saveCapital({ id: entry?.id, entryDate: date, contributor, amount: amount.replace(/,/g, ""), ...purchasePayload(purchase), description });
+      const r = await saveCapital({ id: entry?.id, entryDate: date, companyId: companyId || undefined, contributor, amount: amount.replace(/,/g, ""), ...purchasePayload(purchase), description });
       if (!r.ok) {
         setErrors(r.fieldErrors ?? {});
         toast.error(r.error);
@@ -225,6 +240,13 @@ export function CapitalDialog({ open, onOpenChange, entry, defaultDate, onDone }
               <FieldLabel htmlFor="cap-from">Contributor / source</FieldLabel>
               <Input id="cap-from" maxLength={120} value={contributor} onChange={(e) => setContributor(e.target.value)} aria-invalid={!!errors.contributor} />
             </Field>
+            {books?.merged ? (
+              <Field>
+                <FieldLabel htmlFor="cap-company">Company</FieldLabel>
+                <CompanySelect id="cap-company" value={companyId || books.currentCompanyId} onChange={setCompanyId} companies={books.companies} />
+                <FieldDescription>These books are shared. Pick the company this capital is for.</FieldDescription>
+              </Field>
+            ) : null}
             <PurchaseFields prefix="cap" kind="capital" category={null} value={purchase} onChange={setPurchase} errors={errors} />
             <Field>
               <FieldLabel htmlFor="cap-desc">Description <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
@@ -241,8 +263,8 @@ export function CapitalDialog({ open, onOpenChange, entry, defaultDate, onDone }
   );
 }
 
-const FIELD_LABELS: Record<string, string> = { entry_date: "Date", expense_date: "Date", contributor: "Contributor", category: "Category", amount: "Amount", payment_mode: "Mode of payment", item: "Item", quantity: "Nos", description: "Description" };
-const show = (k: string, v: unknown) => (v === null || v === undefined || v === "" ? "—" : k === "amount" ? formatINR(v as number) : k.endsWith("_date") ? formatCalendarDate(String(v)) : k === "category" ? CATEGORY_LABELS[v as ExpenseCategory] ?? String(v) : k === "payment_mode" ? PAYMENT_MODE_LABELS[v as PaymentMode] ?? String(v) : String(v));
+const FIELD_LABELS: Record<string, string> = { company: "Company", entry_date: "Date", expense_date: "Date", contributor: "Contributor", category: "Category", amount: "Amount", payment_mode: "Mode of payment", item: "Item", quantity: "Nos", description: "Description" };
+const show = (k: string, v: unknown) => (v === null || v === undefined || v === "" ? "—" : k === "amount" ? formatINR(v as number) : k.endsWith("_date") ? formatCalendarDate(String(v)) : k === "category" ? categoryLabel(String(v)) : k === "payment_mode" ? PAYMENT_MODE_LABELS[v as PaymentMode] ?? String(v) : String(v));
 
 export type FinanceEntity = { kind: "expense" | "capital"; id: string };
 

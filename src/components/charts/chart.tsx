@@ -13,6 +13,15 @@ export const EChart = dynamic(() => import("./echart-core"), {
 
 // Validated categorical order (dataviz reference palette, dark steps; all six checks pass on #212121). Assigned by entity, never cycled.
 export const SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"] as const;
+const EXTRA = ["#8b5cf6", "#0ea5e9", "#f97316", "#64748b", "#14b8a6", "#e11d48"] as const;
+const NAMED_SERIES = [...SERIES, ...EXTRA];
+
+/** A stable colour for a named series (e.g. an expense category): the same name always gets the same colour. */
+export function seriesColor(name: string) {
+  let h = 0;
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return NAMED_SERIES[h % NAMED_SERIES.length];
+}
 
 const PALETTE = {
   light: { surface: "#ffffff", text: "#0d0d0d", muted: "#5d5d5d", grid: "#ececec", border: "#e5e5e5", pointer: "#8f8f8f", shade: "rgba(0,0,0,0.04)", shadow: "rgba(0,0,0,.08)" },

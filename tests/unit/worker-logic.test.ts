@@ -103,6 +103,14 @@ describe("role notifications", () => {
     expect(fin).toContain("• Rent: ₹25,000.00");
   });
 
+  it("names the company and opens the link inside it for the super admin", () => {
+    const m = buildNotification(note("expense_added", {
+      date: "2026-10-01", category: "rent", amount: 100, actor: "Acc", company: "Star Gardens", company_id: "C1",
+    }), APP);
+    expect(m.text.split("\n").slice(0, 2)).toEqual(["💸 Expense added", "🏢 Star Gardens"]);
+    expect((m.buttons[0][0] as { url: string }).url).toBe(`${APP}/switch?company=C1&next=%2Ffinance`);
+  });
+
   it("formatAgo", () => {
     const now = new Date("2026-10-05T12:00:00Z");
     expect(formatAgo("2026-10-05T11:55:00Z", now)).toBe("5 min");

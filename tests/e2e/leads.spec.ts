@@ -1,6 +1,6 @@
 import type { Page, Request } from "@playwright/test";
 import { readRun, storageState } from "./support/accounts";
-import { createLead, phone, tag } from "./support/data";
+import { createLead, phone, stageId, tag } from "./support/data";
 import { expect, test } from "./support/fixtures";
 import { serviceClient, userClient } from "./support/supabase";
 import { createNiche, dialog, selectOption, toast } from "./support/ui";
@@ -60,7 +60,7 @@ test.describe("Leads", () => {
       .select("name, phone, phone_normalized, email, status, owner_id, created_by, niche:niches!leads_niche_id_fkey(name)")
       .eq("name", `${t} Ravi`)
       .single();
-    expect(lead).toMatchObject({ name: `${t} Ravi`, email: null, status: "new", owner_id: run.ids.salesA, created_by: run.ids.salesA, phone_normalized: `+91${local}` });
+    expect(lead).toMatchObject({ name: `${t} Ravi`, email: null, status: "open", owner_id: run.ids.salesA, created_by: run.ids.salesA, phone_normalized: `+91${local}` });
     expect(lead!.phone).toMatch(/^\+91 /);
     expect((lead as unknown as { niche: { name: string } }).niche.name).toBe(`${t} Gyms`);
 
@@ -141,7 +141,7 @@ test.describe("Leads", () => {
     await expect(page.getByText("No leads match")).toBeVisible();
   });
 
-  test("LEAD-12 status filter is applied server-side and kept in the URL", async ({ page }) => {
+  test("LEAD-12 stage filter is applied server-side and kept in the URL", async ({ page }) => {
     const t = tag();
     const a = userClient("salesA");
     await createLead(a, { name: `${t} Open` });
@@ -149,8 +149,8 @@ test.describe("Leads", () => {
     await page.goto(`/leads?q=${encodeURIComponent(t)}`);
     await expect(page.getByRole("link", { name: `${t} Open` })).toBeVisible();
 
-    await selectOption(page, page.getByRole("combobox", { name: "Status" }), "Won");
-    await expect(page).toHaveURL(/status=won/);
+    await selectOption(page, page.getByRole("combobox", { name: "Stage" }), "Won");
+    await expect(page).toHaveURL(new RegExp(`stage=${await stageId(a, "won")}`));
     await expect(page.getByRole("link", { name: `${t} Closed` })).toBeVisible();
     await expect(page.getByRole("link", { name: `${t} Open` })).toHaveCount(0);
 
@@ -190,12 +190,12 @@ test.describe("Leads", () => {
 
   test("LEAD-14 tampered URL parameters fall back to safe, bounded values", async ({ page }) => {
     const seen = listRequests(page);
-    await page.goto("/leads?pageSize=1000&page=-5&sort=evil;drop&dir=sideways&status=bogus&owner=me");
+    await page.goto("/leads?pageSize=1000&page=-5&sort=evil;drop&dir=sideways&stage=bogus&owner=me");
     await expect(page.getByRole("heading", { name: "Leads", level: 1 })).toBeVisible();
     await expect.poll(() => seen.length).toBeGreaterThan(0);
     const b = body(seen.at(-1)!);
     expect(b).toMatchObject({ p_limit: 20, p_offset: 0, p_sort: "created_at", p_dir: "desc" });
-    expect(b.p_statuses).toBeUndefined();
+    expect(b.p_stage_ids).toBeUndefined();
     expect(b.p_owner_id).toBeUndefined();
   });
 

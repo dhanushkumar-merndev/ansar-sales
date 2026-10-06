@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
-import { SERIES } from "@/components/charts/chart";
+import { seriesColor } from "@/components/charts/chart";
 import { pastPresets, RangePicker, type DayRange } from "@/components/common/range-picker";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
@@ -15,18 +15,21 @@ import { useProfile } from "@/components/providers/profile-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { CATEGORY_LABELS, LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/constants";
+import { categoryLabel } from "@/lib/constants";
 import { formatCount, formatINR, formatINRCompact } from "@/lib/format";
 import { fetchDashboard, fetchFollowUps } from "@/lib/queries";
+import { stageHex } from "@/lib/stages";
 import { addDays, formatCalendarDate, formatDayLabel, formatMonth, istToday } from "@/lib/time";
 
+/** Leads per pipeline stage, in pipeline order (only stages that have leads). */
+type StageCount = { id: string; name: string; kind: string; color: string; count: number };
 type Cards = { active_leads: number; won_leads: number; lost_leads: number; today_pending: number; overdue: number };
 type Range = { from: string; to: string; days: number };
 type AdminData = {
-  range: Range; cards: Cards; trend: { date: string; count: number }[]; stages: { status: LeadStatus; count: number }[];
+  range: Range; cards: Cards; trend: { date: string; count: number }[]; stages: StageCount[];
   salespeople: { id: string; name: string; active: number; won: number; lost: number }[]; niches: { name: string; count: number }[];
 };
-type SalesData = { range: Range; cards: Cards; stages: { status: LeadStatus; count: number }[]; activity: { date: string; count: number }[] };
+type SalesData = { range: Range; cards: Cards; stages: StageCount[]; activity: { date: string; count: number }[] };
 
 const rangeLabel = (r?: Range) => (r ? `${formatCalendarDate(r.from)} – ${formatCalendarDate(r.to)} (IST)` : "");
 const winRate = (c?: Cards) => {
@@ -40,9 +43,9 @@ function useDashRange() {
   return useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
 }
 
-function stageItems(stages: { status: LeadStatus; count: number }[]) {
-  // Color follows the status (fixed slot per enum position), never its rank.
-  return LEAD_STATUSES.map((s, i) => ({ name: STATUS_LABELS[s], value: stages.find((x) => x.status === s)?.count ?? 0, color: SERIES[i] }));
+function stageItems(stages: StageCount[]) {
+  // Colour follows the stage's own colour, never its rank.
+  return stages.map((s) => ({ name: s.name, value: s.count, color: stageHex(s.color) }));
 }
 
 export function AdminDashboard() {
@@ -211,9 +214,7 @@ export function FinanceDashboard() {
                   <Donut
                     totalLabel="total"
                     format={formatINRCompact}
-                    items={(Object.keys(CATEGORY_LABELS) as (keyof typeof CATEGORY_LABELS)[]).map((cat, i) => ({
-                      name: CATEGORY_LABELS[cat], value: Number(data.categories.find((x) => x.category === cat)?.total ?? 0), color: SERIES[i],
-                    }))}
+                    items={data.categories.map((x) => ({ name: categoryLabel(x.category), value: Number(x.total), color: seriesColor(x.category) }))}
                   />
                 ) : <ListSkeleton rows={4} />}
               </ChartCard>

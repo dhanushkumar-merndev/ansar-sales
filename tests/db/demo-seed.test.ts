@@ -21,7 +21,7 @@ describe("demo seed", () => {
     const c = await one<Record<string, number>>(db, `select
       (select count(*)::int from public.leads) as leads, (select count(*)::int from public.follow_ups) as follow_ups,
       (select count(*)::int from public.expenses) as expenses, (select count(*)::int from public.capital_entries) as capital,
-      (select count(*)::int from public.reminder_deliveries) as reminders, (select count(distinct status)::int from public.leads) as statuses,
+      (select count(*)::int from public.reminder_deliveries) as reminders, (select count(distinct stage_id)::int from public.leads) as statuses,
       (select count(distinct state)::int from public.follow_ups) as states`);
     expect(c.leads).toBe(600);
     expect(c.follow_ups).toBe(250);
@@ -31,9 +31,11 @@ describe("demo seed", () => {
     expect(c.states).toBe(3);
     // Pending follow-ups always belong to the lead's current owner.
     expect((await one<{ n: number }>(db, "select count(*)::int as n from public.follow_ups f join public.leads l on l.id = f.lead_id where f.state = 'pending' and f.assignee_id <> l.owner_id")).n).toBe(0);
-    // Status history is consistent with the current status.
-    expect((await one<{ n: number }>(db, `select count(*)::int as n from public.leads l where l.status <> 'new' and l.status::text <> (
-      select a.meta ->> 'to' from public.lead_activities a where a.lead_id = l.id and a.type = 'status_changed' order by a.created_at desc limit 1)`)).n).toBe(0);
+    // Stage history is consistent with the current stage, and status is the stage's kind.
+    expect((await one<{ n: number }>(db, `select count(*)::int as n from public.leads l join public.pipeline_stages s on s.id = l.stage_id
+      where s.name <> 'New' and l.stage_id::text <> (
+      select a.meta ->> 'to_stage_id' from public.lead_activities a where a.lead_id = l.id and a.type = 'status_changed' order by a.created_at desc limit 1)`)).n).toBe(0);
+    expect((await one<{ n: number }>(db, "select count(*)::int as n from public.leads l join public.pipeline_stages s on s.id = l.stage_id where l.status <> s.kind")).n).toBe(0);
     await expect(db.exec(seed("demo.sql"))).rejects.toThrow(/already present/);
 
     const year = await asUser(db, admin, async (tx) => (await one<{ r: { cards: Record<string, number> } }>(tx,

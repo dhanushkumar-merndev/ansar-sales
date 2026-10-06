@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { ArrowRight, TrendingDown, TrendingUp } from "lucide-react";
-import { SERIES } from "@/components/charts/chart";
+import { seriesColor } from "@/components/charts/chart";
 import { Donut } from "@/components/dashboard/widgets";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CATEGORY_LABELS, EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatCount, formatINR } from "@/lib/format";
 import type { YearOverview } from "@/lib/queries";
 import { formatMonthLong } from "@/lib/time";
@@ -30,8 +29,8 @@ export function MonthDetailsDialog({ month: m, previousExpense, delta, open, onO
   const expense = Number(m.expense);
   const capital = Number(m.capital);
   const net = capital - expense;
-  const categories = EXPENSE_CATEGORIES
-    .map((c, i) => ({ name: CATEGORY_LABELS[c], value: Number(m.categories[c] ?? 0), color: SERIES[i] }))
+  const categories = Object.entries(m.categories)
+    .map(([c, v]) => ({ name: c, value: Number(v ?? 0), color: seriesColor(c) }))
     .filter((c) => c.value > 0)
     .sort((a, b) => b.value - a.value);
   const top = categories[0];

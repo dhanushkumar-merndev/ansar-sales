@@ -2,7 +2,7 @@
 
 // Read queries run in the browser as the signed-in user: RLS decides what is returned.
 // Every list is server-filtered, server-paginated and abortable.
-import type { ExpenseCategory, LeadStatus, PaymentMode, ReminderState } from "@/lib/constants";
+import type { ExpenseCategory, LeadOutcome, PaymentMode, ReminderState } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
@@ -26,7 +26,8 @@ function unwrapStarredPage<T>(data: Json | null, page: number, pageSize: number)
 }
 
 export type LeadQuery = {
-  q: string; status: LeadStatus | null; niche: string | null; owner: string | null;
+  /** Pipeline stage id. */
+  q: string; stage: string | null; niche: string | null; owner: string | null;
   from: string | null; to: string | null; overdue: boolean; archived: boolean; starred: boolean;
   sort: string; dir: "asc" | "desc"; page: number; pageSize: number;
 };
@@ -35,7 +36,7 @@ export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<Sta
   const { data, error } = await sb()
     .rpc("list_leads", {
       p_search: cleanSearch(p.q) || undefined,
-      p_statuses: p.status ? [p.status] : undefined,
+      p_stage_ids: p.stage ? [p.stage] : undefined,
       p_niche_id: p.niche ?? undefined,
       p_owner_id: p.owner ?? undefined,
       p_created_from: p.from ? istDayStartUtc(p.from) : undefined,
@@ -78,7 +79,7 @@ export async function fetchLead(id: string, signal: AbortSignal) {
   const { data, error } = await sb()
     .from("leads")
     .select(
-      "id, name, phone, phone_normalized, email, status, version, created_at, updated_at, archived_at, owner_id, " +
+      "id, name, phone, phone_normalized, email, status, stage_id, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
         "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
         "stars:lead_stars(pinned_at)", // RLS returns only the signed-in user's own star
     )
@@ -90,7 +91,8 @@ export async function fetchLead(id: string, signal: AbortSignal) {
 }
 
 export type LeadDetail = {
-  id: string; name: string; phone: string; phone_normalized: string; email: string | null; status: LeadStatus;
+  id: string; name: string; phone: string; phone_normalized: string; email: string | null; status: LeadOutcome; stage_id: string;
+  source: "manual" | "facebook"; source_meta: { form_name?: string; ad_name?: string; campaign_name?: string };
   version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
   niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
   stars: { pinned_at: string | null }[];
@@ -183,20 +185,22 @@ export async function fetchUsers(p: { q: string; role: string | null; page: numb
 }
 
 export type ExpenseRow = {
-  id: string; expense_date: string; category: ExpenseCategory; amount: number; description: string | null;
+  id: string; expense_date: string; category: ExpenseCategory; category_id: string; amount: number; description: string | null;
+  company: { id: string; name: string } | null;
   payment_mode: PaymentMode | null; item: string | null; quantity: number | null;
   recurrence: { active: boolean; next_date: string } | null;
   archived_at: string | null; updated_at: string; author: { display_name: string } | null;
 };
 export type CapitalRow = {
-  id: string; entry_date: string; contributor: string; amount: number; payment_mode: PaymentMode | null; item: string | null; quantity: number | null; description: string | null;
+  id: string; entry_date: string; contributor: string; company: { id: string; name: string } | null; amount: number; payment_mode: PaymentMode | null; item: string | null; quantity: number | null; description: string | null;
   archived_at: string | null; updated_at: string; author: { display_name: string } | null;
 };
 
 export type FinanceKind = "expense" | "capital";
 export type FinanceSort = "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
 export type FinanceEntriesQuery = {
-  kind: FinanceKind; from: string; to: string; q: string; category: ExpenseCategory | null; mode: PaymentMode | "unspecified" | null;
+  /** category: a category id; company: a company id of the books (merged books only). */
+  kind: FinanceKind; from: string; to: string; q: string; category: string | null; company: string | null; mode: PaymentMode | "unspecified" | null;
   recurring: boolean; archived: boolean; sort: FinanceSort; page: number; pageSize: number;
 };
 
@@ -209,7 +213,8 @@ export async function fetchFinanceEntries<T extends ExpenseRow | CapitalRow>(p: 
       p_from: p.from,
       p_to: p.to,
       p_search: cleanSearch(p.q) || undefined,
-      p_category: p.kind === "expense" ? p.category ?? undefined : undefined,
+      p_category_id: p.kind === "expense" ? p.category ?? undefined : undefined,
+      p_company_id: p.company ?? undefined,
       p_mode: p.mode ?? undefined,
       p_recurring: p.kind === "expense" && p.recurring,
       p_archived: p.archived,
@@ -225,7 +230,7 @@ export async function fetchFinanceEntries<T extends ExpenseRow | CapitalRow>(p: 
 
 export type YearOverview = {
   year: number;
-  months: { month: string; expense: number; expense_entries: number; capital: number; capital_entries: number; categories: Partial<Record<ExpenseCategory, number>> }[];
+  months: { month: string; expense: number; expense_entries: number; capital: number; capital_entries: number; categories: Record<ExpenseCategory, number> }[];
   totals: { expense: number; expense_entries: number; capital: number; capital_entries: number };
   previous_december: { expense: number; capital: number };
   years: number[];
@@ -313,10 +318,10 @@ export async function fetchReport<T>(fn: "report_leads" | "report_finance", from
   return data as unknown as T;
 }
 
-/** Item names used before (in this expense category), newest first and de-duplicated, for the form's suggestions. */
-export async function fetchItemSuggestions(kind: "expense" | "capital", category: ExpenseCategory | null, signal: AbortSignal) {
+/** Item names used before (in this expense category, by id), newest first and de-duplicated, for the form's suggestions. */
+export async function fetchItemSuggestions(kind: "expense" | "capital", categoryId: string | null, signal: AbortSignal) {
   const q = kind === "expense"
-    ? (category ? sb().from("expenses").select("item").eq("category", category) : sb().from("expenses").select("item"))
+    ? (categoryId ? sb().from("expenses").select("item").eq("category_id", categoryId) : sb().from("expenses").select("item"))
     : sb().from("capital_entries").select("item");
   const { data, error } = await q.not("item", "is", null).is("archived_at", null)
     .order("updated_at", { ascending: false }).limit(100).abortSignal(signal);

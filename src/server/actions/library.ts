@@ -96,3 +96,36 @@ export async function setLibraryThumbnail(input: unknown) {
     return { ok: true, data: undefined };
   });
 }
+
+/** Admin rearranges one page of a folder's items; the database hands those items their existing slots in the new order. */
+export async function reorderLibraryItems(input: unknown) {
+  const schema = z.object({
+    parentId: z.uuid().nullable(),
+    items: z.array(z.object({ kind: z.enum(["folder", "file"]), id: z.uuid() })).min(1).max(100),
+  });
+  return runAction(["admin"], schema, input, async (d, { supabase }) => {
+    // p_parent_id is null for the top level; the generated type doesn't model the null default.
+    const { error } = await supabase.rpc("reorder_library_items", { p_parent_id: d.parentId as string, p_items: d.items });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Admin moves folders and files into another folder (null = top level, folders only). */
+export async function moveLibraryItems(input: unknown) {
+  const schema = z.object({
+    targetFolderId: z.uuid().nullable(),
+    items: z.array(z.object({ kind: z.enum(["folder", "file"]), id: z.uuid() })).min(1).max(100),
+  });
+  return runAction(["admin"], schema, input, async (d, { supabase }) => {
+    // p_target_folder_id is null for the top level; the generated type doesn't model it.
+    const { data, error } = await supabase.rpc("move_library_items", { p_target_folder_id: d.targetFolderId as string, p_items: d.items });
+    if (error) {
+      if (error.code === "23505" && /library_folders_active_name_key/.test(error.message ?? "")) {
+        return { ok: false, error: "A folder with that name already exists there.", code: "duplicate_folder" };
+      }
+      return dbError(error);
+    }
+    return { ok: true, data: { moved: data ?? 0 } };
+  });
+}

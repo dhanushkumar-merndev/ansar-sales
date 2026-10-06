@@ -11,7 +11,7 @@ import { runAction } from "@/server/action-utils";
  * then its records are purged. Retrying after a partial failure is safe.
  */
 export async function deleteArchivedFile(input: unknown) {
-  return runAction(["admin"], z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
+  return runAction("super_admin", z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
     const { data: file, error } = await supabase.from("library_files").select("id, storage_path, thumb_path, archived_at, size_bytes").eq("id", d.id).maybeSingle();
     if (error) return dbError(error);
     if (!file) return dbError({ message: "not_found" });
@@ -27,7 +27,7 @@ export async function deleteArchivedFile(input: unknown) {
 
 /** Removes uploads that never got registered (older than an hour), at most 100 per run. */
 export async function cleanUnregisteredUploads(input: unknown) {
-  return runAction(["admin"], z.object({}).strict(), input ?? {}, async (_d, { supabase }) => {
+  return runAction("super_admin", z.object({}).strict(), input ?? {}, async (_d, { supabase }) => {
     const { data, error } = await supabase.rpc("admin_unregistered_uploads", { p_limit: 100 });
     if (error) return dbError(error);
     const items = (data ?? []) as { path: string; bytes: number }[];

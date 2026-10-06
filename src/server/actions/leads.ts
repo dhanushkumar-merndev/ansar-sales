@@ -2,9 +2,8 @@
 
 import { updateTag } from "next/cache";
 import { z } from "zod";
-import { LEAD_STATUSES } from "@/lib/constants";
 import { dbError } from "@/lib/errors";
-import { NICHES_TAG } from "@/lib/niches-cache";
+import { nichesTag } from "@/lib/niches-cache";
 import { runAction } from "@/server/action-utils";
 import { leadCreateSchema, leadUpdateSchema, noteCorrectionSchema, noteSchema } from "@/lib/validation";
 
@@ -19,7 +18,7 @@ export async function createLead(input: unknown) {
       p_email: d.email,
       p_niche_id: d.niche.id,
       p_new_niche: d.niche.id ? undefined : d.niche.newName,
-      p_status: d.status,
+      p_stage_id: d.stageId,
       // Ignored by the database for Sales; validated as an active sales user for Admin.
       p_owner_id: profile.role === "admin" ? d.ownerId : undefined,
       p_note: d.note,
@@ -28,13 +27,13 @@ export async function createLead(input: unknown) {
       p_allow_duplicate: d.allowDuplicate,
     });
     if (error) return dbError(error);
-    if (!d.niche.id) updateTag(NICHES_TAG);
+    if (!d.niche.id) updateTag(nichesTag(profile.company.id));
     return { ok: true, data: { id: data } };
   });
 }
 
 export async function updateLead(input: unknown) {
-  return runAction([...LEAD_ROLES], leadUpdateSchema, input, async (d, { supabase }) => {
+  return runAction([...LEAD_ROLES], leadUpdateSchema, input, async (d, { supabase, profile }) => {
     const { data, error } = await supabase.rpc("update_lead", {
       p_id: d.id,
       p_version: d.version,
@@ -47,7 +46,7 @@ export async function updateLead(input: unknown) {
       p_allow_duplicate: d.allowDuplicate,
     });
     if (error) return dbError(error);
-    if (!d.niche.id) updateTag(NICHES_TAG);
+    if (!d.niche.id) updateTag(nichesTag(profile.company.id));
     return { ok: true, data: { version: data } };
   });
 }
@@ -64,9 +63,10 @@ export async function checkDuplicatePhone(input: unknown) {
   });
 }
 
-export async function setLeadStatus(input: unknown) {
-  return runAction([...LEAD_ROLES], z.object({ id: z.uuid(), status: z.enum(LEAD_STATUSES) }), input, async (d, { supabase }) => {
-    const { data, error } = await supabase.from("leads").update({ status: d.status }).eq("id", d.id).select("id").maybeSingle();
+/** Moves a lead to another stage of its company's pipeline (the database checks the stage belongs to it). */
+export async function setLeadStage(input: unknown) {
+  return runAction([...LEAD_ROLES], z.object({ id: z.uuid(), stageId: z.uuid() }), input, async (d, { supabase }) => {
+    const { data, error } = await supabase.from("leads").update({ stage_id: d.stageId }).eq("id", d.id).select("id").maybeSingle();
     if (error) return dbError(error);
     if (!data) return dbError({ message: "not_found" });
     return { ok: true, data: undefined };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { SERIES } from "@/components/charts/chart";
+import { SERIES, seriesColor } from "@/components/charts/chart";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { Bars, ChartCard, Donut, Funnel, GroupedBars, MultiLine, ScrollTable, StatCard, WeekHourHeatmap } from "@/components/dashboard/widgets";
@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
-import { CATEGORY_LABELS, EXPENSE_CATEGORIES, LEAD_STATUSES, PAYMENT_MODE_LABELS, STATUS_LABELS, type ExpenseCategory, type LeadStatus, type PaymentMode } from "@/lib/constants";
+import { categoryLabel, PAYMENT_MODE_LABELS, type ExpenseCategory, type PaymentMode } from "@/lib/constants";
+import { STAGE_HEX, stageHex } from "@/lib/stages";
 import { formatCount, formatINR, formatINRCompact } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { fetchReport } from "@/lib/queries";
@@ -28,8 +29,9 @@ type LeadReport = {
   };
   trend: { period: string; created: number; won: number; lost: number }[];
   activity_trend: { period: string; notes: number; calls: number; follow_ups: number }[];
-  cohort_status: { status: LeadStatus; count: number }[];
-  funnel: { status: LeadStatus; count: number }[];
+  /** Pipeline stages of the company, in order. */
+  cohort_status: { id: string; name: string; color: string; count: number }[];
+  funnel: { id: string; name: string; color: string; count: number }[];
   niches: { name: string; created: number; won: number }[];
   activity_types: { type: string; count: number }[];
   heatmap: { dow: number; hour: number; count: number }[];
@@ -64,8 +66,6 @@ const ACTIVITY_LABELS: Record<string, string> = {
 };
 
 const BUCKET_TEXT: Record<Bucket, string> = { day: "per day", week: "per week (weeks start Monday)", month: "per month" };
-const STATUS_COLOR = (s: LeadStatus) => SERIES[LEAD_STATUSES.indexOf(s)];
-const CATEGORY_COLOR = (c: ExpenseCategory) => SERIES[EXPENSE_CATEGORIES.indexOf(c)];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const pct = (n: number, d: number) => (d === 0 ? "—" : `${Math.round((n / d) * 100)}%`);
 const num = Number;
@@ -134,7 +134,7 @@ function SalesReportView({ range }: { range: ReportRange }) {
         { name: "Overdue", value: o.overdue, color: SERIES[1] },
         { name: "Upcoming", value: o.upcoming, color: SERIES[0] },
       ],
-      cohort: LEAD_STATUSES.map((s) => ({ name: STATUS_LABELS[s], value: data.cohort_status.find((x) => x.status === s)?.count ?? 0, color: STATUS_COLOR(s) })),
+      cohort: data.cohort_status.map((s) => ({ name: s.name, value: s.count, color: stageHex(s.color) })),
       mix: data.activity_types.filter((t) => t.type !== "lead_created").map((t) => ({ name: ACTIVITY_LABELS[t.type] ?? t.type, value: t.count })),
     };
   }, [data, label]);
@@ -165,16 +165,16 @@ function SalesReportView({ range }: { range: ReportRange }) {
               categories={charts.periods}
               series={[
                 { name: "Created", values: data.trend.map((p) => p.created), color: SERIES[0] },
-                { name: "Won", values: data.trend.map((p) => p.won), color: STATUS_COLOR("won") },
-                { name: "Lost", values: data.trend.map((p) => p.lost), color: STATUS_COLOR("lost") },
+                { name: "Won", values: data.trend.map((p) => p.won), color: STAGE_HEX.emerald },
+                { name: "Lost", values: data.trend.map((p) => p.lost), color: STAGE_HEX.red },
               ]}
             />
           ) : <ListSkeleton rows={4} />}
         </ChartCard>
         <ChartCard title="Stage funnel" description="Leads created in this range by the furthest stage they reached">
-          {data ? <Funnel steps={data.funnel.map((f) => ({ name: STATUS_LABELS[f.status], value: f.count }))} /> : <ListSkeleton rows={4} />}
+          {data ? <Funnel steps={data.funnel.map((f) => ({ name: f.name, value: f.count }))} /> : <ListSkeleton rows={4} />}
         </ChartCard>
-        <ChartCard title="Where those leads are now" description="Current status of leads created in this range">
+        <ChartCard title="Where those leads are now" description="Current stage of leads created in this range">
           {charts ? <Donut items={charts.cohort} totalLabel="leads" /> : <ListSkeleton rows={4} />}
         </ChartCard>
         <ChartCard title="Activity" description={`Notes, calls and completed follow-ups, ${per}`}>
@@ -199,7 +199,7 @@ function SalesReportView({ range }: { range: ReportRange }) {
               categories={data.niches.map((n) => n.name)}
               series={[
                 { name: "Created", values: data.niches.map((n) => n.created), color: SERIES[0] },
-                { name: "Won", values: data.niches.map((n) => n.won), color: STATUS_COLOR("won") },
+                { name: "Won", values: data.niches.map((n) => n.won), color: STAGE_HEX.emerald },
               ]}
             />
           ) : <NoData />) : <ListSkeleton rows={4} />}
@@ -218,8 +218,8 @@ function SalesReportView({ range }: { range: ReportRange }) {
                   categories={data.salespeople.map((s) => s.name)}
                   series={[
                     { name: "Created", values: data.salespeople.map((s) => s.created), color: SERIES[0] },
-                    { name: "Won", values: data.salespeople.map((s) => s.won), color: STATUS_COLOR("won") },
-                    { name: "Lost", values: data.salespeople.map((s) => s.lost), color: STATUS_COLOR("lost") },
+                    { name: "Won", values: data.salespeople.map((s) => s.won), color: STAGE_HEX.emerald },
+                    { name: "Lost", values: data.salespeople.map((s) => s.lost), color: STAGE_HEX.red },
                     { name: "Follow-ups completed", values: data.salespeople.map((s) => s.follow_ups_completed), color: SERIES[2] },
                   ]}
                 />
@@ -268,9 +268,9 @@ function FinanceReportView({ range }: { range: ReportRange }) {
     return {
       periods,
       cumulative,
-      categories: EXPENSE_CATEGORIES.map((cat) => ({ name: CATEGORY_LABELS[cat], value: num(data.categories.find((x) => x.category === cat)?.total ?? 0), color: CATEGORY_COLOR(cat) })),
-      categoryTrend: EXPENSE_CATEGORIES.filter((cat) => data.categories.some((x) => x.category === cat)).map((cat) => ({
-        name: CATEGORY_LABELS[cat], color: CATEGORY_COLOR(cat),
+      categories: data.categories.map((x) => ({ name: categoryLabel(x.category), value: num(x.total), color: seriesColor(x.category) })),
+      categoryTrend: data.categories.map((x) => x.category).map((cat) => ({
+        name: categoryLabel(cat), color: seriesColor(cat),
         values: catPeriods.map((p) => num(data.category_trend.find((x) => x.period === p && x.category === cat)?.total ?? 0)),
       })),
     };
@@ -370,7 +370,7 @@ function FinanceReportView({ range }: { range: ReportRange }) {
                     <TableRow key={e.id}>
                       <TableCell>{formatCalendarDate(e.date)}</TableCell>
                       <TableCell>
-                        {CATEGORY_LABELS[e.category]}
+                        {categoryLabel(e.category)}
                         {e.item || e.description ? <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">{e.item ? `${e.item}${e.quantity ? ` × ${formatCount(e.quantity)} nos` : ""}` : e.description}</span> : null}
                       </TableCell>
                       <TableCell className="text-right">{formatINR(e.amount)}{e.payment_mode ? <span className="block text-xs text-muted-foreground">{PAYMENT_MODE_LABELS[e.payment_mode]}</span> : null}</TableCell>

@@ -7,6 +7,552 @@ export type Database = {
   __InternalSupabase: { PostgrestVersion: "13" }
   public: {
     Tables: {
+      ad_account_members: {
+        Row: {
+          ad_account_id: string
+          company_id: string
+          created_at: string
+        }
+        Insert: {
+          ad_account_id: string
+          company_id: string
+          created_at?: string
+        }
+        Update: {
+          ad_account_id?: string
+          company_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_account_members_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_account_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_accounts: {
+        Row: {
+          access_token_id: string | null
+          act_id: string
+          ads_client_id: string | null
+          app_id: string
+          app_secret_id: string | null
+          archived_at: string | null
+          backfilled_from: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          id: string
+          kind: string
+          last_checked_at: string | null
+          last_error: string | null
+          last_synced_at: string | null
+          name: string | null
+          next_sync_after: string | null
+          status: string
+          sync_paused: boolean
+          synced_through: string | null
+          timezone: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token_id?: string | null
+          act_id: string
+          ads_client_id?: string | null
+          app_id: string
+          app_secret_id?: string | null
+          archived_at?: string | null
+          backfilled_from?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          id?: string
+          kind: string
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_synced_at?: string | null
+          name?: string | null
+          next_sync_after?: string | null
+          status?: string
+          sync_paused?: boolean
+          synced_through?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token_id?: string | null
+          act_id?: string
+          ads_client_id?: string | null
+          app_id?: string
+          app_secret_id?: string | null
+          archived_at?: string | null
+          backfilled_from?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          id?: string
+          kind?: string
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_synced_at?: string | null
+          name?: string | null
+          next_sync_after?: string | null
+          status?: string
+          sync_paused?: boolean
+          synced_through?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_accounts_ads_client_id_fkey"
+            columns: ["ads_client_id"]
+            isOneToOne: true
+            referencedRelation: "ads_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_accounts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_ad_daily: {
+        Row: {
+          ad_account_id: string
+          ad_id: string
+          campaign_id: string
+          clicks: number
+          conversion_value: number
+          conversions: number
+          date: string
+          impressions: number
+          leads: number
+          link_clicks: number
+          reach: number
+          spend: number
+        }
+        Insert: {
+          ad_account_id: string
+          ad_id: string
+          campaign_id: string
+          clicks?: number
+          conversion_value?: number
+          conversions?: number
+          date: string
+          impressions?: number
+          leads?: number
+          link_clicks?: number
+          reach?: number
+          spend?: number
+        }
+        Update: {
+          ad_account_id?: string
+          ad_id?: string
+          campaign_id?: string
+          clicks?: number
+          conversion_value?: number
+          conversions?: number
+          date?: string
+          impressions?: number
+          leads?: number
+          link_clicks?: number
+          reach?: number
+          spend?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_ad_daily_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_ad_daily_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ad_ads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_ad_daily_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_ad_monthly: {
+        Row: {
+          ad_account_id: string
+          ad_id: string
+          campaign_id: string
+          clicks: number
+          conversion_value: number
+          conversions: number
+          impressions: number
+          leads: number
+          link_clicks: number
+          month: string
+          reach: number
+          spend: number
+        }
+        Insert: {
+          ad_account_id: string
+          ad_id: string
+          campaign_id: string
+          clicks?: number
+          conversion_value?: number
+          conversions?: number
+          impressions?: number
+          leads?: number
+          link_clicks?: number
+          month: string
+          reach?: number
+          spend?: number
+        }
+        Update: {
+          ad_account_id?: string
+          ad_id?: string
+          campaign_id?: string
+          clicks?: number
+          conversion_value?: number
+          conversions?: number
+          impressions?: number
+          leads?: number
+          link_clicks?: number
+          month?: string
+          reach?: number
+          spend?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_ad_monthly_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_ad_monthly_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ad_ads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_ad_monthly_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_ads: {
+        Row: {
+          ad_account_id: string
+          campaign_id: string
+          created_time: string | null
+          effective_status: string | null
+          first_seen_at: string
+          id: string
+          meta_id: string
+          name: string
+          preview_url: string | null
+          status: string | null
+          thumbnail_url: string | null
+          updated_at: string
+          updated_time: string | null
+        }
+        Insert: {
+          ad_account_id: string
+          campaign_id: string
+          created_time?: string | null
+          effective_status?: string | null
+          first_seen_at?: string
+          id?: string
+          meta_id: string
+          name: string
+          preview_url?: string | null
+          status?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          updated_time?: string | null
+        }
+        Update: {
+          ad_account_id?: string
+          campaign_id?: string
+          created_time?: string | null
+          effective_status?: string | null
+          first_seen_at?: string
+          id?: string
+          meta_id?: string
+          name?: string
+          preview_url?: string | null
+          status?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          updated_time?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_ads_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_ads_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_campaign_daily: {
+        Row: {
+          actions: Json | null
+          ad_account_id: string
+          campaign_id: string
+          clicks: number
+          conversion_value: number
+          conversions: number
+          date: string
+          impressions: number
+          leads: number
+          link_clicks: number
+          reach: number
+          spend: number
+          updated_at: string
+        }
+        Insert: {
+          actions?: Json | null
+          ad_account_id: string
+          campaign_id: string
+          clicks?: number
+          conversion_value?: number
+          conversions?: number
+          date: string
+          impressions?: number
+          leads?: number
+          link_clicks?: number
+          reach?: number
+          spend?: number
+          updated_at?: string
+        }
+        Update: {
+          actions?: Json | null
+          ad_account_id?: string
+          campaign_id?: string
+          clicks?: number
+          conversion_value?: number
+          conversions?: number
+          date?: string
+          impressions?: number
+          leads?: number
+          link_clicks?: number
+          reach?: number
+          spend?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_campaign_daily_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_campaign_daily_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_campaigns: {
+        Row: {
+          ad_account_id: string
+          category_id: string | null
+          created_time: string | null
+          daily_budget: number | null
+          effective_status: string | null
+          first_seen_at: string
+          id: string
+          lifetime_budget: number | null
+          meta_id: string
+          name: string
+          objective: string | null
+          start_time: string | null
+          status: string | null
+          stop_time: string | null
+          updated_at: string
+        }
+        Insert: {
+          ad_account_id: string
+          category_id?: string | null
+          created_time?: string | null
+          daily_budget?: number | null
+          effective_status?: string | null
+          first_seen_at?: string
+          id?: string
+          lifetime_budget?: number | null
+          meta_id: string
+          name: string
+          objective?: string | null
+          start_time?: string | null
+          status?: string | null
+          stop_time?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ad_account_id?: string
+          category_id?: string | null
+          created_time?: string | null
+          daily_budget?: number | null
+          effective_status?: string | null
+          first_seen_at?: string
+          id?: string
+          lifetime_budget?: number | null
+          meta_id?: string
+          name?: string
+          objective?: string | null
+          start_time?: string | null
+          status?: string | null
+          stop_time?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_campaigns_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_campaigns_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "ad_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_categories: {
+        Row: {
+          ad_account_id: string
+          archived_at: string | null
+          company_id: string | null
+          created_at: string
+          id: string
+          match_text: string | null
+          name: string
+          normalized_name: string | null
+        }
+        Insert: {
+          ad_account_id: string
+          archived_at?: string | null
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          match_text?: string | null
+          name: string
+          normalized_name?: never
+        }
+        Update: {
+          ad_account_id?: string
+          archived_at?: string | null
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          match_text?: string | null
+          name?: string
+          normalized_name?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_categories_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_categories_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_reach_monthly: {
+        Row: {
+          ad_account_id: string
+          campaign_id: string | null
+          month: string
+          reach: number
+        }
+        Insert: {
+          ad_account_id: string
+          campaign_id?: string | null
+          month: string
+          reach?: number
+        }
+        Update: {
+          ad_account_id?: string
+          campaign_id?: string | null
+          month?: string
+          reach?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_reach_monthly_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_reach_monthly_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "ad_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       admin_audit_log: {
         Row: {
           action: string
@@ -49,11 +595,118 @@ export type Database = {
           },
         ]
       }
+      ads_clients: {
+        Row: {
+          business: string | null
+          closed_at: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          email: string | null
+          id: string
+          lead_id: string | null
+          name: string
+          notes: string | null
+          phone: string | null
+          started_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          business?: string | null
+          closed_at?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          lead_id?: string | null
+          name: string
+          notes?: string | null
+          phone?: string | null
+          started_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          business?: string | null
+          closed_at?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          lead_id?: string | null
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          started_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_clients_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_clients_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_clients_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ads_manager_companies: {
+        Row: {
+          company_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_manager_companies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_manager_companies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       capital_entries: {
         Row: {
           amount: number
           archived_at: string | null
           archived_by: string | null
+          company_id: string
           contributor: string
           created_at: string
           created_by: string
@@ -70,6 +723,7 @@ export type Database = {
           amount: number
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           contributor: string
           created_at?: string
           created_by: string
@@ -86,6 +740,7 @@ export type Database = {
           amount?: number
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           contributor?: string
           created_at?: string
           created_by?: string
@@ -107,6 +762,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "capital_entries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "capital_entries_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
@@ -122,11 +784,118 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          archived_at: string | null
+          brand_highlight: string | null
+          created_at: string
+          created_by: string | null
+          finance_can_edit: boolean
+          finance_group_id: string
+          id: string
+          logo_path: string | null
+          name: string
+          normalized_name: string | null
+          updated_at: string
+          won_to_ads_client: boolean
+        }
+        Insert: {
+          archived_at?: string | null
+          brand_highlight?: string | null
+          created_at?: string
+          created_by?: string | null
+          finance_can_edit?: boolean
+          finance_group_id: string
+          id?: string
+          logo_path?: string | null
+          name: string
+          normalized_name?: never
+          updated_at?: string
+          won_to_ads_client?: boolean
+        }
+        Update: {
+          archived_at?: string | null
+          brand_highlight?: string | null
+          created_at?: string
+          created_by?: string | null
+          finance_can_edit?: boolean
+          finance_group_id?: string
+          id?: string
+          logo_path?: string | null
+          name?: string
+          normalized_name?: never
+          updated_at?: string
+          won_to_ads_client?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "companies_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "companies_finance_group_id_fkey"
+            columns: ["finance_group_id"]
+            isOneToOne: false
+            referencedRelation: "finance_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expense_categories: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          created_by: string | null
+          finance_group_id: string
+          id: string
+          name: string
+          normalized_name: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          finance_group_id: string
+          id?: string
+          name: string
+          normalized_name?: never
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          finance_group_id?: string
+          id?: string
+          name?: string
+          normalized_name?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_categories_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_categories_finance_group_id_fkey"
+            columns: ["finance_group_id"]
+            isOneToOne: false
+            referencedRelation: "finance_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expense_recurrences: {
         Row: {
           active: boolean
           amount: number
-          category: Database["public"]["Enums"]["expense_category"]
+          category: string
+          category_id: string
+          company_id: string
           created_at: string
           created_by: string
           day_of_month: number
@@ -141,7 +910,9 @@ export type Database = {
         Insert: {
           active?: boolean
           amount: number
-          category: Database["public"]["Enums"]["expense_category"]
+          category?: string
+          category_id: string
+          company_id?: string
           created_at?: string
           created_by: string
           day_of_month: number
@@ -156,7 +927,9 @@ export type Database = {
         Update: {
           active?: boolean
           amount?: number
-          category?: Database["public"]["Enums"]["expense_category"]
+          category?: string
+          category_id?: string
+          company_id?: string
           created_at?: string
           created_by?: string
           day_of_month?: number
@@ -169,6 +942,20 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "expense_recurrences_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "expense_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_recurrences_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "expense_recurrences_created_by_fkey"
             columns: ["created_by"]
@@ -183,7 +970,9 @@ export type Database = {
           amount: number
           archived_at: string | null
           archived_by: string | null
-          category: Database["public"]["Enums"]["expense_category"]
+          category: string
+          category_id: string
+          company_id: string
           created_at: string
           created_by: string
           description: string | null
@@ -200,7 +989,9 @@ export type Database = {
           amount: number
           archived_at?: string | null
           archived_by?: string | null
-          category: Database["public"]["Enums"]["expense_category"]
+          category?: string
+          category_id: string
+          company_id?: string
           created_at?: string
           created_by: string
           description?: string | null
@@ -217,7 +1008,9 @@ export type Database = {
           amount?: number
           archived_at?: string | null
           archived_by?: string | null
-          category?: Database["public"]["Enums"]["expense_category"]
+          category?: string
+          category_id?: string
+          company_id?: string
           created_at?: string
           created_by?: string
           description?: string | null
@@ -236,6 +1029,20 @@ export type Database = {
             columns: ["archived_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "expense_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -266,6 +1073,7 @@ export type Database = {
           action: string
           actor_id: string | null
           changes: Json
+          company_id: string
           created_at: string
           entity_id: string
           entity_type: string
@@ -275,6 +1083,7 @@ export type Database = {
           action: string
           actor_id?: string | null
           changes?: Json
+          company_id?: string
           created_at?: string
           entity_id: string
           entity_type: string
@@ -284,6 +1093,7 @@ export type Database = {
           action?: string
           actor_id?: string | null
           changes?: Json
+          company_id?: string
           created_at?: string
           entity_id?: string
           entity_type?: string
@@ -297,7 +1107,29 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "finance_activities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      finance_groups: {
+        Row: {
+          created_at: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+        }
+        Relationships: []
       }
       follow_up_nag_silences: {
         Row: {
@@ -668,6 +1500,7 @@ export type Database = {
         Row: {
           archived_at: string | null
           archived_by: string | null
+          company_id: string
           created_at: string
           created_by: string
           email: string | null
@@ -677,13 +1510,17 @@ export type Database = {
           owner_id: string
           phone: string
           phone_normalized: string
-          status: Database["public"]["Enums"]["lead_status"]
+          source: string
+          source_meta: Json
+          stage_id: string
+          status: Database["public"]["Enums"]["lead_outcome"]
           updated_at: string
           version: number
         }
         Insert: {
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           created_at?: string
           created_by: string
           email?: string | null
@@ -693,13 +1530,17 @@ export type Database = {
           owner_id: string
           phone: string
           phone_normalized: string
-          status?: Database["public"]["Enums"]["lead_status"]
+          source?: string
+          source_meta?: Json
+          stage_id: string
+          status?: Database["public"]["Enums"]["lead_outcome"]
           updated_at?: string
           version?: number
         }
         Update: {
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           created_at?: string
           created_by?: string
           email?: string | null
@@ -709,7 +1550,10 @@ export type Database = {
           owner_id?: string
           phone?: string
           phone_normalized?: string
-          status?: Database["public"]["Enums"]["lead_status"]
+          source?: string
+          source_meta?: Json
+          stage_id?: string
+          status?: Database["public"]["Enums"]["lead_outcome"]
           updated_at?: string
           version?: number
         }
@@ -719,6 +1563,13 @@ export type Database = {
             columns: ["archived_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -742,12 +1593,20 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "leads_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
         ]
       }
       library_files: {
         Row: {
           archived_at: string | null
           archived_by: string | null
+          company_id: string
           created_at: string
           created_by: string
           folder_id: string
@@ -755,6 +1614,7 @@ export type Database = {
           mime_type: string
           name: string
           normalized_name: string | null
+          position: number
           size_bytes: number
           storage_path: string
           thumb_path: string | null
@@ -764,6 +1624,7 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           created_at?: string
           created_by: string
           folder_id: string
@@ -771,6 +1632,7 @@ export type Database = {
           mime_type: string
           name: string
           normalized_name?: never
+          position?: number
           size_bytes: number
           storage_path: string
           thumb_path?: string | null
@@ -780,6 +1642,7 @@ export type Database = {
         Update: {
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           created_at?: string
           created_by?: string
           folder_id?: string
@@ -787,6 +1650,7 @@ export type Database = {
           mime_type?: string
           name?: string
           normalized_name?: never
+          position?: number
           size_bytes?: number
           storage_path?: string
           thumb_path?: string | null
@@ -799,6 +1663,13 @@ export type Database = {
             columns: ["archived_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -828,36 +1699,42 @@ export type Database = {
         Row: {
           archived_at: string | null
           archived_by: string | null
+          company_id: string
           created_at: string
           created_by: string
           id: string
           name: string
           normalized_name: string | null
           parent_id: string | null
+          position: number
           updated_at: string
           updated_by: string | null
         }
         Insert: {
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           created_at?: string
           created_by: string
           id?: string
           name: string
           normalized_name?: never
           parent_id?: string | null
+          position?: number
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
           archived_at?: string | null
           archived_by?: string | null
+          company_id?: string
           created_at?: string
           created_by?: string
           id?: string
           name?: string
           normalized_name?: never
           parent_id?: string | null
+          position?: number
           updated_at?: string
           updated_by?: string | null
         }
@@ -867,6 +1744,13 @@ export type Database = {
             columns: ["archived_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_folders_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -892,9 +1776,171 @@ export type Database = {
           },
         ]
       }
+      meta_integrations: {
+        Row: {
+          access_token_id: string
+          app_id: string
+          app_secret_id: string
+          company_id: string
+          created_at: string
+          last_checked_at: string | null
+          last_error: string | null
+          last_event_at: string | null
+          page_id: string
+          page_name: string | null
+          status: string
+          updated_at: string
+          verify_token: string
+        }
+        Insert: {
+          access_token_id: string
+          app_id: string
+          app_secret_id: string
+          company_id: string
+          created_at?: string
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_event_at?: string | null
+          page_id: string
+          page_name?: string | null
+          status?: string
+          updated_at?: string
+          verify_token?: string
+        }
+        Update: {
+          access_token_id?: string
+          app_id?: string
+          app_secret_id?: string
+          company_id?: string
+          created_at?: string
+          last_checked_at?: string | null
+          last_error?: string | null
+          last_event_at?: string | null
+          page_id?: string
+          page_name?: string | null
+          status?: string
+          updated_at?: string
+          verify_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_integrations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_lead_events: {
+        Row: {
+          ad_id: string | null
+          ad_name: string | null
+          adset_id: string | null
+          attempts: number
+          campaign_id: string | null
+          campaign_name: string | null
+          company_id: string
+          created_at: string
+          error: string | null
+          form_id: string | null
+          form_name: string | null
+          id: string
+          lead_id: string | null
+          leadgen_id: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          ad_id?: string | null
+          ad_name?: string | null
+          adset_id?: string | null
+          attempts?: number
+          campaign_id?: string | null
+          campaign_name?: string | null
+          company_id: string
+          created_at?: string
+          error?: string | null
+          form_id?: string | null
+          form_name?: string | null
+          id?: string
+          lead_id?: string | null
+          leadgen_id: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          ad_id?: string | null
+          ad_name?: string | null
+          adset_id?: string | null
+          attempts?: number
+          campaign_id?: string | null
+          campaign_name?: string | null
+          company_id?: string
+          created_at?: string
+          error?: string | null
+          form_id?: string | null
+          form_name?: string | null
+          id?: string
+          lead_id?: string | null
+          leadgen_id?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_lead_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_lead_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_lead_routing: {
+        Row: {
+          company_id: string
+          last_assigned_at: string | null
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          last_assigned_at?: string | null
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          last_assigned_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_lead_routing_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_lead_routing_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       niches: {
         Row: {
           archived_at: string | null
+          company_id: string
           created_at: string
           created_by: string | null
           id: string
@@ -905,6 +1951,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          company_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -915,6 +1962,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          company_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -924,6 +1972,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "niches_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "niches_created_by_fkey"
             columns: ["created_by"]
@@ -966,8 +2021,55 @@ export type Database = {
           },
         ]
       }
+      pipeline_stages: {
+        Row: {
+          archived_at: string | null
+          color: string
+          company_id: string
+          created_at: string
+          id: string
+          kind: Database["public"]["Enums"]["lead_outcome"]
+          name: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          color?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["lead_outcome"]
+          name: string
+          position: number
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          color?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["lead_outcome"]
+          name?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
+          active_company_id: string | null
+          ads_client_id: string | null
+          company_id: string | null
           created_at: string
           display_name: string
           id: string
@@ -977,6 +2079,9 @@ export type Database = {
           username: string
         }
         Insert: {
+          active_company_id?: string | null
+          ads_client_id?: string | null
+          company_id?: string | null
           created_at?: string
           display_name: string
           id: string
@@ -986,6 +2091,9 @@ export type Database = {
           username: string
         }
         Update: {
+          active_company_id?: string | null
+          ads_client_id?: string | null
+          company_id?: string | null
           created_at?: string
           display_name?: string
           id?: string
@@ -994,7 +2102,29 @@ export type Database = {
           updated_at?: string
           username?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_active_company_id_fkey"
+            columns: ["active_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_ads_client_id_fkey"
+            columns: ["ads_client_id"]
+            isOneToOne: false
+            referencedRelation: "ads_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reminder_deliveries: {
         Row: {
@@ -1282,6 +2412,48 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      ad_account_detail: {
+        Args: {
+          p_account: string
+        }
+        Returns: Json
+      }
+      ad_account_secrets: {
+        Args: {
+          p_account: string
+        }
+        Returns: {
+          id: string
+          act_id: string
+          app_id: string
+          app_secret: string
+          access_token: string
+          timezone: string
+          synced_through: string
+          backfilled_from: string
+          created_at: string
+        }[]
+      }
+      ad_campaign_detail: {
+        Args: {
+          p_campaign: string
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      ad_categories_list: {
+        Args: {
+          p_account: string
+        }
+        Returns: Json
+      }
+      ad_sync_targets: {
+        Args: {
+          p_limit?: number
+        }
+        Returns: string[]
+      }
       admin_list_users: {
         Args: {
           p_search?: string
@@ -1321,6 +2493,45 @@ export type Database = {
       admin_usage: {
         Args: never
         Returns: Json
+      }
+      ads_accounts_for_me: {
+        Args: never
+        Returns: Json
+      }
+      ads_client_detail: {
+        Args: {
+          p_id: string
+        }
+        Returns: Json
+      }
+      ads_client_login_check: {
+        Args: {
+          p_client: string
+        }
+        Returns: string
+      }
+      ads_overview: {
+        Args: {
+          p_account: string
+          p_from: string
+          p_to: string
+          p_category?: string
+          p_uncategorised?: boolean
+        }
+        Returns: Json
+      }
+      archive_ad_category: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
+      archive_pipeline_stage: {
+        Args: {
+          p_id: string
+          p_move_to?: string
+        }
+        Returns: number
       }
       check_duplicate_phone: {
         Args: {
@@ -1384,6 +2595,23 @@ export type Database = {
         }
         Returns: undefined
       }
+      create_ads_client: {
+        Args: {
+          p_name: string
+          p_phone?: string
+          p_email?: string
+          p_business?: string
+          p_notes?: string
+        }
+        Returns: string
+      }
+      create_company: {
+        Args: {
+          p_name: string
+          p_brand_highlight?: string
+        }
+        Returns: string
+      }
       create_lead: {
         Args: {
           p_name: string
@@ -1392,7 +2620,7 @@ export type Database = {
           p_email?: string
           p_niche_id?: string
           p_new_niche?: string
-          p_status?: Database["public"]["Enums"]["lead_status"]
+          p_stage_id?: string
           p_owner_id?: string
           p_note?: string
           p_follow_up_at?: string
@@ -1427,23 +2655,45 @@ export type Database = {
         }
         Returns: Json
       }
+      delete_meta_integration: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: undefined
+      }
+      disconnect_ad_account: {
+        Args: {
+          p_account: string
+        }
+        Returns: undefined
+      }
       disconnect_telegram: {
         Args: never
         Returns: undefined
       }
-      finance_period_report: {
+      fail_meta_lead: {
+        Args: {
+          p_company_id: string
+          p_leadgen_id: string
+          p_error: string
+        }
+        Returns: undefined
+      }
+      finance_company_split: {
         Args: {
           p_from: string
           p_to: string
         }
         Returns: Json
       }
-      finance_period_totals: {
+      finance_context: {
+        Args: never
+        Returns: Json
+      }
+      finance_period_report: {
         Args: {
-          p_kind: string
-          p_archived?: boolean
-          p_category?: Database["public"]["Enums"]["expense_category"]
-          p_year?: number
+          p_from: string
+          p_to: string
         }
         Returns: Json
       }
@@ -1474,6 +2724,22 @@ export type Database = {
         }
         Returns: string
       }
+      ingest_meta_lead: {
+        Args: {
+          p_company_id: string
+          p_leadgen_id: string
+          p_name: string
+          p_phone: string
+          p_phone_normalized: string
+          p_email?: string
+          p_form_id?: string
+          p_form_name?: string
+          p_ad_name?: string
+          p_campaign_name?: string
+          p_answers?: string
+        }
+        Returns: Json
+      }
       lead_share_summary: {
         Args: {
           p_lead_id: string
@@ -1490,13 +2756,38 @@ export type Database = {
         }
         Returns: Json
       }
+      list_ad_campaigns: {
+        Args: {
+          p_account: string
+          p_from: string
+          p_to: string
+          p_category?: string
+          p_uncategorised?: boolean
+          p_search?: string
+          p_status?: string
+          p_sort?: string
+          p_dir?: string
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: Json
+      }
+      list_ads_clients: {
+        Args: {
+          p_search?: string
+          p_status?: string
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: Json
+      }
       list_finance_entries: {
         Args: {
           p_kind: string
           p_from: string
           p_to: string
           p_search?: string
-          p_category?: Database["public"]["Enums"]["expense_category"]
+          p_category_id?: string
           p_mode?: string
           p_recurring?: boolean
           p_archived?: boolean
@@ -1504,6 +2795,7 @@ export type Database = {
           p_dir?: string
           p_limit?: number
           p_offset?: number
+          p_company_id?: string
         }
         Returns: Json
       }
@@ -1522,7 +2814,7 @@ export type Database = {
       list_leads: {
         Args: {
           p_search?: string
-          p_statuses?: Database["public"]["Enums"]["lead_status"][]
+          p_stage_ids?: string[]
           p_niche_id?: string
           p_owner_id?: string
           p_created_from?: string
@@ -1537,9 +2829,36 @@ export type Database = {
         }
         Returns: Json
       }
+      list_library_items: {
+        Args: {
+          p_parent_id?: string
+          p_search?: string
+          p_archived?: boolean
+          p_sort?: string
+          p_dir?: string
+          p_folders_first?: boolean
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: Json
+      }
       log_call: {
         Args: {
           p_lead_id: string
+        }
+        Returns: string
+      }
+      merge_ad_account: {
+        Args: {
+          p_account: string
+          p_company_ids: string[]
+        }
+        Returns: undefined
+      }
+      merge_finance: {
+        Args: {
+          p_company_ids: string[]
+          p_editor_ids: string[]
         }
         Returns: string
       }
@@ -1550,6 +2869,37 @@ export type Database = {
         }
         Returns: number
       }
+      meta_integration_secrets: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: {
+          app_id: string
+          page_id: string
+          verify_token: string
+          app_secret: string
+          access_token: string
+        }[]
+      }
+      meta_lead_insights: {
+        Args: {
+          p_company_id: string
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      move_library_items: {
+        Args: {
+          p_target_folder_id: string
+          p_items: Json
+        }
+        Returns: number
+      }
+      my_portal: {
+        Args: never
+        Returns: Json
+      }
       open_lead_share: {
         Args: {
           p_token: string
@@ -1558,10 +2908,31 @@ export type Database = {
         }
         Returns: Json
       }
+      record_meta_leadgen: {
+        Args: {
+          p_company_id: string
+          p_leadgen_id: string
+          p_form_id?: string
+        }
+        Returns: boolean
+      }
       remove_share_file: {
         Args: {
           p_share_id: string
           p_file_id: string
+        }
+        Returns: undefined
+      }
+      reorder_library_items: {
+        Args: {
+          p_parent_id: string
+          p_items: Json
+        }
+        Returns: undefined
+      }
+      reorder_pipeline_stages: {
+        Args: {
+          p_ids: string[]
         }
         Returns: undefined
       }
@@ -1579,6 +2950,13 @@ export type Database = {
         }
         Returns: Json
       }
+      resolve_expense_category: {
+        Args: {
+          p_id?: string
+          p_new_name?: string
+        }
+        Returns: string
+      }
       resolve_share_file: {
         Args: {
           p_token: string
@@ -1592,8 +2970,91 @@ export type Database = {
         }
         Returns: undefined
       }
+      save_ad_account: {
+        Args: {
+          p_kind: string
+          p_owner: string
+          p_act_id: string
+          p_app_id?: string
+          p_app_secret?: string
+          p_access_token?: string
+          p_use_lead_app?: boolean
+        }
+        Returns: string
+      }
+      save_ad_category: {
+        Args: {
+          p_account: string
+          p_id: string
+          p_name: string
+          p_match_text?: string
+        }
+        Returns: string
+      }
+      save_meta_integration: {
+        Args: {
+          p_company_id: string
+          p_app_id: string
+          p_page_id: string
+          p_app_secret?: string
+          p_access_token?: string
+        }
+        Returns: undefined
+      }
+      save_pipeline_stage: {
+        Args: {
+          p_id: string
+          p_name: string
+          p_kind: Database["public"]["Enums"]["lead_outcome"]
+          p_color: string
+        }
+        Returns: string
+      }
       send_test_notification: {
         Args: never
+        Returns: undefined
+      }
+      set_active_company: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: undefined
+      }
+      set_ad_account_state: {
+        Args: {
+          p_account: string
+          p_status: string
+          p_error?: string
+          p_name?: string
+          p_currency?: string
+          p_timezone?: string
+          p_synced_through?: string
+          p_backfilled_from?: string
+          p_next_sync_after?: string
+          p_synced?: boolean
+        }
+        Returns: undefined
+      }
+      set_ad_campaign_category: {
+        Args: {
+          p_campaign_ids: string[]
+          p_category_id: string
+        }
+        Returns: number
+      }
+      set_ads_client_status: {
+        Args: {
+          p_id: string
+          p_status: string
+          p_disable_logins?: boolean
+        }
+        Returns: undefined
+      }
+      set_ads_manager_companies: {
+        Args: {
+          p_user_id: string
+          p_company_ids: string[]
+        }
         Returns: undefined
       }
       set_call_outcome: {
@@ -1604,12 +3065,26 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_client_login: {
+        Args: {
+          p_user_id: string
+          p_is_active?: boolean
+          p_password_reset?: boolean
+        }
+        Returns: undefined
+      }
       set_expense_recurrence: {
         Args: {
           p_expense_id: string
           p_repeat: boolean
         }
         Returns: string
+      }
+      set_finance_editors: {
+        Args: {
+          p_company_ids: string[]
+        }
+        Returns: undefined
       }
       set_follow_up_pin: {
         Args: {
@@ -1646,12 +3121,51 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_meta_lead_ad_ids: {
+        Args: {
+          p_company_id: string
+          p_leadgen_id: string
+          p_campaign_id: string
+          p_adset_id: string
+          p_ad_id: string
+        }
+        Returns: undefined
+      }
+      set_meta_routing: {
+        Args: {
+          p_company_id: string
+          p_user_ids: string[]
+        }
+        Returns: undefined
+      }
+      set_meta_status: {
+        Args: {
+          p_company_id: string
+          p_status: string
+          p_page_name?: string
+          p_error?: string
+        }
+        Returns: undefined
+      }
       set_notification_pref: {
         Args: {
           p_kind: string
           p_enabled: boolean
         }
         Returns: string[]
+      }
+      set_won_to_ads_client: {
+        Args: {
+          p_company_id: string
+          p_enabled: boolean
+        }
+        Returns: undefined
+      }
+      share_brand: {
+        Args: {
+          p_token: string
+        }
+        Returns: Json
       }
       share_lead_files: {
         Args: {
@@ -1668,6 +3182,54 @@ export type Database = {
         }
         Returns: Json
       }
+      split_finance: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: undefined
+      }
+      super_ads_overview: {
+        Args: never
+        Returns: Json
+      }
+      super_finance_groups: {
+        Args: never
+        Returns: Json
+      }
+      super_lead_company: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: string
+      }
+      super_list_ads_managers: {
+        Args: never
+        Returns: Json
+      }
+      super_list_companies: {
+        Args: never
+        Returns: Json
+      }
+      super_meta_events: {
+        Args: {
+          p_company_id: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      super_meta_overview: {
+        Args: never
+        Returns: Json
+      }
+      super_update_ads_manager: {
+        Args: {
+          p_user_id: string
+          p_display_name?: string
+          p_is_active?: boolean
+          p_password_reset?: boolean
+        }
+        Returns: undefined
+      }
       track_share_file: {
         Args: {
           p_token: string
@@ -1676,6 +3238,35 @@ export type Database = {
           p_device?: string
         }
         Returns: Json
+      }
+      update_ads_client: {
+        Args: {
+          p_id: string
+          p_name?: string
+          p_phone?: string
+          p_email?: string
+          p_business?: string
+          p_notes?: string
+        }
+        Returns: undefined
+      }
+      update_company: {
+        Args: {
+          p_company_id: string
+          p_name?: string
+          p_brand_highlight?: string
+          p_logo_path?: string
+          p_clear_logo?: boolean
+        }
+        Returns: undefined
+      }
+      update_expense_category: {
+        Args: {
+          p_id: string
+          p_name?: string
+          p_archived?: boolean
+        }
+        Returns: undefined
       }
       update_lead: {
         Args: {
@@ -1691,13 +3282,35 @@ export type Database = {
         }
         Returns: number
       }
+      upsert_ad_entities: {
+        Args: {
+          p_account: string
+          p_campaigns: Json
+          p_ads: Json
+        }
+        Returns: undefined
+      }
+      upsert_ad_insights: {
+        Args: {
+          p_account: string
+          p_level: string
+          p_rows: Json
+        }
+        Returns: number
+      }
+      upsert_ad_reach: {
+        Args: {
+          p_account: string
+          p_rows: Json
+        }
+        Returns: undefined
+      }
     }
     Enums: {
-      app_role: "admin" | "sales" | "account"
-      expense_category: "salary" | "rent" | "software" | "marketing" | "utilities" | "miscellaneous"
+      app_role: "admin" | "sales" | "account" | "super_admin" | "ads_manager" | "client"
       follow_up_state: "pending" | "completed" | "cancelled"
       lead_activity_type: "lead_created" | "note" | "note_corrected" | "status_changed" | "assigned" | "lead_updated" | "lead_archived" | "lead_restored" | "follow_up_scheduled" | "follow_up_rescheduled" | "follow_up_updated" | "follow_up_completed" | "follow_up_cancelled" | "call_logged" | "files_shared" | "share_revoked" | "share_opened"
-      lead_status: "new" | "contacted" | "interested" | "proposal_sent" | "won" | "lost"
+      lead_outcome: "open" | "won" | "lost"
       reminder_state: "pending" | "processing" | "sent" | "failed" | "skipped" | "cancelled"
       share_event_type: "link_created" | "files_added" | "file_removed" | "opened" | "file_viewed" | "file_downloaded" | "expiry_changed" | "revoked"
       telegram_status: "connected" | "blocked"
@@ -1715,11 +3328,10 @@ export type Enums<T extends keyof PublicSchema["Enums"]> = PublicSchema["Enums"]
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "sales", "account"],
-      expense_category: ["salary", "rent", "software", "marketing", "utilities", "miscellaneous"],
+      app_role: ["admin", "sales", "account", "super_admin", "ads_manager", "client"],
       follow_up_state: ["pending", "completed", "cancelled"],
       lead_activity_type: ["lead_created", "note", "note_corrected", "status_changed", "assigned", "lead_updated", "lead_archived", "lead_restored", "follow_up_scheduled", "follow_up_rescheduled", "follow_up_updated", "follow_up_completed", "follow_up_cancelled", "call_logged", "files_shared", "share_revoked", "share_opened"],
-      lead_status: ["new", "contacted", "interested", "proposal_sent", "won", "lost"],
+      lead_outcome: ["open", "won", "lost"],
       reminder_state: ["pending", "processing", "sent", "failed", "skipped", "cancelled"],
       share_event_type: ["link_created", "files_added", "file_removed", "opened", "file_viewed", "file_downloaded", "expiry_changed", "revoked"],
       telegram_status: ["connected", "blocked"],

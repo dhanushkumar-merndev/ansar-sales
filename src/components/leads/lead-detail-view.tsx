@@ -17,6 +17,8 @@ import { SharedLinksCard } from "@/components/leads/shared-links-card";
 import { StaffSelect } from "@/components/leads/staff-select";
 import { Timeline } from "@/components/leads/timeline";
 import { useProfile } from "@/components/providers/profile-provider";
+import { useStages } from "@/components/providers/stages-provider";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,13 +27,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/constants";
 import { fetchLead, fetchLeadFollowUps, fetchTimeline, type Activity, type LeadFollowUp } from "@/lib/queries";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/time";
 import type { NicheOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { cancelFollowUp } from "@/server/actions/follow-ups";
-import { addNote, assignLead, correctNote, setLeadArchived, setLeadStatus } from "@/server/actions/leads";
+import { addNote, assignLead, correctNote, setLeadArchived, setLeadStage } from "@/server/actions/leads";
 import { toggleLeadStar } from "@/server/actions/stars";
 
 const TIMELINE_PAGE = 20;
@@ -100,7 +101,8 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
             {canEdit ? <StarButton id={l.id} starred={l.stars.length > 0} action={toggleLeadStar} onChanged={lead.refetch} /> : null}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <StatusBadge status={l.status} />
+            <StatusBadge stageId={l.stage_id} status={l.status} />
+            {l.source === "facebook" ? <SourceBadge meta={l.source_meta} /> : null}
             <span>{l.niche.name}</span>
             <span aria-hidden>·</span>
             <span>Owner: <span className="text-foreground">{l.owner.display_name}</span></span>
@@ -109,7 +111,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         <div className="flex flex-wrap items-center gap-2">
           {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} /> : null}
           {canEdit ? <Button variant="outline" onClick={() => setShareOpen(true)}><Send /> Share files</Button> : null}
-          {canEdit ? <StatusSelect leadId={l.id} status={l.status} onChanged={refreshAll} /> : null}
+          {canEdit ? <StatusSelect leadId={l.id} stageId={l.stage_id} onChanged={refreshAll} /> : null}
           {canEdit ? (
             <Button variant="outline" onClick={() => { setEditSnapshot({ version: l.version }); setEditOpen(true); }}><Pencil /> Edit</Button>
           ) : null}
@@ -241,38 +243,58 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
       />
       <FollowUpDialog open={scheduleOpen} onOpenChange={setScheduleOpen} leadId={l.id} onDone={refreshAll} />
       <FollowUpDialog open={!!reschedule} onOpenChange={(o) => !o && setReschedule(null)} followUp={reschedule ?? undefined} onDone={refreshAll} />
-      <CompleteFollowUpDialog open={!!completing} onOpenChange={(o) => !o && setCompleting(null)} followUp={completing} onDone={refreshAll} />
+      <CompleteFollowUpDialog
+        open={!!completing}
+        onOpenChange={(o) => !o && setCompleting(null)}
+        followUp={completing}
+        lead={canEdit ? { id: l.id, name: l.name, phone: l.phone_normalized } : null}
+        onDone={refreshAll}
+      />
       {isAdmin ? <AssignDialog open={assignOpen} onOpenChange={setAssignOpen} leadId={l.id} currentOwner={l.owner_id} onDone={refreshAll} /> : null}
       {canEdit ? <ShareFilesDialog open={shareOpen} onOpenChange={setShareOpen} leadId={l.id} leadName={l.name} phone={l.phone_normalized} onShared={timeline.refetch} /> : null}
     </>
   );
 }
 
-function StatusSelect({ leadId, status, onChanged }: { leadId: string; status: LeadStatus; onChanged: () => void }) {
-  const [optimistic, setOptimistic] = useState<LeadStatus | null>(null);
+function StatusSelect({ leadId, stageId, onChanged }: { leadId: string; stageId: string; onChanged: () => void }) {
+  const { stages, byId } = useStages();
+  const [optimistic, setOptimistic] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const current = byId.get(stageId);
   return (
     <Select
-      value={optimistic ?? status}
-      disabled={pending}
-      onValueChange={(v) => {
-        const next = v as LeadStatus;
+      value={optimistic ?? stageId}
+      disabled={pending || stages.length === 0}
+      onValueChange={(next) => {
         setOptimistic(next);
         start(async () => {
-          const r = await setLeadStatus({ id: leadId, status: next });
+          const r = await setLeadStage({ id: leadId, stageId: next });
           setOptimistic(null); // reconcile with the server value
           if (!r.ok) toast.error(r.error);
-          else toast.success(`Status: ${STATUS_LABELS[next]}`);
+          else toast.success(`Stage: ${byId.get(next)?.name ?? "updated"}`);
           onChanged();
         });
       }}
     >
-      <SelectTrigger className="w-[160px]" aria-label="Change status">
+      <SelectTrigger className="w-[180px]" aria-label="Change stage">
         {pending ? <Loader2 className="size-4 animate-spin" /> : null}
-        <SelectValue />
+        <SelectValue placeholder={current?.name ?? "Stage"} />
       </SelectTrigger>
-      <SelectContent>{LEAD_STATUSES.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}</SelectContent>
+      <SelectContent>
+        {/* An archived current stage stays visible so the select shows it. */}
+        {current?.archived_at ? <SelectItem value={current.id} disabled>{current.name}</SelectItem> : null}
+        {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+      </SelectContent>
     </Select>
+  );
+}
+
+/** Where a Facebook lead came from (form, ad, campaign). */
+function SourceBadge({ meta }: { meta: { form_name?: string; ad_name?: string; campaign_name?: string } }) {
+  const detail = [meta.form_name && `Form: ${meta.form_name}`, meta.ad_name && `Ad: ${meta.ad_name}`, meta.campaign_name && `Campaign: ${meta.campaign_name}`]
+    .filter(Boolean).join(" · ");
+  return (
+    <Badge variant="outline" className="border-blue-400/30 bg-blue-400/10 text-blue-300" title={detail || undefined}>Facebook</Badge>
   );
 }
 
@@ -291,8 +313,8 @@ function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void
   };
   return (
     <Card>
-      <CardContent className="space-y-2">
-        <label htmlFor="note" className="text-sm font-medium">Add note</label>
+      <CardContent className="space-y-3 pt-5">
+        <label htmlFor="note" className="block text-sm font-medium pb-2 text-foreground">Add note</label>
         <Textarea
           id="note"
           rows={3}
@@ -302,7 +324,7 @@ function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(); }}
         />
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-1">
           <Button size="sm" onClick={submit} disabled={pending || !body.trim()}>{pending && <Loader2 className="animate-spin" />}Save note</Button>
         </div>
       </CardContent>

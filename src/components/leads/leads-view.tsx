@@ -15,6 +15,7 @@ import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
 import { StaffSelect } from "@/components/leads/staff-select";
 import { useProfile } from "@/components/providers/profile-provider";
+import { useStages } from "@/components/providers/stages-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,7 +28,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
-import { LEAD_STATUSES, SEARCH_DEBOUNCE_MS, STATUS_LABELS, type LeadStatus } from "@/lib/constants";
+import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
 import { lastPage, parsePaging } from "@/lib/pagination";
 import { fetchLeads, type LeadQuery } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
@@ -42,6 +43,7 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 
 export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   const profile = useProfile();
+  const { stages } = useStages();
   const isAdmin = profile.role === "admin";
   const router = useRouter();
   const { params, set } = useUrlState();
@@ -50,13 +52,13 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   // Parse and sanitize URL state (the database validates again).
   const query: LeadQuery = useMemo(() => {
     const { page, pageSize } = parsePaging(params);
-    const status = params.get("status");
+    const stage = params.get("stage");
     const sort = params.get("sort");
     const from = params.get("from");
     const to = params.get("to");
     return {
       q: cleanSearch(params.get("q")),
-      status: LEAD_STATUSES.includes(status as LeadStatus) ? (status as LeadStatus) : null,
+      stage: UUID_RE.test(stage ?? "") ? stage : null,
       niche: UUID_RE.test(params.get("niche") ?? "") ? params.get("niche") : null,
       owner: isAdmin && UUID_RE.test(params.get("owner") ?? "") ? params.get("owner") : null,
       ...(from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to ? { from, to } : { from: null, to: null }),
@@ -139,7 +141,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           </div>
         ),
       },
-      { id: "status", header: function SortHeader() { return sortButton("Status", "status"); }, cell: ({ row }) => <StatusBadge status={row.original.status} /> },
+      { id: "status", header: function SortHeader() { return sortButton("Stage", "status"); }, cell: ({ row }) => <StatusBadge stageId={row.original.stage_id} status={row.original.status} /> },
       { id: "niche", header: "Niche", cell: ({ row }) => <span className="text-sm">{row.original.niche.name}</span> },
     ];
     if (isAdmin) cols.push({ id: "owner", header: "Owner", cell: ({ row }) => <span className="text-sm">{row.original.owner.display_name}</span> });
@@ -168,15 +170,15 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, manualSorting: true, getRowId: (r) => r.id });
 
-  const activeFilters = [query.status, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
+  const activeFilters = [query.stage, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
 
   const filters = (
     <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
-      <Select value={query.status ?? "__all"} onValueChange={(v) => set({ status: v === "__all" ? null : v })}>
-        <SelectTrigger className="w-full lg:w-[160px]" aria-label="Status"><SelectValue /></SelectTrigger>
+      <Select value={query.stage ?? "__all"} onValueChange={(v) => set({ stage: v === "__all" ? null : v })}>
+        <SelectTrigger className="w-full lg:w-[160px]" aria-label="Stage"><SelectValue placeholder="All stages" /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="__all">All statuses</SelectItem>
-          {LEAD_STATUSES.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+          <SelectItem value="__all">All stages</SelectItem>
+          {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
         </SelectContent>
       </Select>
       <NicheCombobox
@@ -206,7 +208,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         </Label>
       ) : null}
       {activeFilters > 0 ? (
-        <Button variant="ghost" size="sm" onClick={() => set({ status: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null })}>
+        <Button variant="ghost" size="sm" onClick={() => set({ stage: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null })}>
           <X /> Clear filters
         </Button>
       ) : null}
@@ -238,8 +240,8 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         {query.starred && data ? <PinnedCount count={data.pinnedCount} /> : null}
       </div>
 
-      <div className="mb-3 flex items-center gap-2">
-        <div className="relative flex-1">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-64 lg:w-72">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
@@ -251,6 +253,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
             aria-label="Search leads"
           />
         </div>
+        <div className="hidden lg:contents">{filters}</div>
         <Sheet>
           <SheetTrigger asChild>
             <Button variant="outline" className="lg:hidden"><SlidersHorizontal /> Filters{activeFilters ? ` (${activeFilters})` : ""}</Button>
@@ -271,7 +274,6 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           </SelectContent>
         </Select>
       </div>
-      <div className="mb-4 hidden lg:block">{filters}</div>
 
       <div className="mb-2 flex h-5 items-center justify-end"><FetchingIndicator show={isFetching && !isInitialLoading} /></div>
 
@@ -318,7 +320,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                       <p className="flex items-center gap-2 font-medium"><span className="truncate">{l.name}</span>{query.starred && l.pinned_at ? <PinnedBadge /> : null}</p>
                       <p className="flex items-center gap-1 text-sm text-muted-foreground"><Phone className="size-3" />{l.phone}</p>
                     </div>
-                    <StatusBadge status={l.status} />
+                    <StatusBadge stageId={l.stage_id} status={l.status} />
                   </div>
                   <div className={cn("mt-2 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground", query.starred ? "pr-[4.5rem]" : "pr-9")}>
                     <span>{l.niche.name}</span>

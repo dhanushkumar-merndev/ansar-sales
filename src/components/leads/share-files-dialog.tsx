@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Check, Copy, FileText, ImageIcon, Loader2, Search, X } from "lucide-react";
 import { toast } from "sonner";
-import { BRAND_NAME } from "@/components/app/brand";
+import { useProfile } from "@/components/providers/profile-provider";
 import { ErrorState } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import { shareLeadFiles } from "@/server/actions/shares";
 type Created = { url: string; whatsapp: string; expiresAt: string | null };
 
 /** Default WhatsApp text that goes before the link. */
-export const shareMessage = (leadName: string) => `Hi ${leadName.split(" ")[0]}, here are the documents from ${BRAND_NAME}:`;
+export const shareMessage = (leadName: string, companyName: string) => `Hi ${leadName.split(" ")[0]}, here are the documents from ${companyName}:`;
 
 export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, onShared }: {
   open: boolean; onOpenChange: (o: boolean) => void; leadId: string; leadName: string; phone: string; onShared?: () => void;
@@ -40,11 +40,12 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
   const [created, setCreated] = useState<Created | null>(null);
   const [pending, start] = useTransition();
   const [wasOpen, setWasOpen] = useState(false);
+  const { company } = useProfile();
   if (wasOpen !== open) {
     setWasOpen(open);
     if (open) {
       setFolderId(null); setSearch(""); setSelected(new Map()); setExpiry("7d");
-      setMessage(shareMessage(leadName)); setCreated(null);
+      setMessage(shareMessage(leadName, company.name)); setCreated(null);
     }
   }
 

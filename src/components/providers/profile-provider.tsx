@@ -1,9 +1,20 @@
 "use client";
 
 import { createContext, use } from "react";
+import type { CompanyBrand } from "@/lib/companies";
 import type { AppRole } from "@/lib/constants";
 
-export type ClientProfile = { id: string; username: string; display_name: string; role: AppRole };
+export type ClientProfile = {
+  id: string;
+  username: string;
+  display_name: string;
+  /** Effective role in the current company (a super admin is "admin"). */
+  role: AppRole;
+  isSuperAdmin: boolean;
+  company: CompanyBrand;
+  /** Switchable companies (super admin: all; ads manager: assigned ones). */
+  companies: CompanyBrand[];
+};
 
 const ProfileContext = createContext<Promise<ClientProfile> | null>(null);
 

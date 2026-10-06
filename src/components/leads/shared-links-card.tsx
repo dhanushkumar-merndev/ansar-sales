@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ErrorState } from "@/components/common/states";
 import { shareMessage } from "@/components/leads/share-files-dialog";
+import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollBox } from "@/components/common/scroll-box";
@@ -35,6 +36,7 @@ function linkStatus(link: ShareSummary["link"], now = new Date()) {
 export function SharedLinksCard({ leadId, leadName, phone, profileId, canEdit, onShare }: {
   leadId: string; leadName: string; phone: string; profileId: string; canEdit: boolean; onShare: () => void;
 }) {
+  const { company } = useProfile();
   const [limit, setLimit] = useState(EVENTS_PAGE);
   const summary = useLiveQuery({
     queryKey: `share-summary:${profileId}:${leadId}`,
@@ -89,7 +91,7 @@ export function SharedLinksCard({ leadId, leadName, phone, profileId, canEdit, o
           <div className="flex flex-wrap gap-1.5">
             <Button size="xs" variant="outline" onClick={() => void copy()}><Copy /> Copy link</Button>
             <Button size="xs" variant="outline" asChild>
-              <a href={whatsappUrl(phone, `${shareMessage(leadName)}\n${shareUrl(link.token)}`)} target="_blank" rel="noopener noreferrer"><MessageCircle /> Send again</a>
+              <a href={whatsappUrl(phone, `${shareMessage(leadName, company.name)}\n${shareUrl(link.token)}`)} target="_blank" rel="noopener noreferrer"><MessageCircle /> Send again</a>
             </Button>
             <ConfirmDialog
               trigger={<Button size="xs" variant="ghost"><Link2Off /> Revoke</Button>}

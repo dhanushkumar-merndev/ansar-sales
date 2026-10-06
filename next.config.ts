@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
   // Explicit caching model: only functions marked "use cache" are cached (niche options).
   cacheComponents: true,
   poweredByHeader: false,
+  // The Facebook setup guide page reads this file at runtime.
+  outputFileTracingIncludes: { "/help/meta-lead-ads": ["./docs/meta-lead-ads.md"] },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

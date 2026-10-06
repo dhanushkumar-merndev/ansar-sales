@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createLead, createUser, nextPhone, one, rows, type Db } from "./harness";
+import { asService, asUser, createDb, createLead, createUser, nextPhone, one, rows, stageId, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string, account: string;
@@ -86,7 +86,8 @@ describe("lead scope", () => {
   it("other sales users cannot add notes or follow-ups to a lead they do not own", async () => {
     await expect(asUser(db, salesB, (tx) => tx.query("insert into public.lead_activities (lead_id, type, body, actor_id) values ($1, 'note', 'hi', $2)", [leadA, salesB]))).rejects.toThrow(/row-level security/);
     await expect(asUser(db, salesB, (tx) => tx.query("insert into public.follow_ups (lead_id, task, due_at, created_by) values ($1, 't', now(), $2)", [leadA, salesB]))).rejects.toThrow(/row-level security/);
-    const updated = await asUser(db, salesB, (tx) => tx.query("update public.leads set status = 'won' where id = $1", [leadA]));
+    const won = await stageId(db, "Won");
+    const updated = await asUser(db, salesB, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [leadA, won]));
     expect(updated.affectedRows).toBe(0);
   });
 

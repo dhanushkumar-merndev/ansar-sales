@@ -53,13 +53,19 @@ if (values.clean) {
   process.exit(0);
 }
 
+// Demo users (and so the demo data) go into the oldest company.
+const { data: company, error: companyError } = await sb.from("companies").select("id, name").is("archived_at", null)
+  .order("created_at").order("id").limit(1).single();
+if (companyError) throw companyError;
+console.log(`Demo data goes into: ${company.name}`);
+
 const existing = new Set((await demoProfiles()).map((p) => p.username));
 for (const u of USERS.filter((u) => !existing.has(u.username))) {
   const { error } = await sb.auth.admin.createUser({
     email: `${u.username}@${domain}`,
     password: randomBytes(24).toString("base64url"),
     email_confirm: true,
-    app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role },
+    app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role, crm_company_id: company.id },
   });
   if (error) throw new Error(`Could not create ${u.username}: ${error.message}`);
 }

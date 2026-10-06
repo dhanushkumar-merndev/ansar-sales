@@ -80,7 +80,8 @@ export function buildReminderMessage(r: ClaimedReminder, appUrl: string | null):
 
 export type NotificationKind =
   | "recurring_expense" | "lead_created" | "lead_assigned" | "lead_closed" | "follow_up_changed" | "overdue_nag"
-  | "expense_added" | "capital_added" | "library_file_added" | "digest_sales" | "digest_admin" | "digest_finance" | "test";
+  | "expense_added" | "capital_added" | "library_file_added" | "digest_sales" | "digest_admin" | "digest_finance" | "test"
+  | "ads_client_new" | "ad_account_problem";
 
 export type ClaimedNotification = {
   notification_id: string;
@@ -114,38 +115,48 @@ function moneyLines(p: Record<string, unknown>) {
 export function buildNotification(n: ClaimedNotification, appUrl: string | null, now = new Date()): TelegramMessage {
   const p = n.payload;
   const leadPath = `/leads/${s(p.lead_id) ?? ""}`;
+  // The super admin gets every company's alerts: name the company, and open the link in it.
+  const company = s(p.company);
+  const companyId = s(p.company_id);
+  const fin = (lines: string[], path: string, extra: InlineButton[] = [], label?: string) => finish(
+    company ? [lines[0], `🏢 ${company}`, ...lines.slice(1)] : lines,
+    appUrl,
+    companyId ? `/switch?company=${companyId}&next=${encodeURIComponent(path)}` : path,
+    extra,
+    label,
+  );
   switch (n.kind) {
     case "recurring_expense":
-      return finish(["🔁 Monthly expense added", `Category: ${CATEGORY[String(p.category)] ?? p.category}`, ...moneyLines(p)], appUrl, "/finance");
+      return fin(["🔁 Monthly expense added", `Category: ${CATEGORY[String(p.category)] ?? p.category}`, ...moneyLines(p)], "/finance");
     case "expense_added":
-      return finish(["💸 Expense added", `Category: ${CATEGORY[String(p.category)] ?? p.category}`, ...moneyLines(p), `Added by: ${p.actor}`], appUrl, "/finance");
+      return fin(["💸 Expense added", `Category: ${CATEGORY[String(p.category)] ?? p.category}`, ...moneyLines(p), `Added by: ${p.actor}`], "/finance");
     case "capital_added":
-      return finish(["💰 Capital added", `From: ${p.contributor}`, ...moneyLines(p), `Added by: ${p.actor}`], appUrl, "/finance");
+      return fin(["💰 Capital added", `From: ${p.contributor}`, ...moneyLines(p), `Added by: ${p.actor}`], "/finance");
     case "lead_created":
-      return finish(["🆕 New lead", `Lead: ${p.lead_name}`, `Niche: ${p.niche}`, `Owner: ${p.owner}`, `Added by: ${p.actor}`], appUrl, leadPath, [], "Open lead");
+      return fin(["🆕 New lead", `Lead: ${p.lead_name}`, `Niche: ${p.niche}`, `Owner: ${p.owner}`, `Added by: ${p.actor}`], leadPath, [], "Open lead");
     case "lead_assigned":
-      return finish([
+      return fin([
         "👤 Lead assigned to you", `Lead: ${p.lead_name}`, ...(s(p.phone) ? [`Phone: ${p.phone}`] : []), `Niche: ${p.niche}`,
         ...(s(p.from) ? [`Previously: ${p.from}`] : []), `Assigned by: ${p.actor}`,
-      ], appUrl, leadPath, [], "Open lead");
+      ], leadPath, [], "Open lead");
     case "lead_closed":
-      return finish([p.status === "won" ? "🏆 Lead won" : "❌ Lead lost", `Lead: ${p.lead_name}`, `Owner: ${p.owner}`, `Marked by: ${p.actor}`],
-        appUrl, leadPath, [], "Open lead");
+      return fin([p.status === "won" ? "🏆 Lead won" : "❌ Lead lost", `Lead: ${p.lead_name}`, `Owner: ${p.owner}`, `Marked by: ${p.actor}`],
+        leadPath, [], "Open lead");
     case "follow_up_changed":
-      return finish([
+      return fin([
         p.rescheduled ? "📅 Follow-up rescheduled for you" : "📅 Follow-up scheduled for you",
         `Lead: ${p.lead_name}`, `Task: ${p.task}`, `Due: ${due(String(p.due_at))}`, `By: ${p.actor}`,
-      ], appUrl, leadPath, [], "Open lead");
+      ], leadPath, [], "Open lead");
     case "overdue_nag":
-      return finish([
+      return fin([
         "⚠️ Follow-up overdue", `Lead: ${p.lead_name}`, `Task: ${p.task}`,
         `Was due: ${due(String(p.due_at))} (${formatAgo(String(p.due_at), now)} ago)`,
         ...(s(p.phone) ? [`Phone: ${p.phone}`] : []),
         "Repeats every 5 min until you complete or reschedule it.",
-      ], appUrl, leadPath, [{ text: "🔕 Silence", callback_data: `${SILENCE_PREFIX}${p.follow_up_id}` }], "Open lead");
+      ], leadPath, [{ text: "🔕 Silence", callback_data: `${SILENCE_PREFIX}${p.follow_up_id}` }], "Open lead");
     case "library_file_added":
-      return finish(["📁 New library file", `File: ${p.name}`, `Folder: ${p.folder}`, `Uploaded by: ${p.actor}`],
-        appUrl, `/library/${s(p.folder_id) ?? ""}`, [], "Open folder");
+      return fin(["📁 New library file", `File: ${p.name}`, `Folder: ${p.folder}`, `Uploaded by: ${p.actor}`],
+        `/library/${s(p.folder_id) ?? ""}`, [], "Open folder");
     case "digest_sales": {
       const tasks = (p.tasks as Task[] | undefined) ?? [];
       const total = Number(p.today) + Number(p.overdue);
@@ -154,7 +165,7 @@ export function buildNotification(n: ClaimedNotification, appUrl: string | null,
         ...tasks.map((t) => `• ${t.overdue ? "⚠️ " : ""}${istTime.format(new Date(t.due_at))} — ${t.lead_name}: ${t.task}`),
         ...(total > tasks.length ? [`…and ${total - tasks.length} more`] : []),
       ];
-      return finish(lines, appUrl, `/follow-ups?view=${Number(p.overdue) > 0 ? "overdue" : "today"}`, [], "Open follow-ups");
+      return fin(lines, `/follow-ups?view=${Number(p.overdue) > 0 ? "overdue" : "today"}`, [], "Open follow-ups");
     }
     case "digest_admin": {
       const rows = (p.rows as TeamRow[] | undefined) ?? [];
@@ -167,7 +178,7 @@ export function buildNotification(n: ClaimedNotification, appUrl: string | null,
           `   ${r.actions_today} actions today · Last active ${r.last_activity ? due(r.last_activity) : "never"}`,
         );
       }
-      return finish(lines, appUrl, "/dashboard", [], "Open dashboard");
+      return fin(lines, "/dashboard", [], "Open dashboard");
     }
     case "digest_finance": {
       const cats = (p.categories as { category: string; total: number | string }[] | undefined) ?? [];
@@ -177,10 +188,26 @@ export function buildNotification(n: ClaimedNotification, appUrl: string | null,
         ...cats.map((c) => `   • ${CATEGORY[c.category] ?? c.category}: ${inr.format(Number(c.total))}`),
         `Capital added: ${inr.format(Number(p.capital_total))}`,
       ];
-      return finish(lines, appUrl, "/finance", [], "Open finance");
+      return fin(lines, "/finance", [], "Open finance");
     }
+    case "ads_client_new":
+      return fin([
+        "🤝 New ads client",
+        `Client: ${p.client}`,
+        ...(s(p.business) ? [`Business: ${p.business}`] : []),
+        ...(s(p.won_by) ? [`Won by: ${p.won_by}`] : []),
+        "Next: connect their Meta app and ad account.",
+      ], `/ads/clients/${s(p.ads_client_id) ?? ""}`, [], "Open client");
+    case "ad_account_problem":
+      return fin([
+        "⚠️ Ad account needs attention",
+        `Account: ${p.account_name}`,
+        ...(s(p.client) ? [`Client: ${p.client}`] : []),
+        ...(s(p.error) ? [`Meta said: ${p.error}`] : []),
+        "Syncing is paused until the token or access is fixed.",
+      ], s(p.ads_client_id) ? `/ads/clients/${p.ads_client_id}` : "/ads", [], "Open");
     case "test":
-      return finish(["✅ Test message", `Hi ${p.name}, Telegram notifications from the CRM are working.`], appUrl, "/dashboard");
+      return fin(["✅ Test message", `Hi ${p.name}, Telegram notifications from the CRM are working.`], "/dashboard");
   }
 }
 

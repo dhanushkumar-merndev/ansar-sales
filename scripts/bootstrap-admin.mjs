@@ -31,13 +31,13 @@ function promptHidden(question) {
 
 const supabase = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
 
-const { data: admins, error: adminErr } = await supabase.from("profiles").select("id").eq("role", "admin").eq("is_active", true).limit(1);
+const { data: admins, error: adminErr } = await supabase.from("profiles").select("id").in("role", ["admin", "super_admin"]).eq("is_active", true).limit(1);
 if (adminErr) {
   console.error("Could not read profiles. Are the migrations applied?", adminErr.message);
   process.exit(1);
 }
 if (admins.length > 0) {
-  console.error("An active Admin already exists. Create further users from the CRM's Users page.");
+  console.error("An active admin already exists. Create further users from the CRM's Users page.");
   process.exit(1);
 }
 
@@ -59,7 +59,8 @@ const { data, error } = await supabase.auth.admin.createUser({
   email: `${username}@${domain}`,
   password,
   email_confirm: true,
-  app_metadata: { crm_username: username, crm_display_name: displayName, crm_role: "admin" },
+  // The first account is the super admin: it creates companies and works in any of them.
+  app_metadata: { crm_username: username, crm_display_name: displayName, crm_role: "super_admin" },
 });
 if (error || !data.user) {
   console.error("Could not create the user:", error?.message ?? "unknown error");
@@ -71,4 +72,4 @@ if (!profile) {
   console.error("Profile was not created (is the on_auth_user_created trigger migrated?). The Auth user was rolled back.");
   process.exit(1);
 }
-console.log(`First admin created. Sign in with username "${username}".`);
+console.log(`Super admin created. Sign in with username "${username}".`);

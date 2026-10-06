@@ -50,11 +50,15 @@ export function authEmail(username: string) {
 /** Creates an Auth user + profile exactly like the app's Admin "New user" flow. */
 export async function createAuthUser(u: { username: string; displayName: string; role: AppRole; password: string }) {
   const sb = serviceClient();
+  // Test users join the oldest company (the one existing data was migrated into).
+  const { data: company, error: companyError } = await sb.from("companies").select("id").is("archived_at", null)
+    .order("created_at").order("id").limit(1).single();
+  if (companyError) throw new Error(`No company: ${companyError.message}`);
   const { data, error } = await sb.auth.admin.createUser({
     email: authEmail(u.username),
     password: u.password,
     email_confirm: true,
-    app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role },
+    app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role, crm_company_id: company.id },
   });
   if (error || !data.user) throw new Error(`Could not create ${u.username}: ${error?.message}`);
   return data.user.id;

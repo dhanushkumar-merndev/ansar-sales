@@ -73,6 +73,15 @@ pnpm dev        # http://localhost:3000 → sign in with the admin username/pass
    - **`crm-reminder-worker`** runs every minute. It calls the function only when a reminder is due.
    - **`crm-retention`** runs daily. It deletes finished delivery rows after 90 days and cron logs after 7 days.
 
+   For the **Facebook Ads** sync, also set `ADS_SYNC_SECRET` in Vercel (`openssl rand -hex 32`) and add:
+   ```sql
+   select vault.create_secret('https://<your-app>.vercel.app', 'crm_app_url');
+   select vault.create_secret('<ADS_SYNC_SECRET>', 'crm_ads_sync_secret');
+   ```
+   Migration `…9610` schedules **`crm-ads-sync`** (hourly at :23, calls `/api/ads/sync` only when an ad account is connected)
+   and **`crm-ads-rollup`** (daily: per-ad days older than 90 days become monthly totals). Setup for Lead Ads, the ad
+   account, ads managers and client logins is in `docs/meta-lead-ads.md` (also in the app under the setup guide).
+
    Check with `select jobname, schedule from cron.job;`.
 
 **Connect a user:** **Settings → Connect Telegram** opens the bot with a single-use token valid for 15 minutes. Press **Start**, and the settings page shows *Connected*.

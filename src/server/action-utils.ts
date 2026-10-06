@@ -8,7 +8,7 @@ type Ctx = Awaited<ReturnType<typeof authorizeAction>>;
 
 /** Validates input with Zod, authorizes the active user's role, then runs the mutation with the user's RLS client. */
 export async function runAction<S extends z.ZodType, T>(
-  roles: AppRole[],
+  roles: AppRole[] | "super_admin",
   schema: S,
   input: unknown,
   fn: (data: z.output<S>, ctx: Ctx) => Promise<ActionResult<T>>,

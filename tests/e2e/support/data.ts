@@ -14,6 +14,18 @@ export function phone() {
 
 export type LeadStatus = "new" | "contacted" | "interested" | "proposal_sent" | "won" | "lost";
 
+/** The default pipeline's stage names for the old fixed status keys. */
+const STAGE_NAMES: Record<LeadStatus, string> = {
+  new: "New", contacted: "Contacted", interested: "Interested", proposal_sent: "Proposal sent", won: "Won", lost: "Lost",
+};
+
+/** The id of a default stage in the caller's company (RLS returns only that company's stages). */
+export async function stageId(client: Db, status: LeadStatus) {
+  const { data, error } = await client.from("pipeline_stages").select("id").eq("name", STAGE_NAMES[status]).is("archived_at", null).single();
+  if (error) throw new Error(`stage ${status} not found: ${error.message}`);
+  return data.id;
+}
+
 /** Creates a lead through the same RPC the app uses, as whichever user `client` is. */
 export async function createLead(
   client: Db,
@@ -38,7 +50,7 @@ export async function createLead(
     p_email: o.email,
     p_niche_id: "id" in niche ? niche.id : undefined,
     p_new_niche: "newName" in niche ? niche.newName : undefined,
-    p_status: o.status,
+    p_stage_id: o.status ? await stageId(client, o.status) : undefined,
     p_owner_id: o.ownerId,
     p_note: o.note,
     p_follow_up_at: o.followUpAt?.toISOString(),

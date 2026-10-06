@@ -55,7 +55,7 @@ describe("finance period pages", () => {
     expect(Number(march.expense)).toBe(87618.5);
     expect(march.expense_entries).toBe(5);
     expect(Number(march.capital)).toBe(100000);
-    expect(Object.fromEntries(Object.entries(march.categories).map(([k, v]) => [k, Number(v)]))).toEqual({ rent: 25000, software: 2498, miscellaneous: 120.5, salary: 60000 });
+    expect(Object.fromEntries(Object.entries(march.categories).map(([k, v]) => [k, Number(v)]))).toEqual({ Rent: 25000, Software: 2498, Miscellaneous: 120.5, Salary: 60000 });
     expect(Number(y.totals.expense)).toBe(112618.5);
     expect(Number(y.previous_december.expense)).toBe(900);
     expect(y.years.slice(-2)).toEqual([2025, 2024]);
@@ -104,7 +104,8 @@ describe("finance period pages", () => {
     expect((await entries({ ...base, p_search: "_" })).total).toBe(1);
     expect((await entries({ ...base, p_search: "  RENT " })).total).toBe(1); // description, case-insensitive
 
-    expect((await entries({ ...base, p_category: "software" })).total).toBe(2);
+    const software = (await one<{ id: string }>(db, "select id from public.expense_categories where normalized_name = 'software' limit 1")).id;
+    expect((await entries({ ...base, p_category_id: software })).total).toBe(2);
     expect((await entries({ ...base, p_mode: "card" })).total).toBe(2);
     expect((await entries({ ...base, p_mode: "unspecified" })).items.map((e) => e.item)).toEqual(["Staff salary"]);
     const monthly = await entries({ ...base, p_recurring: true });
@@ -128,7 +129,7 @@ describe("finance period pages", () => {
   it("rejects bad input and other roles", async () => {
     await expect(call(account, "select public.list_finance_entries('expense', '2025-03-01', '2025-03-31', p_sort => 'id; drop table x') as r")).rejects.toThrow(/invalid_period_query/);
     await expect(call(account, "select public.list_finance_entries('expense', '2025-03-01', '2025-03-31', p_limit => 101) as r")).rejects.toThrow(/invalid_page/);
-    await expect(call(account, "select public.list_finance_entries('capital', '2025-03-01', '2025-03-31', p_category => 'rent') as r")).rejects.toThrow(/invalid_period_query/);
+    await expect(call(account, "select public.list_finance_entries('capital', '2025-03-01', '2025-03-31', p_category_id => gen_random_uuid()) as r")).rejects.toThrow(/invalid_period_query/);
     await expect(call(account, "select public.list_finance_entries('expense', '2025-03-01', '2025-03-31', p_search => $1) as r", ["x".repeat(101)])).rejects.toThrow(/search_too_long/);
     await expect(call(account, "select public.finance_year_overview(99999) as r")).rejects.toThrow(/invalid_period_query/);
     await expect(call(account, "select public.finance_period_report('2025-03-31', '2025-03-01') as r")).rejects.toThrow(/invalid_report_range/);

@@ -3,8 +3,8 @@
 import { startTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarClock, ChartColumn, ChevronsUpDown, FolderOpen, LayoutDashboard, LogOut, Settings, Users, Wallet, Contact } from "lucide-react";
-import { BrandMark, BrandName } from "@/components/app/brand";
+import { CalendarClock, ChartColumn, ChevronsUpDown, FolderOpen, LayoutDashboard, LogOut, Settings, Users, Wallet, Workflow, Contact, Megaphone } from "lucide-react";
+import { CompanySwitcher } from "@/components/app/company-switcher";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar,
 } from "@/components/ui/sidebar";
-import { ROLE_LABELS } from "@/lib/constants";
+import { ROLE_LABELS, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { initials } from "@/lib/format";
 import { type NavKey, navFor } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ const ITEMS: Record<NavKey, { label: string; href: string; icon: React.Component
   library: { label: "Library", href: "/library", icon: FolderOpen },
   finance: { label: "Finance", href: "/finance", icon: Wallet },
   reports: { label: "Reports", href: "/reports", icon: ChartColumn },
+  ads: { label: "Ads", href: "/ads", icon: Megaphone },
+  automation: { label: "Automation", href: "/automation", icon: Workflow },
   users: { label: "Users", href: "/users", icon: Users },
 };
 
@@ -41,19 +43,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href="/dashboard" onClick={() => setOpenMobile(false)}>
-                <BrandMark size={32} />
-                <div className="grid flex-1 text-left leading-tight">
-                  <BrandName className="truncate text-[13px] font-semibold" />
-                  <span className="truncate text-[11px] text-muted-foreground">{ROLE_LABELS[profile.role]} workspace</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <CompanySwitcher />
       </SidebarHeader>
       <SidebarContent className={cn("flex flex-col", isCollapsed && "cursor-pointer")}>
         <SidebarGroup className="flex-1 flex flex-col min-h-0">
@@ -104,7 +94,7 @@ export function AppSidebar() {
               <DropdownMenuContent side="top" align="start" className="w-56">
                 <DropdownMenuLabel className="font-normal">
                   <div className="text-sm font-medium">{profile.display_name}</div>
-                  <div className="text-xs text-muted-foreground">{ROLE_LABELS[profile.role]}</div>
+                  <div className="text-xs text-muted-foreground">{profile.isSuperAdmin ? SUPER_ADMIN_LABEL : ROLE_LABELS[profile.role]}</div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

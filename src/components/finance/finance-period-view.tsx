@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { SERIES } from "@/components/charts/chart";
+import { SERIES, seriesColor } from "@/components/charts/chart";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { Bars, ChartCard, Donut, GroupedBars, MultiLine, ScrollTable, StatCard } from "@/components/dashboard/widgets";
 import { CapitalDialog, ExpenseDialog, FinanceHistoryDialog, type FinanceEntity } from "@/components/finance/finance-dialogs";
@@ -14,7 +14,7 @@ import type { FinanceReport } from "@/components/reports/reports-view";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { CATEGORY_LABELS, EXPENSE_CATEGORIES, PAYMENT_MODE_LABELS, type ExpenseCategory } from "@/lib/constants";
+import { categoryLabel, PAYMENT_MODE_LABELS, type ExpenseCategory } from "@/lib/constants";
 import { formatCount, formatINR, formatINRCompact } from "@/lib/format";
 import { fetchPeriodReport, type CapitalRow, type ExpenseRow } from "@/lib/queries";
 import { formatCalendarDate, formatDayLabel, formatMonth, formatMonthLong, istToday, parsePeriod } from "@/lib/time";
@@ -34,7 +34,6 @@ type PeriodReport = FinanceReport & {
 };
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const CATEGORY_COLOR = (c: ExpenseCategory) => SERIES[EXPENSE_CATEGORIES.indexOf(c)];
 const num = Number;
 
 export function FinancePeriodView({ periodKey }: { periodKey: string }) {
@@ -139,7 +138,7 @@ export function FinancePeriodView({ periodKey }: { periodKey: string }) {
             <StatCard label={isMonth ? "Average expense per day" : "Average expense per month"} value={c ? (elapsed ? formatINR(expense / elapsed) : "—") : null}
               hint={elapsed ? `Over ${elapsed} ${isMonth ? "day" : "month"}${elapsed === 1 ? "" : "s"} so far` : "Period not started"} />
             <StatCard label="Largest expense" value={c ? (c.largest_expense === null ? "—" : formatINR(c.largest_expense)) : null}
-              hint={data?.top_expenses[0] ? `${CATEGORY_LABELS[data.top_expenses[0].category]}${data.top_expenses[0].item ? ` · ${data.top_expenses[0].item}` : ""}` : undefined} />
+              hint={data?.top_expenses[0] ? `${categoryLabel(data.top_expenses[0].category)}${data.top_expenses[0].item ? ` · ${data.top_expenses[0].item}` : ""}` : undefined} />
             <StatCard label="Items (nos)" value={c ? `${formatCount(num(c.expense_items_quantity) + num(c.capital_items_quantity))} nos` : null}
               hint={c ? `${formatCount(c.expense_items_quantity)} bought · ${formatCount(c.capital_items_quantity)} on capital` : undefined} />
             <StatCard label="From monthly series" value={data ? (expense ? `${Math.round((num(data.recurring_split.monthly) / expense) * 100)}%` : "—") : null}
@@ -228,7 +227,7 @@ export function FinancePeriodView({ periodKey }: { periodKey: string }) {
                   </Table></ScrollTable>
                 ) : <NoData text="No items recorded in this period." />) : <ListSkeleton rows={4} />}
               </ChartCard>
-              <ChartCard title="Largest expenses" description="Top 10 in this period">
+              <ChartCard className={isMonth ? undefined : "lg:col-span-2"} title="Largest expenses" description="Top 10 in this period">
                 {data ? (data.top_expenses.length ? (
                   <ScrollTable><Table>
                     <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Category</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
@@ -236,7 +235,7 @@ export function FinancePeriodView({ periodKey }: { periodKey: string }) {
                       {data.top_expenses.map((e) => (
                         <TableRow key={e.id}>
                           <TableCell className="whitespace-nowrap">{formatCalendarDate(e.date)}</TableCell>
-                          <TableCell>{CATEGORY_LABELS[e.category]}{e.item || e.description ? <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">{e.item ? `${e.item}${e.quantity ? ` × ${formatCount(e.quantity)} nos` : ""}` : e.description}</span> : null}</TableCell>
+                          <TableCell>{categoryLabel(e.category)}{e.item || e.description ? <span className="block max-w-[14rem] truncate text-xs text-muted-foreground">{e.item ? `${e.item}${e.quantity ? ` × ${formatCount(e.quantity)} nos` : ""}` : e.description}</span> : null}</TableCell>
                           <TableCell className="text-right">{formatINR(e.amount)}{e.payment_mode ? <span className="block text-xs text-muted-foreground">{PAYMENT_MODE_LABELS[e.payment_mode]}</span> : null}</TableCell>
                         </TableRow>
                       ))}
@@ -281,12 +280,12 @@ function buildCharts(data: PeriodReport, label: (p: string) => string, today: st
       expenseCum: series.map((p) => num(p.expense_cumulative)),
       capitalCum: series.map((p) => num(p.capital_cumulative)),
     },
-    categories: EXPENSE_CATEGORIES.map((cat) => ({ name: CATEGORY_LABELS[cat], value: now.get(cat) ?? 0, color: CATEGORY_COLOR(cat) })),
-    categoryCompare: EXPENSE_CATEGORIES.filter((cat) => now.has(cat) || prev.has(cat))
-      .map((cat) => ({ name: CATEGORY_LABELS[cat], now: now.get(cat) ?? 0, prev: prev.get(cat) ?? 0 })),
+    categories: [...now.entries()].sort((a, b) => b[1] - a[1]).map(([cat, v]) => ({ name: categoryLabel(cat), value: v, color: seriesColor(cat) })),
+    categoryCompare: [...new Set([...now.keys(), ...prev.keys()])]
+      .map((cat) => ({ name: categoryLabel(cat), now: now.get(cat) ?? 0, prev: prev.get(cat) ?? 0 })),
     // report_finance buckets a full year by month, matching the series periods.
-    categoryTrend: EXPENSE_CATEGORIES.filter((cat) => now.has(cat)).map((cat) => ({
-      name: CATEGORY_LABELS[cat], color: CATEGORY_COLOR(cat),
+    categoryTrend: [...now.keys()].map((cat) => ({
+      name: categoryLabel(cat), color: seriesColor(cat),
       values: periods.map((p) => num(data.category_trend.find((x) => x.period === p && x.category === cat)?.total ?? 0)),
     })),
   };

@@ -9,8 +9,14 @@ const ROLES: ("admin" | "account")[] = ["admin", "account"];
 
 export async function saveExpense(input: unknown) {
   return runAction(ROLES, expenseSchema, input, async (d, { supabase, profile }) => {
+    // An existing category of these books, or a new one created by name (only by companies that may edit).
+    const { data: categoryId, error: categoryError } = await supabase.rpc("resolve_expense_category", {
+      p_id: d.category.id, p_new_name: d.category.id ? undefined : d.category.newName,
+    });
+    if (categoryError) return dbError(categoryError);
     const values = {
-      expense_date: d.expenseDate, category: d.category, amount: d.amount as unknown as number,
+      expense_date: d.expenseDate, category_id: categoryId, amount: d.amount as unknown as number,
+      ...(d.companyId ? { company_id: d.companyId } : {}),
       payment_mode: d.paymentMode, item: d.item ?? null, quantity: d.quantity ?? null, description: d.description ?? null,
     };
     const q = d.id
@@ -32,6 +38,7 @@ export async function saveCapital(input: unknown) {
   return runAction(ROLES, capitalSchema, input, async (d, { supabase, profile }) => {
     const values = {
       entry_date: d.entryDate, contributor: d.contributor, amount: d.amount as unknown as number,
+      ...(d.companyId ? { company_id: d.companyId } : {}),
       payment_mode: d.paymentMode, item: d.item ?? null, quantity: d.quantity ?? null, description: d.description ?? null,
     };
     const q = d.id

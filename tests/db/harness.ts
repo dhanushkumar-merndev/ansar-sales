@@ -5,7 +5,7 @@ import { PGlite, type Transaction } from "@electric-sql/pglite";
 const root = join(__dirname, "..", "..");
 const migrationsDir = join(root, "supabase", "migrations");
 
-export type Role = "admin" | "sales" | "account";
+export type Role = "admin" | "sales" | "account" | "super_admin" | "ads_manager" | "client";
 export type Db = PGlite;
 type Queryable = PGlite | Transaction;
 
@@ -23,7 +23,10 @@ export async function createDb(): Promise<PGlite> {
  * Creates an Auth user the way Supabase Auth's admin createUser does: insert the row,
  * then merge the supplied app_metadata with an UPDATE in the same transaction.
  */
-export async function createUser(db: PGlite, username: string, role: Role, displayName = username) {
+export async function createUser(
+  db: PGlite, username: string, role: Role, displayName = username, companyId?: string, adsClientId?: string,
+) {
+  const company = role === "super_admin" || role === "ads_manager" ? null : (companyId ?? (await defaultCompany(db)));
   return db.transaction(async (tx) => {
     const res = await tx.query<{ id: string }>(
       `insert into auth.users (email, raw_app_meta_data) values ($1, '{"provider":"email","providers":["email"]}') returning id`,
@@ -32,10 +35,28 @@ export async function createUser(db: PGlite, username: string, role: Role, displ
     const id = res.rows[0].id;
     await tx.query(`update auth.users set raw_app_meta_data = raw_app_meta_data || $2 where id = $1`, [
       id,
-      { crm_username: username, crm_display_name: displayName, crm_role: role },
+      {
+        crm_username: username, crm_display_name: displayName, crm_role: role,
+        ...(company ? { crm_company_id: company } : {}), ...(adsClientId ? { crm_ads_client_id: adsClientId } : {}),
+      },
     ]);
     return id;
   });
+}
+
+/** The company the migrations create for existing data ("Star Growth Hub"). */
+export async function defaultCompany(db: PGlite) {
+  return (await one<{ id: string }>(db, "select id from public.companies order by created_at, id limit 1")).id;
+}
+
+export async function createCompany(db: PGlite, name: string) {
+  return (await one<{ id: string }>(db, "insert into public.companies (name) values ($1) returning id", [name])).id;
+}
+
+/** A pipeline stage of the default company (or the given one) by name, e.g. "Won". */
+export async function stageId(db: PGlite, name: string, companyId?: string) {
+  const company = companyId ?? (await defaultCompany(db));
+  return (await one<{ id: string }>(db, "select id from public.pipeline_stages where company_id = $1 and name = $2 and archived_at is null", [company, name])).id;
 }
 
 /** Runs fn inside a transaction as an authenticated user (RLS applies), then rolls back nothing. */

@@ -36,7 +36,7 @@ export function UsersView() {
   const query = useMemo(() => ({
     ...parsePaging(params),
     q: cleanSearch(params.get("q")),
-    role: ROLES.includes(roleParam as AppRole) ? roleParam : null,
+    role: (ROLES as readonly string[]).includes(roleParam ?? "") ? roleParam : null,
   }), [params, roleParam]);
   const [input, setInput] = useState(query.q);
   const debounced = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
@@ -67,7 +67,7 @@ export function UsersView() {
 
   return (
     <>
-      <PageHeader title="Users" description="Create staff accounts, change roles, reset passwords." actions={<Button onClick={() => setCreateOpen(true)}><Plus /> New user</Button>} />
+      <PageHeader title="Users" description={`Staff accounts of ${me.company.name}: create users, change roles, reset passwords.`} actions={<Button onClick={() => setCreateOpen(true)}><Plus /> New user</Button>} />
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />

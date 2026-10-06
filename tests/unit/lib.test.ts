@@ -78,17 +78,17 @@ describe("input normalization", () => {
     expect(usernameSchema.parse("  Ravi.K ")).toBe("ravi.k");
     expect(usernameSchema.safeParse("a").success).toBe(false);
     const ok = leadCreateSchema.safeParse({ name: " Acme ", phone: "9876543210", email: "", niche: { newName: "Retail" } });
-    expect(ok.success && ok.data).toMatchObject({ name: "Acme", phone: { e164: "+919876543210" }, email: undefined, status: "new" });
+    expect(ok.success && ok.data).toMatchObject({ name: "Acme", phone: { e164: "+919876543210" }, email: undefined });
     expect(leadCreateSchema.safeParse({ name: "A", phone: "9876543210", niche: {} }).success).toBe(false);
     expect(leadCreateSchema.safeParse({ name: "A", phone: "abc", niche: { newName: "x" } }).success).toBe(false);
   });
   it("accepts exact money strings only", () => {
-    expect(expenseSchema.safeParse({ expenseDate: "2026-10-01", category: "rent", amount: "1999.99", paymentMode: "upi" }).success).toBe(true);
-    expect(expenseSchema.safeParse({ expenseDate: "2026-10-01", category: "rent", amount: "1.999", paymentMode: "upi" }).success).toBe(false);
-    expect(expenseSchema.safeParse({ expenseDate: "2026-10-01", category: "rent", amount: "0", paymentMode: "upi" }).success).toBe(false);
+    expect(expenseSchema.safeParse({ expenseDate: "2026-10-01", category: { newName: "Rent" }, amount: "1999.99", paymentMode: "upi" }).success).toBe(true);
+    expect(expenseSchema.safeParse({ expenseDate: "2026-10-01", category: { newName: "Rent" }, amount: "1.999", paymentMode: "upi" }).success).toBe(false);
+    expect(expenseSchema.safeParse({ expenseDate: "2026-10-01", category: { newName: "Rent" }, amount: "0", paymentMode: "upi" }).success).toBe(false);
   });
   it("requires a payment mode and an item name when nos are given", () => {
-    const base = { expenseDate: "2026-10-01", category: "software", amount: "499" };
+    const base = { expenseDate: "2026-10-01", category: { newName: "Software" }, amount: "499" };
     expect(expenseSchema.safeParse(base).success).toBe(false);
     expect(expenseSchema.safeParse({ ...base, paymentMode: "barter" }).success).toBe(false);
     expect(expenseSchema.safeParse({ ...base, paymentMode: "upi", quantity: "2" }).success).toBe(false);

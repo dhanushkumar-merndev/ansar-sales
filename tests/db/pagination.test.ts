@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { asUser, createDb, createUser, nextPhone, type Db } from "./harness";
+import { asUser, createDb, createUser, nextPhone, stageId, type Db } from "./harness";
 
-type Page = { items: { id: string; name: string; status: string; overdue: boolean }[]; total: number };
+type Page = { items: { id: string; name: string; status: string; stage_id: string; overdue: boolean }[]; total: number };
 
 let db: Db;
 let admin: string, salesA: string, salesB: string;
+let newStage: string, contactedStage: string;
 
 async function list(userId: string, args: Record<string, unknown> = {}): Promise<Page> {
   const keys = Object.keys(args);
@@ -18,12 +19,14 @@ beforeAll(async () => {
   admin = await createUser(db, "admin", "admin");
   salesA = await createUser(db, "sales.a", "sales");
   salesB = await createUser(db, "sales.b", "sales");
+  newStage = await stageId(db, "New");
+  contactedStage = await stageId(db, "Contacted");
   // 45 leads created in ONE transaction share the same created_at, exercising the id tie-breaker.
   await asUser(db, salesA, async (tx) => {
     for (let i = 0; i < 45; i++) {
       await tx.query(
-        `select public.create_lead(p_name => $1, p_phone => $2, p_phone_normalized => $2, p_new_niche => $3, p_status => $4::public.lead_status)`,
-        [`Lead ${String(i).padStart(2, "0")}${i === 7 ? " 100%_off" : ""}`, nextPhone(), i % 3 === 0 ? "Retail" : "Healthcare", i % 2 === 0 ? "new" : "contacted"],
+        `select public.create_lead(p_name => $1, p_phone => $2, p_phone_normalized => $2, p_new_niche => $3, p_stage_id => $4)`,
+        [`Lead ${String(i).padStart(2, "0")}${i === 7 ? " 100%_off" : ""}`, nextPhone(), i % 3 === 0 ? "Retail" : "Healthcare", i % 2 === 0 ? newStage : contactedStage],
       );
     }
   });
@@ -48,11 +51,11 @@ describe("list_leads pagination", () => {
   });
 
   it("applies filters before pagination and counts with the same predicates", async () => {
-    const r1 = await list(salesA, { p_statuses: "{new}", p_limit: 10, p_offset: 0 });
-    const r2 = await list(salesA, { p_statuses: "{new}", p_limit: 10, p_offset: 10 });
-    const r3 = await list(salesA, { p_statuses: "{new}", p_limit: 10, p_offset: 20 });
+    const r1 = await list(salesA, { p_stage_ids: `{${newStage}}`, p_limit: 10, p_offset: 0 });
+    const r2 = await list(salesA, { p_stage_ids: `{${newStage}}`, p_limit: 10, p_offset: 10 });
+    const r3 = await list(salesA, { p_stage_ids: `{${newStage}}`, p_limit: 10, p_offset: 20 });
     expect(r1.total).toBe(23);
-    expect([...r1.items, ...r2.items, ...r3.items].every((i) => i.status === "new")).toBe(true);
+    expect([...r1.items, ...r2.items, ...r3.items].every((i) => i.stage_id === newStage)).toBe(true);
     expect(r1.items.length + r2.items.length + r3.items.length).toBe(23);
     const sortedByName = await list(salesA, { p_sort: "name", p_dir: "asc", p_limit: 5 });
     expect(sortedByName.items.map((i) => i.name)).toEqual(["Lead 00", "Lead 01", "Lead 02", "Lead 03", "Lead 04"]);

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Info, Plus, TrendingDown, TrendingUp } from "lucide-react";
-import { SERIES } from "@/components/charts/chart";
+import { SERIES, seriesColor } from "@/components/charts/chart";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { ChartCard, GroupedBars } from "@/components/dashboard/widgets";
@@ -15,7 +15,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
-import { CATEGORY_LABELS, EXPENSE_CATEGORIES, type ExpenseCategory } from "@/lib/constants";
+import { useFinanceBooks } from "@/components/finance/finance-books";
+import { type ExpenseCategory } from "@/lib/constants";
 import { formatCount, formatINR, formatINRCompact } from "@/lib/format";
 import { fetchDashboard, fetchYearOverview, nextMonth, type YearOverview } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
@@ -62,16 +63,19 @@ export function FinanceView() {
   const currentMonthLabel = summary.data ? formatMonth(summary.data.current_month) : "This month";
 
   const refresh = () => { summary.refetch(); monthCapitalQuery.refetch(); };
+  const books = useFinanceBooks().data;
 
   return (
     <>
       <PageHeader
         title="Finance"
-        description="Capital invested and monthly operating expenses (INR). Profit and cash balance are not calculated."
-        actions={<>
+        description={books?.merged
+          ? `Shared books of ${books.companies.map((c) => c.name).join(", ")} (INR).${books.canEdit ? "" : " View only for your company."}`
+          : "Capital invested and monthly operating expenses (INR). Profit and cash balance are not calculated."}
+        actions={books?.canEdit ? <>
           <Button variant="outline" onClick={() => setAdding("capital")}><Plus /> Add capital</Button>
           <Button onClick={() => setAdding("expense")}><Plus /> Add expense</Button>
-        </>}
+        </> : undefined}
       />
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <FinanceStatCard
@@ -114,7 +118,6 @@ export function FinanceView() {
   );
 }
 
-const CATEGORY_COLOR = (c: ExpenseCategory) => SERIES[EXPENSE_CATEGORIES.indexOf(c)];
 
 /** "▲ 12%" / "▼ 8%" against a previous total; text, so the change never relies on colour alone. */
 export function change(current: number, previous: number) {
@@ -182,7 +185,7 @@ function MonthCard({ month: m, previousExpense }: { month: YearOverview["months"
   const expense = Number(m.expense);
   const capital = Number(m.capital);
   const delta = change(expense, previousExpense);
-  const split = EXPENSE_CATEGORIES.map((c) => ({ c, v: Number(m.categories[c] ?? 0) })).filter((x) => x.v > 0);
+  const split = Object.entries(m.categories).map(([c, v]) => ({ c, v: Number(v ?? 0) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
   const empty = m.expense_entries === 0 && m.capital_entries === 0;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const label = formatMonthLong(m.month);
@@ -224,8 +227,8 @@ function MonthCard({ month: m, previousExpense }: { month: YearOverview["months"
           </p>
           {split.length ? (
             <div className="flex h-1.5 overflow-hidden rounded-full bg-muted" role="img"
-              aria-label={`Category split: ${split.map((x) => `${CATEGORY_LABELS[x.c]} ${formatINR(x.v)}`).join(", ")}`}>
-              {split.map((x) => <span key={x.c} title={`${CATEGORY_LABELS[x.c]}: ${formatINR(x.v)}`} style={{ width: `${(x.v / expense) * 100}%`, background: CATEGORY_COLOR(x.c) }} />)}
+              aria-label={`Category split: ${split.map((x) => `${x.c} ${formatINR(x.v)}`).join(", ")}`}>
+              {split.map((x) => <span key={x.c} title={`${x.c}: ${formatINR(x.v)}`} style={{ width: `${(x.v / expense) * 100}%`, background: seriesColor(x.c) }} />)}
             </div>
           ) : null}
         </CardContent>

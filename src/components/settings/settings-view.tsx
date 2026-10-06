@@ -8,7 +8,7 @@ import { BrandName } from "@/components/app/brand";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { NotificationsCard } from "@/components/settings/notifications-card";
-import { UsageView } from "@/components/settings/usage-view";
+import { PipelineSettings } from "@/components/settings/pipeline-settings";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useUrlState } from "@/hooks/use-url-state";
-import { ROLE_LABELS } from "@/lib/constants";
+import { ROLE_LABELS, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { fetchTelegramStatus } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
 import { changePassword } from "@/server/actions/auth";
@@ -30,21 +30,21 @@ export function SettingsView() {
   const profile = useProfile();
   const { params, set } = useUrlState();
   const isAdmin = profile.role === "admin";
-  const tab = isAdmin && params.get("tab") === "usage" ? "usage" : "account";
+  const tab = isAdmin && params.get("tab") === "pipeline" ? "pipeline" : "account";
   return (
     <div className="w-full space-y-6">
       <PageHeader
         title="Settings"
-        description={tab === "usage"
-          ? "How much of the Supabase plan the CRM uses, and what you can clean up."
+        description={tab === "pipeline"
+          ? `Lead stages of ${profile.company.name}.`
           : "Your account credentials, workspace profile and Telegram reminder integration."}
       />
       {isAdmin ? (
-        <Tabs value={tab} onValueChange={(v) => set({ tab: v === "usage" ? "usage" : null })}>
-          <TabsList><TabsTrigger value="account">Account</TabsTrigger><TabsTrigger value="usage">Usage</TabsTrigger></TabsList>
+        <Tabs value={tab} onValueChange={(v) => set({ tab: v === "pipeline" ? "pipeline" : null })}>
+          <TabsList><TabsTrigger value="account">Account</TabsTrigger><TabsTrigger value="pipeline">Pipeline</TabsTrigger></TabsList>
         </Tabs>
       ) : null}
-      {tab === "usage" ? <UsageView /> : <AccountSettings />}
+      {tab === "pipeline" ? <PipelineSettings /> : <AccountSettings />}
     </div>
   );
 }
@@ -65,7 +65,7 @@ function AccountSettings() {
                   <div className="flex items-center gap-2">
                     <CardTitle className="truncate text-base">{profile.display_name}</CardTitle>
                     <Badge variant="outline" className="border-white/10 bg-white/5 text-xs text-foreground">
-                      {ROLE_LABELS[profile.role]}
+                      {profile.isSuperAdmin ? SUPER_ADMIN_LABEL : ROLE_LABELS[profile.role]}
                     </Badge>
                   </div>
                   <CardDescription className="truncate text-xs">@{profile.username}</CardDescription>
@@ -84,11 +84,11 @@ function AccountSettings() {
                 </div>
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs text-muted-foreground">Access role</span>
-                  <span className="font-medium text-foreground">{ROLE_LABELS[profile.role]}</span>
+                  <span className="font-medium text-foreground">{profile.isSuperAdmin ? SUPER_ADMIN_LABEL : ROLE_LABELS[profile.role]}</span>
                 </div>
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs text-muted-foreground">Workspace</span>
-                  <BrandName suffix="CRM" className="font-medium text-foreground" />
+                  <BrandName name={profile.company.name} highlight={profile.company.brandHighlight} className="font-medium text-foreground" />
                 </div>
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs text-muted-foreground">Account status</span>
@@ -130,6 +130,14 @@ function AccountSettings() {
                   <li>Track monthly operating expense categories</li>
                   <li>Audit trail for financial corrections</li>
                   <li>Finance summary dashboard & metrics</li>
+                </ul>
+              )}
+              {profile.role === "ads_manager" && (
+                <ul className="list-disc space-y-1.5 pl-4 text-foreground/80">
+                  <li>Ad results of the companies assigned by the super admin</li>
+                  <li>Campaign categories for shared ad accounts</li>
+                  <li>Ads clients: their Meta connection and portal logins</li>
+                  <li>Telegram alerts for new clients and ad account problems</li>
                 </ul>
               )}
             </CardContent>

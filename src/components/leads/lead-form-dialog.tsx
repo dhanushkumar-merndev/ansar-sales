@@ -11,6 +11,7 @@ import { DateTimeField } from "@/components/common/date-time-field";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
 import { StaffSelect } from "@/components/leads/staff-select";
 import { useProfile } from "@/components/providers/profile-provider";
+import { useStages } from "@/components/providers/stages-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,7 +19,6 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { LEAD_STATUSES, STATUS_LABELS, type LeadStatus } from "@/lib/constants";
 import { normalizePhone } from "@/lib/phone";
 import { addDays, istToUtcIso, istToday } from "@/lib/time";
 import type { NicheOption } from "@/lib/types";
@@ -30,7 +30,8 @@ const formSchema = z
     phone: z.string().trim().min(1, "Phone is required").refine((v) => normalizePhone(v) !== null, "Enter a valid phone number (use +code for other countries)"),
     email: z.union([z.literal(""), z.email("Enter a valid email")]),
     niche: z.custom<NicheValue>((v) => v !== null && v !== undefined, "Choose or create a niche"),
-    status: z.enum(LEAD_STATUSES),
+    /** "" = the company's first stage. */
+    stageId: z.string(),
     ownerId: z.string().nullable(),
     note: z.string().max(5000),
     scheduleFollowUp: z.boolean(),
@@ -52,6 +53,7 @@ export function LeadFormDialog({
   onSaved?: (id: string) => void;
 }) {
   const profile = useProfile();
+  const { stages } = useStages();
   const isEdit = Boolean(lead);
   const [pending, start] = useTransition();
   const [duplicate, setDuplicate] = useState<{ visibleLeadId: string | null } | null>(null);
@@ -62,7 +64,7 @@ export function LeadFormDialog({
     phone: lead?.phone ?? "",
     email: lead?.email ?? "",
     niche: lead ? { id: lead.niche.id, label: lead.niche.name } : null,
-    status: "new",
+    stageId: "",
     ownerId: null,
     note: "",
     scheduleFollowUp: false,
@@ -105,7 +107,7 @@ export function LeadFormDialog({
       const result = isEdit
         ? await updateLead({ id: lead!.id, version: lead!.version, name: values.name, phone: values.phone, email: values.email, niche, allowDuplicate })
         : await createLead({
-            name: values.name, phone: values.phone, email: values.email, niche, status: values.status,
+            name: values.name, phone: values.phone, email: values.email, niche, stageId: values.stageId || undefined,
             ownerId: values.ownerId ?? undefined, note: values.note,
             followUpAt: values.scheduleFollowUp ? istToUtcIso(values.followUp.date, values.followUp.time) : undefined,
             followUpTask: values.scheduleFollowUp ? values.followUpTask : undefined,
@@ -184,11 +186,11 @@ export function LeadFormDialog({
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel htmlFor="lead-status">Status</FieldLabel>
-                    <Controller control={control} name="status" render={({ field }) => (
-                      <Select value={field.value} onValueChange={(v) => field.onChange(v as LeadStatus)}>
-                        <SelectTrigger id="lead-status" className="w-full"><SelectValue /></SelectTrigger>
-                        <SelectContent>{LEAD_STATUSES.map((s) => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}</SelectContent>
+                    <FieldLabel htmlFor="lead-status">Stage</FieldLabel>
+                    <Controller control={control} name="stageId" render={({ field }) => (
+                      <Select value={field.value || stages[0]?.id || ""} onValueChange={field.onChange}>
+                        <SelectTrigger id="lead-status" className="w-full"><SelectValue placeholder="First stage" /></SelectTrigger>
+                        <SelectContent>{stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                       </Select>
                     )} />
                   </Field>

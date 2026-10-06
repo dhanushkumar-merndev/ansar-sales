@@ -5,7 +5,7 @@ import type { AppRole } from "@/lib/constants";
 export type NotificationKind =
   | "lead_created" | "lead_assigned" | "lead_closed" | "follow_up_changed" | "overdue_nag"
   | "expense_added" | "capital_added" | "recurring_expense" | "library_file_added"
-  | "digest_sales" | "digest_admin" | "digest_finance";
+  | "digest_sales" | "digest_admin" | "digest_finance" | "ads_client_new" | "ad_account_problem";
 
 export const NOTIFICATION_KINDS: { kind: NotificationKind; label: string; description: string; roles: AppRole[] }[] = [
   { kind: "overdue_nag", label: "Overdue follow-up alerts", description: "Every 5 min, 9 AM–9 PM IST, until you complete, reschedule or tap Silence.", roles: ["admin", "sales"] },
@@ -20,6 +20,8 @@ export const NOTIFICATION_KINDS: { kind: NotificationKind; label: string; descri
   { kind: "capital_added", label: "Capital added", description: "When someone records a capital contribution.", roles: ["admin", "account"] },
   { kind: "recurring_expense", label: "Monthly expenses added", description: "When a repeating expense is added automatically.", roles: ["admin", "account"] },
   { kind: "digest_finance", label: "Monthly finance summary", description: "1st of the month, 9 AM IST: last month's expenses and capital.", roles: ["admin", "account"] },
+  { kind: "ads_client_new", label: "New ads clients", description: "When a won lead is handed to the ads team.", roles: ["admin", "ads_manager"] },
+  { kind: "ad_account_problem", label: "Ad account problems", description: "When Meta stops returning a connected ad account's data (expired token, removed access).", roles: ["admin", "ads_manager"] },
 ];
 
 export function notificationKindsFor(role: AppRole) {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
+import { asService, asUser, createDb, createLead, createUser, one, rows, stageId, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string, account: string, offline: string;
@@ -45,7 +45,8 @@ describe("instant events are routed by role and never sent to the actor", () => 
 
   it("won/lost → admins; someone else's follow-up change → assignee", async () => {
     const lead = await createLead(db, salesA, { name: "Closing" });
-    await asUser(db, salesA, (tx) => tx.query("update public.leads set status = 'won' where id = $1", [lead]));
+    const won = await stageId(db, "Won");
+    await asUser(db, salesA, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [lead, won]));
     const closed = await queued("kind = 'lead_closed' and lead_id = $1", [lead]);
     expect(closed.map((r) => [r.recipient_id, r.payload.status])).toEqual([[admin, "won"]]);
     await asUser(db, salesA, (tx) => tx.query("insert into public.follow_ups (lead_id, task, due_at, created_by) values ($1, 'Own task', now() + interval '1 day', $2)", [lead, salesA]));

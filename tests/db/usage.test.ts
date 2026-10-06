@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { asService, asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
 
 let db: Db;
-let admin: string, sales: string, account: string;
+let owner: string, admin: string, sales: string, account: string;
 let brochures: string, photos: string;
 
 type Usage = {
@@ -36,7 +36,7 @@ async function addFile(folderId: string, size: number, opts: { mime?: string; re
 }
 
 const archive = (id: string) => asUser(db, admin, (tx) => tx.query("update public.library_files set archived_at = now() where id = $1", [id]));
-const usage = () => asUser(db, admin, async (tx) => (await one<{ r: Usage }>(tx, "select public.admin_usage() as r")).r);
+const usage = () => asUser(db, owner, async (tx) => (await one<{ r: Usage }>(tx, "select public.admin_usage() as r")).r);
 const deleteObject = (userId: string, path: string) =>
   asUser(db, userId, async (tx) => (await tx.query("delete from storage.objects where bucket_id = 'library' and name = $1", [path])).affectedRows);
 
@@ -47,6 +47,7 @@ let newOrphan: { path: string };
 
 beforeAll(async () => {
   db = await createDb();
+  owner = await createUser(db, "owner", "super_admin");
   admin = await createUser(db, "admin", "admin");
   sales = await createUser(db, "sales", "sales");
   account = await createUser(db, "account", "account");
@@ -61,7 +62,9 @@ beforeAll(async () => {
 });
 
 describe("admin usage", () => {
-  it("is admin only", async () => {
+  it("is super admin only (storage is shared by every company)", async () => {
+    await expect(asUser(db, admin, (tx) => tx.query("select public.admin_usage()"))).rejects.toThrow(/forbidden/);
+    await expect(asUser(db, admin, (tx) => tx.query("select public.admin_unregistered_uploads()"))).rejects.toThrow(/forbidden/);
     await expect(asUser(db, sales, (tx) => tx.query("select public.admin_usage()"))).rejects.toThrow(/forbidden/);
     await expect(asUser(db, account, (tx) => tx.query("select public.admin_usage()"))).rejects.toThrow(/forbidden/);
     await expect(asUser(db, sales, (tx) => tx.query("select public.admin_unregistered_uploads()"))).rejects.toThrow(/forbidden/);
@@ -75,13 +78,13 @@ describe("admin usage", () => {
     expect(Number(u.storage_bytes)).toBe(3000 + 500 + 7000 + 400 + 100);
     expect(Number(u.storage_objects)).toBe(5);
     expect(u.library).toEqual({ active_files: 2, active_bytes: 3500, archived_files: 1, archived_bytes: 7000, unregistered_files: 2, unregistered_bytes: 500 });
-    expect(u.by_folder).toEqual([{ name: "Brochures", bytes: 3000, files: 1 }, { name: "Photos", bytes: 500, files: 1 }]);
+    expect(u.by_folder).toEqual([{ name: "Star Growth Hub · Brochures", bytes: 3000, files: 1 }, { name: "Star Growth Hub · Photos", bytes: 500, files: 1 }]);
     expect(u.by_type).toEqual({ pdf_bytes: 10000, image_bytes: 500 });
     expect(u.shares).toEqual({ active_links: 1, total_opens: 0 });
   });
 
   it("lists only unregistered uploads older than an hour", async () => {
-    const list = await asUser(db, admin, async (tx) => (await one<{ r: { path: string; bytes: number }[] }>(tx, "select public.admin_unregistered_uploads() as r")).r);
+    const list = await asUser(db, owner, async (tx) => (await one<{ r: { path: string; bytes: number }[] }>(tx, "select public.admin_unregistered_uploads() as r")).r);
     expect(list).toEqual([{ path: oldOrphan.path, bytes: 400 }]);
   });
 });
@@ -127,7 +130,7 @@ describe("thumbnails and usage", () => {
     await asUser(db, sales, (tx) => tx.query("select public.set_library_thumbnail($1, $2)", [f.id, thumb]));
 
     const before = await usage();
-    const list = await asUser(db, admin, async (tx) => (await one<{ r: { path: string }[] }>(tx, "select public.admin_unregistered_uploads() as r")).r);
+    const list = await asUser(db, owner, async (tx) => (await one<{ r: { path: string }[] }>(tx, "select public.admin_unregistered_uploads() as r")).r);
     expect(list.map((x) => x.path)).not.toContain(thumb);
     expect(await deleteObject(admin, thumb)).toBe(0);
 

@@ -1,23 +1,31 @@
+"use client";
+
 import { AlertTriangle, BellOff, BellRing, Check, CircleDot, Clock, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { STATUS_LABELS, type LeadStatus, type ReminderState } from "@/lib/constants";
+import { useStages } from "@/components/providers/stages-provider";
+import { OUTCOME_LABELS, type LeadOutcome, type ReminderState } from "@/lib/constants";
+import { STAGE_BADGE } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 
-const STATUS_STYLE: Record<LeadStatus, string> = {
-  new: "border-white/25 bg-white/10 text-white font-medium",
-  contacted: "border-sky-400/30 bg-sky-400/10 text-sky-300",
-  interested: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-  proposal_sent: "border-violet-400/30 bg-violet-400/10 text-violet-300",
-  won: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+const OUTCOME_STYLE: Record<LeadOutcome, string> = {
+  open: STAGE_BADGE.slate,
+  won: STAGE_BADGE.emerald,
   lost: "border-white/10 bg-white/5 text-zinc-400",
 };
 
-export function StatusBadge({ status, className }: { status: LeadStatus; className?: string }) {
-  const Icon = status === "won" ? Trophy : status === "lost" ? X : CircleDot;
+/**
+ * A lead's pipeline stage (name and colour from the company's pipeline), with an icon for
+ * won/lost. Falls back to the outcome (Open / Won / Lost) while stages load.
+ */
+export function StatusBadge({ stageId, status, className }: { stageId?: string | null; status: LeadOutcome; className?: string }) {
+  const { byId } = useStages();
+  const stage = stageId ? byId.get(stageId) : undefined;
+  const kind = stage?.kind ?? status;
+  const Icon = kind === "won" ? Trophy : kind === "lost" ? X : CircleDot;
   return (
-    <Badge variant="outline" className={cn("gap-1.5 font-medium", STATUS_STYLE[status], className)}>
+    <Badge variant="outline" className={cn("gap-1.5 font-medium", stage ? STAGE_BADGE[stage.color] : OUTCOME_STYLE[kind], className)}>
       <Icon className="size-3 shrink-0" aria-hidden />
-      {STATUS_LABELS[status]}
+      {stage?.name ?? OUTCOME_LABELS[kind]}
     </Badge>
   );
 }

@@ -1,4 +1,4 @@
-import type { LeadStatus, ReminderState } from "@/lib/constants";
+import type { LeadOutcome, ReminderState } from "@/lib/constants";
 
 export type NicheOption = { id: string; name: string };
 
@@ -7,7 +7,9 @@ export type LeadListItem = {
   name: string;
   phone: string;
   email: string | null;
-  status: LeadStatus;
+  status: LeadOutcome;
+  stage_id: string;
+  source: "manual" | "facebook";
   niche: NicheOption;
   owner: { id: string; display_name: string };
   next_follow_up_at: string | null;
@@ -29,7 +31,7 @@ export type FollowUpListItem = {
   completed_at: string | null;
   cancelled_at: string | null;
   overdue: boolean;
-  lead: { id: string; name: string; phone: string; status: LeadStatus };
+  lead: { id: string; name: string; phone: string; status: LeadOutcome; stage_id: string };
   assignee: { id: string; display_name: string };
   reminder: { state: ReminderState; attempts: number; last_error: string | null; sent_at: string | null } | null;
   starred: boolean;

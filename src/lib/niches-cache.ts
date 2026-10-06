@@ -3,21 +3,23 @@ import { cacheLife, cacheTag } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { NicheOption } from "@/lib/types";
 
-export const NICHES_TAG = "niches";
+/** Cache tag for one company's niche list. */
+export const nichesTag = (companyId: string) => `niches:${companyId}`;
 
 /**
- * Shared, non-sensitive default niche options (active niches, first 100 by name).
- * Callers MUST authorize the user as a lead user (admin/sales) before calling.
- * The same list is valid for every authorized user, so the cache key needs no user scope.
- * Invalidated with updateTag(NICHES_TAG) after niche mutations; browsers also refetch on Realtime events.
+ * Shared, non-sensitive default niche options for one company (active niches, first 100 by name).
+ * Callers MUST authorize the user as a lead user (admin/sales) and pass the company from their
+ * own verified profile: the cache key is the company, and the query is filtered to it.
+ * Invalidated with updateTag(nichesTag(companyId)) after niche mutations; browsers also refetch on Realtime events.
  */
-export async function getCachedNicheOptions(): Promise<NicheOption[]> {
+export async function getCachedNicheOptions(companyId: string): Promise<NicheOption[]> {
   "use cache";
-  cacheTag(NICHES_TAG);
+  cacheTag(nichesTag(companyId));
   cacheLife("hours");
   const { data, error } = await createAdminClient()
     .from("niches")
     .select("id, name")
+    .eq("company_id", companyId)
     .is("archived_at", null)
     .order("normalized_name")
     .order("id")

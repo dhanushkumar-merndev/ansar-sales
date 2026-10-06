@@ -8,7 +8,7 @@ const INVALID = "Invalid username or password.";
 
 test.describe("Authentication", () => {
   test("AUTH-05 signed-out visitors are sent to login with the original path", async ({ request }) => {
-    for (const [path, next] of [["/dashboard", "/dashboard"], ["/leads?status=won", "/leads?status=won"], ["/finance", "/finance"]]) {
+    for (const [path, next] of [["/dashboard", "/dashboard"], ["/leads?stage=x", "/leads?stage=x"], ["/finance", "/finance"]]) {
       const res = await request.get(path, { maxRedirects: 0 });
       expect(res.status(), path).toBe(307);
       const location = new URL(res.headers().location, "http://x");
@@ -31,8 +31,8 @@ test.describe("Authentication", () => {
   });
 
   test("AUTH-01/06 username + password sign-in honours the next parameter", async ({ page, run }) => {
-    await signIn(page, ACCOUNTS.salesB.username, run.password, `/login?next=${encodeURIComponent("/leads?status=won")}`);
-    await page.waitForURL("**/leads?status=won");
+    await signIn(page, ACCOUNTS.salesB.username, run.password, `/login?next=${encodeURIComponent("/leads?stage=x")}`);
+    await page.waitForURL("**/leads?stage=x");
     await expect(page.getByRole("heading", { name: "Leads", level: 1 })).toBeVisible();
   });
 

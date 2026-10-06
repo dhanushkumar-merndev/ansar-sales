@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
+import { asUser, createDb, createLead, createUser, one, rows, stageId, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string, account: string;
@@ -8,7 +8,7 @@ let today: string;
 type LeadReport = {
   range: { from: string; to: string; bucket: string }; scope: string;
   cards: Record<string, number | null>; trend: { period: string; created: number; won: number; lost: number }[];
-  funnel: { status: string; count: number }[]; niches: { name: string; created: number; won: number }[];
+  funnel: { name: string; count: number }[]; niches: { name: string; created: number; won: number }[];
   follow_up_outcomes: Record<string, number>; salespeople: { name: string; created: number; won: number }[] | null;
 };
 type FinanceReport = {
@@ -38,8 +38,12 @@ describe("reports", () => {
     const a1 = await createLead(db, salesA, { niche: "Retail" });
     const a2 = await createLead(db, salesA, { niche: "Retail" });
     await createLead(db, salesB, { niche: "Education" });
-    for (const s of ["contacted", "proposal_sent", "won"]) await asUser(db, salesA, (tx) => tx.query("update public.leads set status = $2 where id = $1", [a1, s]));
-    await asUser(db, salesA, (tx) => tx.query("update public.leads set status = 'lost' where id = $1", [a2]));
+    for (const s of ["Contacted", "Proposal sent", "Won"]) {
+      const stage = await stageId(db, s);
+      await asUser(db, salesA, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [a1, stage]));
+    }
+    const lost = await stageId(db, "Lost");
+    await asUser(db, salesA, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [a2, lost]));
 
     const team = await leadReport(admin, today, today);
     expect(team.scope).toBe("team");
@@ -48,7 +52,7 @@ describe("reports", () => {
     expect(team.cards.won).toBe(1);
     expect(team.cards.lost).toBe(1);
     expect(team.trend).toEqual([{ period: today, created: 3, won: 1, lost: 1 }]);
-    expect(team.funnel.map((f) => f.count)).toEqual([3, 1, 1, 1, 1]); // new, contacted, interested (passed through), proposal, won
+    expect(team.funnel.map((f) => [f.name, f.count])).toEqual([["New", 3], ["Contacted", 1], ["Interested", 1], ["Proposal sent", 1], ["Won", 1]]); // interested was passed through
     expect(team.niches).toEqual([{ name: "Retail", created: 2, won: 1 }, { name: "Education", created: 1, won: 0 }]);
     expect(team.salespeople!.find((p) => p.name === "Sales A")).toMatchObject({ created: 2, won: 1 });
 

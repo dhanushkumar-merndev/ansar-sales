@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EXPENSE_CATEGORIES, LEAD_STATUSES, PAYMENT_MODES, ROLES } from "@/lib/constants";
+import { PAYMENT_MODES, ROLES } from "@/lib/constants";
 import { normalizePhone } from "@/lib/phone";
 
 export const usernameSchema = z
@@ -38,7 +38,8 @@ export const leadCreateSchema = z.object({
   phone: phoneSchema,
   email: z.union([z.literal(""), z.email("Enter a valid email").max(254)]).optional().transform((v) => v || undefined),
   niche: nicheChoiceSchema,
-  status: z.enum(LEAD_STATUSES).default("new"),
+  /** Pipeline stage; the database uses the company's first stage when omitted. */
+  stageId: z.uuid().optional(),
   ownerId: z.uuid().optional(),
   note: optionalText(5000),
   followUpAt: isoDateTime.optional(),
@@ -91,7 +92,11 @@ const itemForQuantity = (d: { item?: string; quantity?: number }) => d.quantity 
 export const expenseSchema = z.object({
   id: z.uuid().optional(),
   expenseDate: calendarDate,
-  category: z.enum(EXPENSE_CATEGORIES),
+  /** An existing category, or a new name created in the books on save. */
+  category: z.object({ id: z.uuid().optional(), newName: optionalText(40) })
+    .refine((v) => Boolean(v.id || v.newName), { message: "Choose or type a category" }),
+  /** In merged books: which company the expense is for (defaults to the current company). */
+  companyId: z.uuid().optional(),
   amount: z.string().trim().regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter an amount with up to 2 decimals").refine((v) => Number(v) > 0, "Amount must be positive"),
   ...purchaseFields,
   description: optionalText(500),
@@ -102,6 +107,7 @@ export const capitalSchema = z.object({
   id: z.uuid().optional(),
   entryDate: calendarDate,
   contributor: z.string().trim().min(1, "Who contributed?").max(120),
+  companyId: z.uuid().optional(),
   amount: z.string().trim().regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter an amount with up to 2 decimals").refine((v) => Number(v) > 0, "Amount must be positive"),
   ...purchaseFields,
   description: optionalText(500),

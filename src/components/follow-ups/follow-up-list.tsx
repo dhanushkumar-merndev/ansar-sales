@@ -24,7 +24,7 @@ export function FollowUpList({ items, showAssignee, showPin, onChanged }: { item
             <div className="min-w-0 space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
                 <Link href={`/leads/${f.lead.id}`} className="font-medium hover:underline">{f.lead.name}</Link>
-                <StatusBadge status={f.lead.status} />
+                <StatusBadge stageId={f.lead.stage_id} status={f.lead.status} />
                 <DueBadge overdue={f.overdue} state={f.state} />
                 {showPin && f.pinned_at ? <PinnedBadge /> : null}
               </div>
@@ -52,7 +52,13 @@ export function FollowUpList({ items, showAssignee, showPin, onChanged }: { item
           </li>
         ))}
       </ul>
-      <CompleteFollowUpDialog open={!!completing} onOpenChange={(o) => !o && setCompleting(null)} followUp={completing} onDone={onChanged} />
+      <CompleteFollowUpDialog
+        open={!!completing}
+        onOpenChange={(o) => !o && setCompleting(null)}
+        followUp={completing}
+        lead={completing ? { id: completing.lead.id, name: completing.lead.name, phone: completing.lead.phone.replace(/\s/g, "") } : null}
+        onDone={onChanged}
+      />
       <FollowUpDialog open={!!rescheduling} onOpenChange={(o) => !o && setRescheduling(null)} followUp={rescheduling ?? undefined} onDone={onChanged} />
     </>
   );

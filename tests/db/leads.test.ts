@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { asUser, createDb, createLead, createUser, nextPhone, one, rows, type Db } from "./harness";
+import { asUser, createDb, createLead, createUser, nextPhone, one, rows, stageId, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string;
@@ -33,13 +33,16 @@ describe("transaction integrity", () => {
 
   it("logs status changes and field edits with readable old/new values", async () => {
     const id = await createLead(db, salesA, { name: "Gamma", niche: "Retail" });
-    await asUser(db, salesA, (tx) => tx.query("update public.leads set status = 'contacted' where id = $1", [id]));
+    const contacted = await stageId(db, "Contacted");
+    await asUser(db, salesA, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [id, contacted]));
     const v = (await one<{ version: number }>(db, "select version from public.leads where id = $1", [id])).version;
     await asUser(db, salesA, (tx) => tx.query(
       "select public.update_lead($1, $2, 'Gamma Ltd', '+91 90000 11111', '+919000011111', 'a@b.co', null, 'Education')", [id, v]));
     const acts = await rows<{ type: string; meta: Record<string, unknown> }>(db,
       "select type, meta from public.lead_activities where lead_id = $1 and type in ('status_changed', 'lead_updated') order by created_at, type", [id]);
-    expect(acts[0]).toEqual({ type: "status_changed", meta: { from: "new", to: "contacted" } });
+    expect(acts[0]).toEqual({ type: "status_changed", meta: {
+      from: "New", to: "Contacted", from_kind: "open", to_kind: "open", from_stage_id: await stageId(db, "New"), to_stage_id: contacted,
+    } });
     expect(acts[1].meta).toEqual({ changes: {
       Name: { from: "Gamma", to: "Gamma Ltd" },
       Phone: { from: expect.any(String), to: "+91 90000 11111" },
@@ -50,8 +53,9 @@ describe("transaction integrity", () => {
 
   it("flags edit conflicts instead of overwriting", async () => {
     const id = await createLead(db, salesA, { name: "Delta" });
+    const interested = await stageId(db, "Interested");
     const v = (await one<{ version: number }>(db, "select version from public.leads where id = $1", [id])).version;
-    await asUser(db, admin, (tx) => tx.query("update public.leads set status = 'interested' where id = $1", [id]));
+    await asUser(db, admin, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [id, interested]));
     await expect(asUser(db, salesA, (tx) => tx.query(
       "select public.update_lead($1, $2, 'Delta 2', '+919999999999', '+919999999999', null, null, 'Retail')", [id, v]))).rejects.toThrow(/version_conflict/);
     // Must not be a retryable SQLSTATE (40001/40P01): PostgREST re-runs those transactions until the gateway times out.
@@ -94,7 +98,8 @@ describe("niches", () => {
     const list = await rows<{ name: string }>(db, "select name from public.niches where normalized_name = 'real estate'");
     expect(list).toEqual([{ name: "Real Estate" }]);
     // The unique constraint is the final guard for concurrent saves.
-    await expect(db.query("insert into public.niches (name) values ('REAL ESTATE')")).rejects.toThrow(/niches_normalized_name_key/);
+    await expect(db.query("insert into public.niches (name, company_id) select 'REAL ESTATE', id from public.companies order by created_at limit 1"))
+      .rejects.toThrow(/niches_company_normalized_name_key/);
   });
 
   it("a niche created by one sales user is visible to other lead users", async () => {

@@ -9,42 +9,48 @@ import type { UsageSummary } from "@/lib/usage";
 
 const sb = () => createClient();
 
-export type LibraryFolder = {
-  id: string; name: string; parent_id: string | null; created_at: string; archived_at: string | null;
-  creator: { display_name: string } | null; files: { count: number }[]; subfolders: { count: number }[];
+type LibraryItemBase = { id: string; name: string; created_at: string; archived_at: string | null; position: number };
+export type LibraryFolder = LibraryItemBase & { kind: "folder"; parent_id: string | null; file_count: number; subfolder_count: number };
+export type LibraryFile = LibraryItemBase & {
+  kind: "file"; folder_id: string; storage_path: string; thumb_path: string | null; mime_type: string; size_bytes: number;
 };
+export type LibraryItem = LibraryFolder | LibraryFile;
 
 export type FolderCrumb = { id: string; name: string };
 
-export type LibraryFile = {
-  id: string; folder_id: string; name: string; storage_path: string; thumb_path: string | null; mime_type: string; size_bytes: number;
-  created_at: string; archived_at: string | null; creator: { display_name: string } | null;
-};
+export const LIBRARY_SORTS = {
+  custom: { label: "Custom order", p_sort: "custom", p_dir: "asc" },
+  "name-asc": { label: "Name A → Z", p_sort: "name", p_dir: "asc" },
+  "name-desc": { label: "Name Z → A", p_sort: "name", p_dir: "desc" },
+  newest: { label: "Newest first", p_sort: "created", p_dir: "desc" },
+  oldest: { label: "Oldest first", p_sort: "created", p_dir: "asc" },
+} as const;
+export type LibrarySort = keyof typeof LIBRARY_SORTS;
 
 export type ShareableFile = Pick<LibraryFile, "id" | "name" | "mime_type" | "size_bytes" | "thumb_path"> & { folder: { id: string; name: string } };
 
-/** Folders directly inside `parentId` (null = top level), with active file and subfolder counts. */
-export async function fetchLibraryFolders(
-  p: { parentId: string | null; q: string; archived: boolean; page: number; pageSize: number },
+/** One page of a folder's subfolders and files (top level: folders only), sorted on the server. */
+export async function fetchLibraryItems(
+  p: { parentId: string | null; q: string; archived: boolean; sort: LibrarySort; foldersFirst: boolean; page: number; pageSize: number },
   signal: AbortSignal,
-): Promise<PageResult<LibraryFolder>> {
-  let q = sb()
-    .from("library_folders")
-    .select(
-      "id, name, parent_id, created_at, archived_at, creator:profiles!library_folders_created_by_fkey(display_name), " +
-        "files:library_files(count), subfolders:library_folders!library_folders_parent_id_fkey(count)",
-      { count: "exact" },
-    )
-    .is("files.archived_at", null)
-    .is("subfolders.archived_at", null);
-  q = p.parentId ? q.eq("parent_id", p.parentId) : q.is("parent_id", null);
-  q = p.archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
-  const term = cleanSearch(p.q).toLowerCase();
-  if (term) q = q.ilike("normalized_name", `%${escapeLike(term)}%`);
-  const [from, to] = rangeFor(p.page, p.pageSize);
-  const { data, error, count } = await q.order("normalized_name").order("id").range(from, to).abortSignal(signal);
+): Promise<PageResult<LibraryItem>> {
+  const { p_sort, p_dir } = LIBRARY_SORTS[p.sort];
+  const term = cleanSearch(p.q);
+  const { data, error } = await sb()
+    .rpc("list_library_items", {
+      p_parent_id: p.parentId ?? undefined,
+      p_search: term || undefined,
+      p_archived: p.archived,
+      p_sort,
+      p_dir,
+      p_folders_first: p.foldersFirst,
+      p_limit: p.pageSize,
+      p_offset: (p.page - 1) * p.pageSize,
+    })
+    .abortSignal(signal);
   if (error) throw error;
-  return toPageResult(data as unknown as LibraryFolder[], count ?? 0, p.page, p.pageSize);
+  const r = data as unknown as { items: LibraryItem[]; total: number };
+  return toPageResult(r.items, r.total, p.page, p.pageSize);
 }
 
 /** One folder plus its breadcrumb (root → folder). */
@@ -57,23 +63,6 @@ export async function fetchLibraryFolder(id: string, signal: AbortSignal) {
   if (folder.error) throw folder.error;
   if (path.error) throw path.error;
   return folder.data ? { ...folder.data, path: (path.data ?? []) as unknown as FolderCrumb[] } : null;
-}
-
-export async function fetchLibraryFiles(
-  p: { folderId: string; q: string; archived: boolean; page: number; pageSize: number },
-  signal: AbortSignal,
-): Promise<PageResult<LibraryFile>> {
-  let q = sb()
-    .from("library_files")
-    .select("id, folder_id, name, storage_path, thumb_path, mime_type, size_bytes, created_at, archived_at, creator:profiles!library_files_created_by_fkey(display_name)", { count: "exact" })
-    .eq("folder_id", p.folderId);
-  q = p.archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
-  const term = cleanSearch(p.q).toLowerCase();
-  if (term) q = q.ilike("normalized_name", `%${escapeLike(term)}%`);
-  const [from, to] = rangeFor(p.page, p.pageSize);
-  const { data, error, count } = await q.order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to).abortSignal(signal);
-  if (error) throw error;
-  return toPageResult(data as unknown as LibraryFile[], count ?? 0, p.page, p.pageSize);
 }
 
 /** One batched request for a page of files (no per-file round trips). */

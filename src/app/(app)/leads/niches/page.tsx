@@ -6,7 +6,7 @@ import { getCachedNicheOptions } from "@/lib/niches-cache";
 export const metadata: Metadata = { title: "Niches" };
 
 export default async function NichesPage() {
-  await requireProfile(["admin"]);
-  const niches = await getCachedNicheOptions().catch(() => []);
+  const { company } = await requireProfile(["admin"]);
+  const niches = await getCachedNicheOptions(company.id).catch(() => []);
   return <NichesAdmin initialNiches={niches} />;
 }

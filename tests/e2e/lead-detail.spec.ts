@@ -1,5 +1,5 @@
 import { readRun, storageState } from "./support/accounts";
-import { createLead, tag } from "./support/data";
+import { createLead, stageId, tag } from "./support/data";
 import { expect, test } from "./support/fixtures";
 import { userClient } from "./support/supabase";
 import { dialog, selectOption, timelineItems, toast, waitForLive } from "./support/ui";
@@ -52,13 +52,13 @@ test.describe("Lead detail, notes and timeline", () => {
     await expect(timelineItems(page).filter({ hasText: "corrected a note" })).toContainText(`${t} orignal typo`);
   });
 
-  test("TL-04 status change is logged with old and new values", async ({ page }) => {
+  test("TL-04 stage change is logged with old and new values", async ({ page }) => {
     const t = tag();
     const id = await newLead(`${t} Status`);
     await page.goto(`/leads/${id}`);
-    await selectOption(page, page.getByRole("combobox", { name: "Change status" }), "Contacted");
-    await expect(toast(page, "Status: Contacted")).toBeVisible();
-    await expect(timelineItems(page).first()).toContainText("changed status from New to Contacted");
+    await selectOption(page, page.getByRole("combobox", { name: "Change stage" }), "Contacted");
+    await expect(toast(page, "Stage: Contacted")).toBeVisible();
+    await expect(timelineItems(page).first()).toContainText("moved the lead from New to Contacted");
   });
 
   test("TL-05 editing details logs readable old → new values", async ({ page }) => {
@@ -87,7 +87,8 @@ test.describe("Lead detail, notes and timeline", () => {
     await d.locator("#lead-name").fill(`${t} My edit`);
 
     // Someone else changes the lead while the dialog is open.
-    await userClient("salesA").from("leads").update({ status: "interested" } as never).eq("id", id);
+    const sa = userClient("salesA");
+    await sa.from("leads").update({ stage_id: await stageId(sa, "interested") } as never).eq("id", id);
     await expect(d.getByText("This lead was changed by someone else while you were editing")).toBeVisible({ timeout: 20_000 });
     await expect(d.locator("#lead-name")).toHaveValue(`${t} My edit`); // background refresh kept the input
 

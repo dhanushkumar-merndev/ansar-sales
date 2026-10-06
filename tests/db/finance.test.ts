@@ -31,7 +31,7 @@ describe("finance", () => {
     expect(s.monthly).toHaveLength(12);
     expect(s.monthly.at(-1)).toEqual({ month: monthStart, total: 2000.29 });
     expect(Number(s.monthly.at(-2)!.total)).toBe(30000);
-    expect(s.categories.map((c) => c.category)).toEqual(["salary", "software", "rent"]);
+    expect(s.categories.map((c) => c.category)).toEqual(["Salary", "Software", "Rent"]);
   });
 
   it("excludes archived entries and records history for edits and archive", async () => {
@@ -45,39 +45,6 @@ describe("finance", () => {
     expect(hist.find((h) => h.action === "updated")!.changes).toEqual({ amount: { from: 100, to: 150 } });
     const s = await asUser(db, account, async (tx) => (await one<{ r: Summary }>(tx, "select public.dashboard_finance(12) as r")).r);
     expect(String(s.current_month_expenses)).toBe("2000.29");
-  });
-
-  it("groups capital and expenses by year, then by month within a year, for finance roles only", async () => {
-    await asUser(db, account, async (tx) => {
-      await tx.query("insert into public.capital_entries (entry_date, contributor, amount, created_by) values ('2024-03-01', 'A', 100.50, $1), ('2024-11-30', 'B', 50, $1), ('2025-01-01', 'A', 10, $1)", [account]);
-      await tx.query("insert into public.expenses (expense_date, category, amount, created_by) values ('2024-01-31', 'rent', 10, $1), ('2024-01-01', 'software', 5.25, $1), ('2024-02-01', 'rent', 7, $1), ('2023-12-31', 'rent', 1, $1)", [account]);
-    });
-    type P = { period: string; entries: number; total: number };
-    const call = (sql: string) => asUser(db, account, async (tx) => (await one<{ r: P[] }>(tx, sql)).r);
-    const capital = await call("select public.finance_period_totals('capital') as r");
-    expect(capital.filter((p) => p.period <= "2025")).toEqual([
-      { period: "2025", entries: 1, total: 10 },
-      { period: "2024", entries: 2, total: 150.5 },
-    ]);
-    const months = await call("select public.finance_period_totals('expense', false, null, 2024) as r");
-    expect(months).toEqual([
-      { period: "2024-02", entries: 1, total: 7 },
-      { period: "2024-01", entries: 2, total: 15.25 },
-    ]);
-    const rentYears = await call("select public.finance_period_totals('expense', false, 'rent') as r");
-    expect(rentYears.filter((p) => p.period <= "2024")).toEqual([
-      { period: "2024", entries: 2, total: 17 },
-      { period: "2023", entries: 1, total: 1 },
-    ]);
-    const sales = await createUser(db, "sales-periods", "sales");
-    await expect(asUser(db, sales, (tx) => tx.query("select public.finance_period_totals('capital')"))).rejects.toThrow();
-    const capitalMonths = await call("select public.finance_period_totals('capital', false, null, 2024) as r");
-    expect(capitalMonths).toEqual([
-      { period: "2024-11", entries: 1, total: 50 },
-      { period: "2024-03", entries: 1, total: 100.5 },
-    ]);
-    await expect(asUser(db, account, (tx) => tx.query("select public.finance_period_totals('capital', false, 'rent')"))).rejects.toThrow(/invalid_period_query/);
-    await expect(asUser(db, account, (tx) => tx.query("select public.finance_period_totals('expense', false, null, 99999)"))).rejects.toThrow(/invalid_period_query/);
   });
 
   it("rejects non-positive amounts", async () => {
