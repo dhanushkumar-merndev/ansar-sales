@@ -15,6 +15,8 @@ export type LeadListItem = {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  starred: boolean;
+  pinned_at: string | null;
   version: number;
 };
 
@@ -30,6 +32,8 @@ export type FollowUpListItem = {
   lead: { id: string; name: string; phone: string; status: LeadStatus };
   assignee: { id: string; display_name: string };
   reminder: { state: ReminderState; attempts: number; last_error: string | null; sent_at: string | null } | null;
+  starred: boolean;
+  pinned_at: string | null;
 };
 
 export type UserListItem = {

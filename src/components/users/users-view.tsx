@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -105,6 +105,7 @@ export function UsersView() {
                     <TableCell className="hidden tabular-nums md:table-cell">{u.owned_active_leads}</TableCell>
                     <TableCell className="hidden md:table-cell">{formatDate(u.created_at)}</TableCell>
                     <TableCell>
+                      {u.id === me.id ? null : (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${u.display_name}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -120,6 +121,7 @@ export function UsersView() {
                           />
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -141,14 +143,20 @@ function CreateUserDialog({ open, onOpenChange, onDone }: { open: boolean; onOpe
   const [form, setForm] = useState({ username: "", displayName: "", role: "sales" as AppRole, password: "" });
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [pending, start] = useTransition();
-  useEffect(() => {
+  const [wasOpen, setWasOpen] = useState(false);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (open) { setForm({ username: "", displayName: "", role: "sales", password: "" }); setErrors({}); }
-  }, [open]);
+  }
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     start(async () => {
       const r = await createUser(form);
-      if (!r.ok) return setErrors(r.fieldErrors ?? { _: [r.error] });
+      if (!r.ok) {
+        setErrors(r.fieldErrors ?? {});
+        toast.error(r.error);
+        return;
+      }
       toast.success(`User @${form.username.trim().toLowerCase()} created`);
       onOpenChange(false);
       onDone();
@@ -164,12 +172,10 @@ function CreateUserDialog({ open, onOpenChange, onDone }: { open: boolean; onOpe
               <FieldLabel htmlFor="u-username">Username</FieldLabel>
               <Input id="u-username" autoCapitalize="none" autoComplete="off" spellCheck={false} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} aria-invalid={!!errors.username} />
               <FieldDescription>3–32 characters: letters, numbers, dot, dash or underscore.</FieldDescription>
-              <FieldError>{errors.username?.[0]}</FieldError>
             </Field>
             <Field data-invalid={!!errors.displayName}>
               <FieldLabel htmlFor="u-name">Display name</FieldLabel>
               <Input id="u-name" value={form.displayName} maxLength={80} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
-              <FieldError>{errors.displayName?.[0]}</FieldError>
             </Field>
             <Field>
               <FieldLabel htmlFor="u-role">Role</FieldLabel>
@@ -181,9 +187,7 @@ function CreateUserDialog({ open, onOpenChange, onDone }: { open: boolean; onOpe
             <Field data-invalid={!!errors.password}>
               <FieldLabel htmlFor="u-password">Initial password</FieldLabel>
               <Input id="u-password" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-              <FieldError>{errors.password?.[0]}</FieldError>
             </Field>
-            {errors._ ? <FieldError>{errors._[0]}</FieldError> : null}
           </FieldGroup>
         </form>
         <DialogFooter>
@@ -198,9 +202,12 @@ function CreateUserDialog({ open, onOpenChange, onDone }: { open: boolean; onOpe
 function EditUserDialog({ user, onClose, onDone }: { user: UserListItem | null; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<AppRole>("sales");
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  useEffect(() => { if (user) { setName(user.display_name); setRole(user.role); setError(null); } }, [user]);
+  const [shownFor, setShownFor] = useState(user);
+  if (shownFor !== user) {
+    setShownFor(user);
+    if (user) { setName(user.display_name); setRole(user.role); }
+  }
   return (
     <Dialog open={!!user} onOpenChange={(o) => !o && !pending && onClose()}>
       <DialogContent className="sm:max-w-sm">
@@ -214,13 +221,12 @@ function EditUserDialog({ user, onClose, onDone }: { user: UserListItem | null; 
               <SelectContent>{ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          {error ? <FieldError>{error}</FieldError> : null}
         </FieldGroup>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={pending}>Cancel</Button>
           <Button disabled={pending || !name.trim()} onClick={() => start(async () => {
             const r = await updateUser({ id: user!.id, displayName: name, role });
-            if (!r.ok) return setError(r.error);
+            if (!r.ok) return void toast.error(r.error);
             toast.success("User updated");
             onClose();
             onDone();
@@ -233,9 +239,12 @@ function EditUserDialog({ user, onClose, onDone }: { user: UserListItem | null; 
 
 function ResetPasswordDialog({ user, onClose }: { user: UserListItem | null; onClose: () => void }) {
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  useEffect(() => { setPassword(""); setError(null); }, [user]);
+  const [shownFor, setShownFor] = useState(user);
+  if (shownFor !== user) {
+    setShownFor(user);
+    setPassword("");
+  }
   return (
     <Dialog open={!!user} onOpenChange={(o) => !o && !pending && onClose()}>
       <DialogContent className="sm:max-w-sm">
@@ -243,13 +252,12 @@ function ResetPasswordDialog({ user, onClose }: { user: UserListItem | null; onC
         <Field>
           <FieldLabel htmlFor="r-pass">New password</FieldLabel>
           <Input id="r-pass" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          {error ? <FieldError>{error}</FieldError> : null}
         </Field>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={pending}>Cancel</Button>
           <Button disabled={pending || password.length < 8} onClick={() => start(async () => {
             const r = await resetUserPassword({ id: user!.id, password });
-            if (!r.ok) return setError(r.error);
+            if (!r.ok) return void toast.error(r.error);
             toast.success("Password reset");
             onClose();
           })}>{pending && <Loader2 className="animate-spin" />}Reset</Button>

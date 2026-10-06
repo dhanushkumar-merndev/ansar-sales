@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-geist-sans);
+  --font-sans: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-heading: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -50,76 +50,66 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  /* Off-white surfaces, dark text, restrained red accent. */
-  --background: oklch(0.985 0.002 75);
-  --foreground: oklch(0.2 0.006 60);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.006 60);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.006 60);
-  --primary: oklch(0.52 0.19 26);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.003 75);
-  --secondary-foreground: oklch(0.25 0.006 60);
-  --muted: oklch(0.96 0.003 75);
-  --muted-foreground: oklch(0.5 0.01 60);
-  --accent: oklch(0.955 0.012 30);
-  --accent-foreground: oklch(0.3 0.08 28);
-  --destructive: oklch(0.55 0.21 27);
-  --success: oklch(0.52 0.13 150);
-  --warning: oklch(0.62 0.14 70);
-  --border: oklch(0.915 0.004 75);
-  --input: oklch(0.89 0.004 75);
-  --ring: oklch(0.52 0.19 26 / 45%);
-  --chart-1: oklch(0.52 0.19 26);
-  --chart-2: oklch(0.45 0.03 250);
-  --chart-3: oklch(0.65 0.12 60);
-  --chart-4: oklch(0.55 0.1 180);
-  --chart-5: oklch(0.7 0.02 60);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.975 0.003 75);
-  --sidebar-foreground: oklch(0.25 0.006 60);
-  --sidebar-primary: oklch(0.52 0.19 26);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.945 0.012 30);
-  --sidebar-accent-foreground: oklch(0.32 0.1 28);
-  --sidebar-border: oklch(0.915 0.004 75);
-  --sidebar-ring: oklch(0.52 0.19 26 / 45%);
-}
-
+/* Dark only: tokens apply to the whole app, not just .dark. */
+:root,
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* OpenAI ChatGPT & Codex aesthetic: charcoal canvas, elevated cards, near-black sidebar, white pill buttons. */
+  color-scheme: dark;
+  --background: #212121;
+  --foreground: #ececec;
+  --card: #262626;
+  --card-foreground: #ececec;
+  --popover: #2a2a2a;
+  --popover-foreground: #ececec;
+  --primary: #ffffff;
+  --primary-foreground: #0d0d0d;
+  --secondary: #2f2f2f;
+  --secondary-foreground: #ececec;
+  --muted: #2a2a2a;
+  --muted-foreground: #a3a3a3;
+  --accent: #303030;
+  --accent-foreground: #ffffff;
+  --destructive: #f0524f;
+  --success: #10a37f;
+  --warning: #f59e0b;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: rgba(255, 255, 255, 0.25);
+  --radius: 0.75rem;
+  --chart-1: #10a37f;
+  --chart-2: #ececec;
+  --chart-3: #8f8f8f;
+  --chart-4: #ab68ff;
+  --chart-5: #f0524f;
+  --sidebar: #171717;
+  --sidebar-foreground: #ececec;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #0d0d0d;
+  --sidebar-accent: #262626;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: rgba(255, 255, 255, 0.25);
+
+  /* Status tints (badges, alerts, overdue rows) mapped to translucent tints with readable light text */
+  --color-red-50: oklch(63.7% 0.237 25.331 / 0.14);
+  --color-red-200: oklch(63.7% 0.237 25.331 / 0.32);
+  --color-red-700: oklch(82.8% 0.114 19.571);
+  --color-red-800: oklch(82.8% 0.114 19.571);
+  --color-emerald-50: oklch(69.6% 0.17 162.48 / 0.14);
+  --color-emerald-200: oklch(69.6% 0.17 162.48 / 0.32);
+  --color-emerald-700: oklch(86.5% 0.143 164.978);
+  --color-emerald-800: oklch(86.5% 0.143 164.978);
+  --color-amber-50: oklch(76.9% 0.188 70.08 / 0.14);
+  --color-amber-200: oklch(76.9% 0.188 70.08 / 0.32);
+  --color-amber-700: oklch(89.9% 0.169 91.605);
+  --color-amber-800: oklch(89.9% 0.169 91.605);
+  --color-amber-900: oklch(93.4% 0.12 95.746);
+  --color-sky-50: oklch(68.5% 0.169 237.323 / 0.14);
+  --color-sky-200: oklch(68.5% 0.169 237.323 / 0.32);
+  --color-sky-800: oklch(84.8% 0.111 230.318);
+  --color-violet-50: oklch(60.6% 0.25 292.717 / 0.16);
+  --color-violet-200: oklch(60.6% 0.25 292.717 / 0.35);
+  --color-violet-800: oklch(83.1% 0.111 293.571);
 }
 
 @layer base {
@@ -131,5 +121,29 @@
   }
   html {
     @apply font-sans;
+  }
+
+  /* Sleek minimalist scrollbar matching ChatGPT / Codex */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }

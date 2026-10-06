@@ -2,7 +2,7 @@
 
 // Read queries run in the browser as the signed-in user: RLS decides what is returned.
 // Every list is server-filtered, server-paginated and abortable.
-import type { ExpenseCategory, LeadStatus, ReminderState } from "@/lib/constants";
+import type { ExpenseCategory, LeadStatus, PaymentMode, ReminderState } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
@@ -17,13 +17,21 @@ function unwrapPage<T>(data: Json | null, page: number, pageSize: number): PageR
   return toPageResult(r.items, Number(r.total), page, pageSize);
 }
 
+/** A page from a list that supports stars, plus how many of the user's items are pinned (max 10). */
+export type StarredPageResult<T> = PageResult<T> & { pinnedCount: number };
+
+function unwrapStarredPage<T>(data: Json | null, page: number, pageSize: number): StarredPageResult<T> {
+  const pinned = Number((data as { pinned_count?: number } | null)?.pinned_count ?? 0);
+  return { ...unwrapPage<T>(data, page, pageSize), pinnedCount: pinned };
+}
+
 export type LeadQuery = {
   q: string; status: LeadStatus | null; niche: string | null; owner: string | null;
-  from: string | null; to: string | null; overdue: boolean; archived: boolean;
+  from: string | null; to: string | null; overdue: boolean; archived: boolean; starred: boolean;
   sort: string; dir: "asc" | "desc"; page: number; pageSize: number;
 };
 
-export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<PageResult<LeadListItem>> {
+export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<StarredPageResult<LeadListItem>> {
   const { data, error } = await sb()
     .rpc("list_leads", {
       p_search: cleanSearch(p.q) || undefined,
@@ -38,18 +46,19 @@ export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<Pag
       p_dir: p.dir,
       p_limit: p.pageSize,
       p_offset: (p.page - 1) * p.pageSize,
+      p_starred_only: p.starred,
     })
     .abortSignal(signal);
   if (error) throw error;
-  return unwrapPage<LeadListItem>(data, p.page, p.pageSize);
+  return unwrapStarredPage<LeadListItem>(data, p.page, p.pageSize);
 }
 
-export type FollowUpView = "overdue" | "today" | "upcoming" | "completed" | "cancelled";
+export type FollowUpView = "overdue" | "today" | "upcoming" | "completed" | "cancelled" | "starred";
 
 export async function fetchFollowUps(
-  p: { view: FollowUpView; assignee: string | null; q: string; page: number; pageSize: number },
+  p: { view: FollowUpView; assignee: string | null; q: string; from?: string | null; to?: string | null; page: number; pageSize: number },
   signal: AbortSignal,
-): Promise<PageResult<FollowUpListItem>> {
+): Promise<StarredPageResult<FollowUpListItem>> {
   const { data, error } = await sb()
     .rpc("list_follow_ups", {
       p_view: p.view,
@@ -57,10 +66,12 @@ export async function fetchFollowUps(
       p_search: cleanSearch(p.q) || undefined,
       p_limit: p.pageSize,
       p_offset: (p.page - 1) * p.pageSize,
+      p_due_from: p.from ? istDayStartUtc(p.from) : undefined,
+      p_due_to: p.to ? istDayStartUtc(addDays(p.to, 1)) : undefined,
     })
     .abortSignal(signal);
   if (error) throw error;
-  return unwrapPage<FollowUpListItem>(data, p.page, p.pageSize);
+  return unwrapStarredPage<FollowUpListItem>(data, p.page, p.pageSize);
 }
 
 export async function fetchLead(id: string, signal: AbortSignal) {
@@ -68,7 +79,8 @@ export async function fetchLead(id: string, signal: AbortSignal) {
     .from("leads")
     .select(
       "id, name, phone, phone_normalized, email, status, version, created_at, updated_at, archived_at, owner_id, " +
-        "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name)",
+        "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
+        "stars:lead_stars(pinned_at)", // RLS returns only the signed-in user's own star
     )
     .eq("id", id)
     .abortSignal(signal)
@@ -81,6 +93,7 @@ export type LeadDetail = {
   id: string; name: string; phone: string; phone_normalized: string; email: string | null; status: LeadStatus;
   version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
   niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
+  stars: { pinned_at: string | null }[];
 };
 
 export type LeadFollowUp = {
@@ -171,55 +184,75 @@ export async function fetchUsers(p: { q: string; role: string | null; page: numb
 
 export type ExpenseRow = {
   id: string; expense_date: string; category: ExpenseCategory; amount: number; description: string | null;
+  payment_mode: PaymentMode | null; item: string | null; quantity: number | null;
+  recurrence: { active: boolean; next_date: string } | null;
   archived_at: string | null; updated_at: string; author: { display_name: string } | null;
 };
 export type CapitalRow = {
-  id: string; entry_date: string; contributor: string; amount: number; description: string | null;
+  id: string; entry_date: string; contributor: string; amount: number; payment_mode: PaymentMode | null; item: string | null; quantity: number | null; description: string | null;
   archived_at: string | null; updated_at: string; author: { display_name: string } | null;
 };
 
-export async function fetchExpenses(
-  p: { month: string | null; category: ExpenseCategory | null; archived: boolean; page: number; pageSize: number },
-  signal: AbortSignal,
-): Promise<PageResult<ExpenseRow>> {
-  let q = sb()
-    .from("expenses")
-    .select("id, expense_date, category, amount, description, archived_at, updated_at, author:profiles!expenses_created_by_fkey(display_name)", { count: "exact" });
-  q = p.archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
-  if (p.month) q = q.gte("expense_date", `${p.month}-01`).lt("expense_date", nextMonth(p.month));
-  if (p.category) q = q.eq("category", p.category);
-  const [from, to] = rangeFor(p.page, p.pageSize);
-  const { data, error, count } = await q
-    .order("expense_date", { ascending: false })
-    .order("id", { ascending: false })
-    .range(from, to)
+export type FinanceKind = "expense" | "capital";
+export type FinanceSort = "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
+export type FinanceEntriesQuery = {
+  kind: FinanceKind; from: string; to: string; q: string; category: ExpenseCategory | null; mode: PaymentMode | "unspecified" | null;
+  recurring: boolean; archived: boolean; sort: FinanceSort; page: number; pageSize: number;
+};
+
+/** One page of expense or capital entries in a date range (typed RPC: escaped search, allowlisted sort). */
+export async function fetchFinanceEntries<T extends ExpenseRow | CapitalRow>(p: FinanceEntriesQuery, signal: AbortSignal): Promise<PageResult<T>> {
+  const [sort, dir] = p.sort.split("-") as ["date" | "amount", "asc" | "desc"];
+  const { data, error } = await sb()
+    .rpc("list_finance_entries", {
+      p_kind: p.kind,
+      p_from: p.from,
+      p_to: p.to,
+      p_search: cleanSearch(p.q) || undefined,
+      p_category: p.kind === "expense" ? p.category ?? undefined : undefined,
+      p_mode: p.mode ?? undefined,
+      p_recurring: p.kind === "expense" && p.recurring,
+      p_archived: p.archived,
+      p_sort: sort,
+      p_dir: dir,
+      p_limit: p.pageSize,
+      p_offset: (p.page - 1) * p.pageSize,
+    })
     .abortSignal(signal);
   if (error) throw error;
-  return toPageResult(data as unknown as ExpenseRow[], count ?? 0, p.page, p.pageSize);
+  return unwrapPage<T>(data, p.page, p.pageSize);
 }
 
-export async function fetchCapital(p: { archived: boolean; page: number; pageSize: number }, signal: AbortSignal): Promise<PageResult<CapitalRow>> {
-  let q = sb()
-    .from("capital_entries")
-    .select("id, entry_date, contributor, amount, description, archived_at, updated_at, author:profiles!capital_entries_created_by_fkey(display_name)", { count: "exact" });
-  q = p.archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
-  const [from, to] = rangeFor(p.page, p.pageSize);
-  const { data, error, count } = await q
-    .order("entry_date", { ascending: false })
-    .order("id", { ascending: false })
-    .range(from, to)
-    .abortSignal(signal);
+export type YearOverview = {
+  year: number;
+  months: { month: string; expense: number; expense_entries: number; capital: number; capital_entries: number; categories: Partial<Record<ExpenseCategory, number>> }[];
+  totals: { expense: number; expense_entries: number; capital: number; capital_entries: number };
+  previous_december: { expense: number; capital: number };
+  years: number[];
+};
+
+/** Month totals for the Finance page cards (aggregated in PostgreSQL). */
+export async function fetchYearOverview(year: number, signal: AbortSignal): Promise<YearOverview> {
+  const { data, error } = await sb().rpc("finance_year_overview", { p_year: year }).abortSignal(signal);
   if (error) throw error;
-  return toPageResult(data as unknown as CapitalRow[], count ?? 0, p.page, p.pageSize);
+  return data as unknown as YearOverview;
+}
+
+/** The finance range report plus period comparisons and breakdowns for one month or year. */
+export async function fetchPeriodReport<T>(from: string, to: string, signal: AbortSignal): Promise<T> {
+  const { data, error } = await sb().rpc("finance_period_report", { p_from: from, p_to: to }).abortSignal(signal);
+  if (error) throw error;
+  return data as unknown as T;
 }
 
 export type FinanceActivity = { id: string; entity_type: string; action: string; changes: Record<string, { from: unknown; to: unknown }>; created_at: string; actor: { display_name: string } | null };
 
-export async function fetchFinanceHistory(entityId: string, signal: AbortSignal) {
+export async function fetchFinanceHistory(entity: { kind: "expense" | "capital"; id: string }, signal: AbortSignal) {
   const { data, error } = await sb()
     .from("finance_activities")
     .select("id, entity_type, action, changes, created_at, actor:profiles!finance_activities_actor_id_fkey(display_name)")
-    .eq("entity_id", entityId)
+    .eq("entity_type", entity.kind)
+    .eq("entity_id", entity.id)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(50)
@@ -243,9 +276,18 @@ export async function fetchTelegramStatus(signal: AbortSignal) {
   return data;
 }
 
-export async function fetchDashboard<T>(fn: "dashboard_admin" | "dashboard_sales" | "dashboard_finance", arg: number, signal: AbortSignal): Promise<T> {
+/** Notification types the signed-in user switched off (RLS: own row only). */
+export async function fetchNotificationSettings(signal: AbortSignal): Promise<string[]> {
+  const { data, error } = await sb().from("notification_settings").select("disabled_kinds").abortSignal(signal).maybeSingle();
+  if (error) throw error;
+  return data?.disabled_kinds ?? [];
+}
+
+export async function fetchDashboard<T>(fn: "dashboard_admin" | "dashboard_sales" | "dashboard_finance", arg: number | { from: string; to: string }, signal: AbortSignal): Promise<T> {
   const client = sb();
-  const req = fn === "dashboard_finance" ? client.rpc(fn, { p_months: arg }) : client.rpc(fn, { p_days: arg });
+  const req = typeof arg === "object"
+    ? client.rpc(fn as "dashboard_admin" | "dashboard_sales", { p_from: arg.from, p_to: arg.to })
+    : fn === "dashboard_finance" ? client.rpc(fn, { p_months: arg }) : client.rpc(fn, { p_days: arg });
   const { data, error } = await req.abortSignal(signal);
   if (error) throw error;
   return data as unknown as T;
@@ -262,4 +304,27 @@ export async function fetchNicheAdmin(p: { q: string; archived: boolean; page: n
   const { data, error, count } = await q.order("normalized_name").order("id").range(from, to).abortSignal(signal);
   if (error) throw error;
   return toPageResult(data as unknown as NicheAdminRow[], count ?? 0, p.page, p.pageSize);
+}
+
+/** Range report aggregated in PostgreSQL (`from`/`to` are inclusive IST dates). */
+export async function fetchReport<T>(fn: "report_leads" | "report_finance", from: string, to: string, signal: AbortSignal): Promise<T> {
+  const { data, error } = await sb().rpc(fn, { p_from: from, p_to: to }).abortSignal(signal);
+  if (error) throw error;
+  return data as unknown as T;
+}
+
+/** Item names used before (in this expense category), newest first and de-duplicated, for the form's suggestions. */
+export async function fetchItemSuggestions(kind: "expense" | "capital", category: ExpenseCategory | null, signal: AbortSignal) {
+  const q = kind === "expense"
+    ? (category ? sb().from("expenses").select("item").eq("category", category) : sb().from("expenses").select("item"))
+    : sb().from("capital_entries").select("item");
+  const { data, error } = await q.not("item", "is", null).is("archived_at", null)
+    .order("updated_at", { ascending: false }).limit(100).abortSignal(signal);
+  if (error) throw error;
+  const seen = new Map<string, string>();
+  for (const r of data as { item: string }[]) {
+    const label = r.item.trim();
+    if (!seen.has(label.toLowerCase())) seen.set(label.toLowerCase(), label);
+  }
+  return [...seen.values()].slice(0, 30);
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { AlertTriangle, Loader2 } from "lucide-react";
@@ -14,7 +14,7 @@ import { useProfile } from "@/components/providers/profile-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,7 +56,6 @@ export function LeadFormDialog({
   const [pending, start] = useTransition();
   const [duplicate, setDuplicate] = useState<{ visibleLeadId: string | null } | null>(null);
   const [phoneWarning, setPhoneWarning] = useState<{ visibleLeadId: string | null } | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
 
   const defaults = (): FormValues => ({
     name: lead?.name ?? "",
@@ -72,16 +71,19 @@ export function LeadFormDialog({
   });
 
   const form = useForm<FormValues>({ resolver: zodResolver(formSchema), defaultValues: defaults() });
-  const { register, control, handleSubmit, formState: { errors }, watch, reset } = form;
+  const { register, control, handleSubmit, formState: { errors }, reset } = form;
 
   // Reset only when the dialog opens: background refreshes never overwrite in-progress input.
-  useEffect(() => {
+  const [wasOpen, setWasOpen] = useState(false);
+  if (wasOpen !== open) {
+    setWasOpen(open);
     if (open) {
-      reset(defaults());
       setDuplicate(null);
       setPhoneWarning(null);
-      setFormError(null);
     }
+  }
+  useEffect(() => {
+    if (open) reset(defaults());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -99,7 +101,6 @@ export function LeadFormDialog({
 
   const submit = (values: FormValues, allowDuplicate = false) =>
     start(async () => {
-      setFormError(null);
       const niche = values.niche!.id ? { id: values.niche!.id } : { newName: values.niche!.newName };
       const result = isEdit
         ? await updateLead({ id: lead!.id, version: lead!.version, name: values.name, phone: values.phone, email: values.email, niche, allowDuplicate })
@@ -119,7 +120,7 @@ export function LeadFormDialog({
           const field = key.split(".")[0] as keyof FormValues;
           if (field in values) form.setError(field, { message: messages[0] });
         }
-        setFormError(result.error);
+        toast.error(result.error);
         return;
       }
       toast.success(isEdit ? "Lead updated" : "Lead created");
@@ -127,7 +128,12 @@ export function LeadFormDialog({
       onSaved?.(isEdit ? lead!.id : (result.data as { id: string }).id);
     });
 
-  const scheduleFollowUp = watch("scheduleFollowUp");
+  const scheduleFollowUp = useWatch({ control, name: "scheduleFollowUp" });
+  // Invalid fields keep their red outline; the message itself goes to a toast.
+  const toastFirstError = (errs: FieldErrors<FormValues>) => {
+    const first = Object.values(errs).find((e) => e?.message);
+    toast.error(String(first?.message ?? "Check the highlighted fields."));
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !pending && onOpenChange(o)}>
@@ -142,23 +148,20 @@ export function LeadFormDialog({
             This lead was changed by someone else while you were editing. Saving will be rejected; close and reopen to edit the latest version.
           </div>
         ) : null}
-        <form id="lead-form" onSubmit={handleSubmit((v) => submit(v))} noValidate>
+        <form id="lead-form" onSubmit={handleSubmit((v) => submit(v), toastFirstError)} noValidate>
           <FieldGroup className="gap-4">
             <Field data-invalid={!!errors.name}>
               <FieldLabel htmlFor="lead-name">Name</FieldLabel>
               <Input id="lead-name" autoComplete="off" aria-invalid={!!errors.name} {...register("name")} />
-              <FieldError errors={[errors.name]} />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field data-invalid={!!errors.phone}>
                 <FieldLabel htmlFor="lead-phone">Phone</FieldLabel>
                 <Input id="lead-phone" type="tel" inputMode="tel" placeholder="98765 43210" aria-invalid={!!errors.phone} {...register("phone", { onBlur: onPhoneBlur })} />
-                <FieldError errors={[errors.phone]} />
               </Field>
               <Field data-invalid={!!errors.email}>
                 <FieldLabel htmlFor="lead-email">Email <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
                 <Input id="lead-email" type="email" inputMode="email" aria-invalid={!!errors.email} {...register("email")} />
-                <FieldError errors={[errors.email]} />
               </Field>
             </div>
             {phoneWarning && !duplicate ? (
@@ -176,7 +179,6 @@ export function LeadFormDialog({
                   <NicheCombobox id="lead-niche" value={field.value} onChange={field.onChange} initialOptions={initialNiches} invalid={!!errors.niche} />
                 )}
               />
-              <FieldError errors={[errors.niche]} />
             </Field>
             {!isEdit ? (
               <>
@@ -216,7 +218,6 @@ export function LeadFormDialog({
                       <Controller control={control} name="followUp" render={({ field }) => (
                         <DateTimeField idPrefix="lead-fu" value={field.value} onChange={field.onChange} invalid={!!errors.followUp} />
                       )} />
-                      <FieldError errors={[errors.followUp]} />
                     </Field>
                     <Field>
                       <FieldLabel htmlFor="lead-fu-task">Task</FieldLabel>
@@ -234,13 +235,12 @@ export function LeadFormDialog({
             <p>Save anyway only if this is intentionally a separate lead.</p>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" type="button" onClick={() => setDuplicate(null)} disabled={pending}>Go back</Button>
-              <Button size="sm" type="button" disabled={pending} onClick={handleSubmit((v) => submit(v, true))}>
+              <Button size="sm" type="button" disabled={pending} onClick={handleSubmit((v) => submit(v, true), toastFirstError)}>
                 {pending && <Loader2 className="animate-spin" />} Save duplicate
               </Button>
             </div>
           </div>
         ) : null}
-        {formError ? <p role="alert" className="text-sm text-destructive">{formError}</p> : null}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
           <Button type="submit" form="lead-form" disabled={pending || !!duplicate}>

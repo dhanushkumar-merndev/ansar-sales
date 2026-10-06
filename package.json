@@ -6,7 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "db:types": "node scripts/gen-db-types.mjs",
+    "db:types:remote": "supabase gen types typescript --linked --schema public > src/lib/database.types.ts",
+    "bootstrap:admin": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/bootstrap-admin.mjs",
+    "telegram:webhook": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/set-telegram-webhook.mjs",
+    "seed:demo": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -22,6 +32,8 @@
     "lucide-react": "^1.52.0",
     "next": "16.3.8",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^6.4.299",
+    "qrcode.react": "^4.2.0",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-day-picker": "^10.0.2",
@@ -35,6 +47,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

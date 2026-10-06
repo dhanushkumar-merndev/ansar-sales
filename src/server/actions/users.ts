@@ -40,7 +40,8 @@ export async function createUser(input: unknown) {
 }
 
 export async function updateUser(input: unknown) {
-  return runAction(["admin"], updateUserSchema, input, async (d, { supabase }) => {
+  return runAction(["admin"], updateUserSchema, input, async (d, { supabase, profile }) => {
+    if (d.id === profile.id) return { ok: false, error: "You can't change your own role or access here. Ask another admin." };
     // Profile change first: the database enforces the last-admin and lead-ownership rules.
     const { data, error } = await supabase.rpc("admin_update_user", {
       p_user_id: d.id,
@@ -63,7 +64,8 @@ export async function updateUser(input: unknown) {
 }
 
 export async function resetUserPassword(input: unknown) {
-  return runAction(["admin"], z.object({ id: z.uuid(), password: passwordSchema }), input, async (d, { supabase }) => {
+  return runAction(["admin"], z.object({ id: z.uuid(), password: passwordSchema }), input, async (d, { supabase, profile }) => {
+    if (d.id === profile.id) return { ok: false, error: "Change your own password from Settings." };
     const { data: target } = await supabase.from("profiles").select("id").eq("id", d.id).maybeSingle();
     if (!target) return dbError({ message: "not_found" });
     const { error } = await createAdminClient().auth.admin.updateUserById(d.id, { password: d.password });

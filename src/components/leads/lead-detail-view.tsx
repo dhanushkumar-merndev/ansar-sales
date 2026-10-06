@@ -2,13 +2,18 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, UserRoundCog, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, UserRoundCog, X } from "lucide-react";
 import { toast } from "sonner";
 import { DueBadge, ReminderBadge, StatusBadge } from "@/components/common/badges";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { CompleteFollowUpDialog, FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
+import { CallButton } from "@/components/leads/call-button";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
+import { ShareFilesDialog } from "@/components/leads/share-files-dialog";
+import { ScrollBox } from "@/components/common/scroll-box";
+import { SharedLinksCard } from "@/components/leads/shared-links-card";
 import { StaffSelect } from "@/components/leads/staff-select";
 import { Timeline } from "@/components/leads/timeline";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -27,6 +32,7 @@ import type { NicheOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { cancelFollowUp } from "@/server/actions/follow-ups";
 import { addNote, assignLead, correctNote, setLeadArchived, setLeadStatus } from "@/server/actions/leads";
+import { toggleLeadStar } from "@/server/actions/stars";
 
 const TIMELINE_PAGE = 20;
 const TIMELINE_MAX = 500;
@@ -36,7 +42,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
   const isAdmin = profile.role === "admin";
   const [timelineLimit, setTimelineLimit] = useState(TIMELINE_PAGE);
 
-  const lead = useLiveQuery({ queryKey: `lead:${profile.id}:${leadId}`, fetcher: (s) => fetchLead(leadId, s), tables: ["leads", "niches"] });
+  const lead = useLiveQuery({ queryKey: `lead:${profile.id}:${leadId}`, fetcher: (s) => fetchLead(leadId, s), tables: ["leads", "niches", "lead_stars"] });
   const followUps = useLiveQuery({ queryKey: `lead-fu:${profile.id}:${leadId}`, fetcher: (s) => fetchLeadFollowUps(leadId, s), tables: ["follow_ups", "leads"] });
   const timeline = useLiveQuery({
     queryKey: `timeline:${profile.id}:${leadId}:${timelineLimit}`,
@@ -50,6 +56,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
   const [reschedule, setReschedule] = useState<LeadFollowUp | null>(null);
   const [completing, setCompleting] = useState<LeadFollowUp | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const refreshAll = () => {
     lead.refetch();
@@ -88,7 +95,10 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{l.name}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">{l.name}</h1>
+            {canEdit ? <StarButton id={l.id} starred={l.stars.length > 0} action={toggleLeadStar} onChanged={lead.refetch} /> : null}
+          </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <StatusBadge status={l.status} />
             <span>{l.niche.name}</span>
@@ -97,6 +107,8 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} /> : null}
+          {canEdit ? <Button variant="outline" onClick={() => setShareOpen(true)}><Send /> Share files</Button> : null}
           {canEdit ? <StatusSelect leadId={l.id} status={l.status} onChanged={refreshAll} /> : null}
           {canEdit ? (
             <Button variant="outline" onClick={() => { setEditSnapshot({ version: l.version }); setEditOpen(true); }}><Pencil /> Edit</Button>
@@ -172,7 +184,14 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           <Card>
             <CardHeader><CardTitle className="text-base">Contact</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <a href={`tel:${l.phone_normalized}`} className="flex items-center gap-2 hover:underline"><Phone className="size-4 text-muted-foreground" />{l.phone}</a>
+              {canEdit ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2"><Phone className="size-4 text-muted-foreground" />{l.phone}</span>
+                  <CallButton size="sm" leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} />
+                </div>
+              ) : (
+                <a href={`tel:${l.phone_normalized}`} className="flex items-center gap-2 hover:underline"><Phone className="size-4 text-muted-foreground" />{l.phone}</a>
+              )}
               {l.email ? <a href={`mailto:${l.email}`} className="flex items-center gap-2 break-all hover:underline"><Mail className="size-4 text-muted-foreground" />{l.email}</a> : <p className="text-muted-foreground">No email</p>}
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pt-2 text-muted-foreground">
                 <dt>Created</dt><dd className="text-foreground">{formatDateTime(l.created_at)}</dd>
@@ -181,6 +200,8 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
               </dl>
             </CardContent>
           </Card>
+
+          <SharedLinksCard leadId={l.id} leadName={l.name} phone={l.phone_normalized} profileId={profile.id} canEdit={canEdit} onShare={() => setShareOpen(true)} />
         </div>
 
         <div className="space-y-5">
@@ -193,7 +214,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
               ) : timeline.error && !timeline.data ? (
                 <ErrorState message={timeline.error} onRetry={timeline.refetch} />
               ) : (
-                <>
+                <ScrollBox label="Activity history" className="max-h-[min(70svh,720px)]">
                   <Timeline
                     items={timeline.data?.items ?? []}
                     renderNoteActions={(a) => (canEdit && (a.actor_id === profile.id || isAdmin) ? <CorrectNote note={a} onDone={timeline.refetch} /> : null)}
@@ -203,7 +224,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
                       {timeline.isFetching && <Loader2 className="animate-spin" />} Show older activity
                     </Button>
                   ) : null}
-                </>
+                </ScrollBox>
               )}
             </CardContent>
           </Card>
@@ -222,6 +243,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
       <FollowUpDialog open={!!reschedule} onOpenChange={(o) => !o && setReschedule(null)} followUp={reschedule ?? undefined} onDone={refreshAll} />
       <CompleteFollowUpDialog open={!!completing} onOpenChange={(o) => !o && setCompleting(null)} followUp={completing} onDone={refreshAll} />
       {isAdmin ? <AssignDialog open={assignOpen} onOpenChange={setAssignOpen} leadId={l.id} currentOwner={l.owner_id} onDone={refreshAll} /> : null}
+      {canEdit ? <ShareFilesDialog open={shareOpen} onOpenChange={setShareOpen} leadId={l.id} leadName={l.name} phone={l.phone_normalized} onShared={timeline.refetch} /> : null}
     </>
   );
 }

@@ -43,7 +43,8 @@ describe("list_leads pagination", () => {
     expect(new Set(seen).size).toBe(45);
     expect(seen).toEqual([...seen].sort().reverse()); // created_at tie → id desc
     const beyond = await list(salesA, { p_limit: 20, p_offset: 60 });
-    expect(beyond).toEqual({ items: [], total: 45 });
+    expect(beyond.items).toEqual([]);
+    expect(beyond.total).toBe(45);
   });
 
   it("applies filters before pagination and counts with the same predicates", async () => {
@@ -97,5 +98,14 @@ describe("list_follow_ups", () => {
     const a = await asUser(db, salesA, async (tx) =>
       (await tx.query<{ r: { total: number } }>("select public.list_follow_ups('overdue', null, null, 20, 0) as r")).rows[0].r);
     expect(a.total).toBe(0);
+  });
+
+  it("narrows any view to a half-open due-date range", async () => {
+    const total = (from: string, to: string) => asUser(db, salesB, async (tx) =>
+      (await tx.query<{ r: { total: number } }>(
+        "select public.list_follow_ups('overdue', null, null, 20, 0, $1::timestamptz, $2::timestamptz) as r", [from, to])).rows[0].r.total);
+    expect(await total("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z")).toBe(1);
+    expect(await total("2099-01-01T00:00:00Z", "2100-01-01T00:00:00Z")).toBe(0);
+    await expect(total("2100-01-01T00:00:00Z", "2000-01-01T00:00:00Z")).rejects.toThrow(/invalid_range/);
   });
 });

@@ -21,6 +21,12 @@ describe("user provisioning", () => {
     expect(p).toEqual({ role: "sales", username: "sales.a" });
   });
 
+  it("ignores later app_metadata changes for an existing profile", async () => {
+    await db.query(`update auth.users set raw_app_meta_data = raw_app_meta_data || '{"crm_role":"admin"}' where id = $1`, [salesA]);
+    const p = await one<{ role: string }>(db, "select role from public.profiles where id = $1", [salesA]);
+    expect(p.role).toBe("sales");
+  });
+
   it("rejects a duplicate username and rolls back the Auth user", async () => {
     await expect(createUser(db, "sales.a", "sales")).rejects.toThrow();
     expect((await one<{ n: number }>(db, "select count(*)::int as n from auth.users where email like 'sales.a@%'")).n).toBe(1);
@@ -173,5 +179,18 @@ describe("admin_list_users", () => {
     expect(r.total).toBe(2);
     expect(r.items).toHaveLength(1);
     await expect(asUser(db, salesA, (tx) => tx.query("select public.admin_list_users(null, null, 20, 0)"))).rejects.toThrow(/forbidden/);
+  });
+});
+
+describe("dashboard date range", () => {
+  type Dash = { range: { from: string; to: string; days: number }; trend?: unknown[]; activity?: unknown[] };
+  it("uses an explicit IST day range for the trend and rejects a bad one", async () => {
+    const a = await asUser(db, admin, async (tx) => (await one<{ r: Dash }>(tx, "select public.dashboard_admin(null, '2026-09-01', '2026-09-30') as r")).r);
+    expect(a.range).toEqual({ from: "2026-09-01", to: "2026-09-30", days: 30 });
+    expect(a.trend).toHaveLength(30);
+    const s = await asUser(db, salesA, async (tx) => (await one<{ r: Dash }>(tx, "select public.dashboard_sales(null, '2026-09-05', '2026-09-05') as r")).r);
+    expect(s.activity).toHaveLength(1);
+    await expect(asUser(db, admin, (tx) => tx.query("select public.dashboard_admin(null, '2026-09-30', '2026-09-01')"))).rejects.toThrow(/invalid_range/);
+    await expect(asUser(db, account, (tx) => tx.query("select public.dashboard_sales(null, '2026-09-01', '2026-09-30')"))).rejects.toThrow(/forbidden/);
   });
 });

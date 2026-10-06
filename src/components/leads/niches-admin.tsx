@@ -115,7 +115,11 @@ export function NichesAdmin({ initialNiches }: { initialNiches: NicheOption[] })
 function RenameDialog({ niche, onClose, onDone }: { niche: NicheAdminRow | null; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState("");
   const [pending, start] = useTransition();
-  useEffect(() => setName(niche?.name ?? ""), [niche]);
+  const [shownFor, setShownFor] = useState(niche);
+  if (shownFor !== niche) {
+    setShownFor(niche);
+    setName(niche?.name ?? "");
+  }
   return (
     <Dialog open={!!niche} onOpenChange={(o) => !o && !pending && onClose()}>
       <DialogContent className="sm:max-w-sm">
@@ -139,7 +143,11 @@ function RenameDialog({ niche, onClose, onDone }: { niche: NicheAdminRow | null;
 function MergeDialog({ niche, initialNiches, onClose, onDone }: { niche: NicheAdminRow | null; initialNiches: NicheOption[]; onClose: () => void; onDone: () => void }) {
   const [target, setTarget] = useState<NicheValue>(null);
   const [pending, start] = useTransition();
-  useEffect(() => setTarget(null), [niche]);
+  const [shownFor, setShownFor] = useState(niche);
+  if (shownFor !== niche) {
+    setShownFor(niche);
+    setTarget(null);
+  }
   return (
     <Dialog open={!!niche} onOpenChange={(o) => !o && !pending && onClose()}>
       <DialogContent className="sm:max-w-md">

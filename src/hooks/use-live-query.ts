@@ -35,6 +35,7 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
   const inFlight = useRef(false);
   const rerun = useRef(false);
   const lastRun = useRef(0);
+  const runRef = useRef<(reason: "key" | "event") => Promise<void>>(async () => {});
   const { subscribe } = useRealtime();
 
   useEffect(() => {
@@ -76,10 +77,14 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
       setIsFetching(false);
       if (rerun.current) {
         rerun.current = false;
-        void run("event");
+        void runRef.current("event");
       }
     }
   }, []);
+
+  useEffect(() => {
+    runRef.current = run;
+  }, [run]);
 
   // Query identity changed → fetch now (older in-flight read is aborted).
   useEffect(() => {

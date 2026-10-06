@@ -19,13 +19,23 @@ export async function createDb(): Promise<PGlite> {
   return db;
 }
 
-/** Creates an Auth user the same way the server action does (app_metadata → profile trigger). */
+/**
+ * Creates an Auth user the way Supabase Auth's admin createUser does: insert the row,
+ * then merge the supplied app_metadata with an UPDATE in the same transaction.
+ */
 export async function createUser(db: PGlite, username: string, role: Role, displayName = username) {
-  const res = await db.query<{ id: string }>(
-    `insert into auth.users (email, raw_app_meta_data) values ($1, $2) returning id`,
-    [`${username}@login.test`, { crm_username: username, crm_display_name: displayName, crm_role: role }],
-  );
-  return res.rows[0].id;
+  return db.transaction(async (tx) => {
+    const res = await tx.query<{ id: string }>(
+      `insert into auth.users (email, raw_app_meta_data) values ($1, '{"provider":"email","providers":["email"]}') returning id`,
+      [`${username}@login.test`],
+    );
+    const id = res.rows[0].id;
+    await tx.query(`update auth.users set raw_app_meta_data = raw_app_meta_data || $2 where id = $1`, [
+      id,
+      { crm_username: username, crm_display_name: displayName, crm_role: role },
+    ]);
+    return id;
+  });
 }
 
 /** Runs fn inside a transaction as an authenticated user (RLS applies), then rolls back nothing. */

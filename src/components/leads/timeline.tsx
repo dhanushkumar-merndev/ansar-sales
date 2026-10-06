@@ -1,7 +1,8 @@
 "use client";
 
-import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Pencil, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
+import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
 import { STATUS_LABELS, type LeadStatus } from "@/lib/constants";
+import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
 import type { Activity } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,10 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   follow_up_updated: CalendarClock,
   follow_up_completed: CalendarCheck,
   follow_up_cancelled: CalendarX,
+  call_logged: PhoneCall,
+  files_shared: Send,
+  share_revoked: Link2Off,
+  share_opened: Eye,
 };
 
 const status = (s: unknown) => STATUS_LABELS[s as LeadStatus] ?? String(s ?? "—");
@@ -66,6 +71,29 @@ function describe(a: Activity): { title: string; detail?: React.ReactNode } {
       return { title: "completed a follow-up", detail: <>{String(m.task ?? "")}{a.body ? <p className="mt-0.5 text-foreground">Outcome: {a.body}</p> : null}</> };
     case "follow_up_cancelled":
       return { title: "cancelled a follow-up", detail: String(m.task ?? "") };
+    case "call_logged": {
+      const outcome = CALL_OUTCOMES[m.outcome as CallOutcome];
+      return {
+        title: "called the lead",
+        detail: outcome || a.body ? (
+          <>
+            {outcome ? <span>Outcome: <span className="font-medium text-foreground">{outcome}</span></span> : null}
+            {a.body ? <p className="mt-0.5 whitespace-pre-wrap text-foreground">{a.body}</p> : null}
+          </>
+        ) : undefined,
+      };
+    }
+    case "files_shared": {
+      const files = Array.isArray(m.files) ? (m.files as string[]) : [];
+      return {
+        title: `shared ${files.length} ${files.length === 1 ? "file" : "files"} on WhatsApp`,
+        detail: `${files.join(", ")} · ${typeof m.expires_at === "string" ? `link expires ${dt(m.expires_at)}` : "link never expires"}`,
+      };
+    }
+    case "share_revoked":
+      return { title: "revoked a shared link", detail: typeof m.shared_at === "string" ? `Shared ${dt(m.shared_at)}` : undefined };
+    case "share_opened":
+      return { title: "opened the shared documents for the first time", detail: typeof m.device === "string" ? m.device : undefined };
     default:
       return { title: a.type.replaceAll("_", " ") };
   }
@@ -86,7 +114,7 @@ export function Timeline({ items, renderNoteActions }: { items: Activity[]; rend
             </span>
             <div className="min-w-0 flex-1 pt-1">
               <div className="flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
-                <p><span className="font-medium">{a.actor?.display_name ?? "System"}</span> <span className="text-muted-foreground">{title}</span></p>
+                <p><span className="font-medium">{a.actor?.display_name ?? (a.type === "share_opened" ? "Customer" : "System")}</span> <span className="text-muted-foreground">{title}</span></p>
                 <time className="text-xs text-muted-foreground" dateTime={a.created_at}>{formatDateTime(a.created_at)}</time>
               </div>
               {detail ? <div className={cn("mt-1 text-sm text-muted-foreground", isNote && "rounded-md border bg-card px-3 py-2")}>{detail}</div> : null}

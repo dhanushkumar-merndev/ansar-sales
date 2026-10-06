@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { DataPagination } from "@/components/common/data-pagination";
+import { duePresets, RangePicker } from "@/components/common/range-picker";
 import { PageHeader } from "@/components/common/page-header";
+import { PinnedCount } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { FollowUpList } from "@/components/follow-ups/follow-up-list";
 import { StaffSelect } from "@/components/leads/staff-select";
@@ -25,7 +27,10 @@ const VIEWS: { value: FollowUpView; label: string }[] = [
   { value: "upcoming", label: "Upcoming" },
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
+  { value: "starred", label: "Starred" },
 ];
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function FollowUpsView() {
   const profile = useProfile();
@@ -34,7 +39,10 @@ export function FollowUpsView() {
   const query = useMemo(() => {
     const view = VIEWS.some((v) => v.value === params.get("view")) ? (params.get("view") as FollowUpView) : "today";
     const assignee = isAdmin && /^[0-9a-f-]{36}$/i.test(params.get("assignee") ?? "") ? params.get("assignee") : null;
-    return { view, assignee, q: cleanSearch(params.get("q")), ...parsePaging(params) };
+    const from = params.get("from");
+    const to = params.get("to");
+    const range = from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to ? { from, to } : { from: null, to: null };
+    return { view, assignee, q: cleanSearch(params.get("q")), ...range, ...parsePaging(params) };
   }, [params, isAdmin]);
 
   const [input, setInput] = useState(query.q);
@@ -47,7 +55,7 @@ export function FollowUpsView() {
   const { data, error, isFetching, isInitialLoading, isStale, refetch } = useLiveQuery({
     queryKey: `follow-ups:${profile.id}:${JSON.stringify(query)}`,
     fetcher: (s) => fetchFollowUps(query, s),
-    tables: ["follow_ups", "leads"],
+    tables: ["follow_ups", "leads", "follow_up_stars"],
     pollMs: 30_000, // overdue status changes with time
   });
   useEffect(() => {
@@ -57,22 +65,37 @@ export function FollowUpsView() {
   return (
     <>
       <PageHeader title="Follow-ups" description={isAdmin ? "Team tasks. Times shown in IST." : "Your tasks. Times shown in IST."} />
-      <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center">
-        <Tabs value={query.view} onValueChange={(v) => set({ view: v })} className="overflow-x-auto">
-          <TabsList>{VIEWS.map((v) => <TabsTrigger key={v.value} value={v.value}>{v.label}</TabsTrigger>)}</TabsList>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Tabs value={query.view} onValueChange={(v) => set({ view: v })} className="w-full sm:w-auto shrink-0 max-w-full">
+          <TabsList className="w-full sm:w-auto max-w-full overflow-x-auto no-scrollbar justify-start">
+            {VIEWS.map((v) => <TabsTrigger key={v.value} value={v.value} className="shrink-0">{v.label}</TabsTrigger>)}
+          </TabsList>
         </Tabs>
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input type="search" className="pl-8" placeholder="Search lead or task" value={input} maxLength={100} onChange={(e) => setInput(e.target.value)} aria-label="Search follow-ups" />
+        <div className="relative w-full flex-1 min-w-0 sm:min-w-[200px]">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input type="search" className="h-9 pl-9 rounded-xl border-white/[0.1] bg-card/60" placeholder="Search lead or task" value={input} maxLength={100} onChange={(e) => setInput(e.target.value)} aria-label="Search follow-ups" />
         </div>
-        {isAdmin ? <StaffSelect value={query.assignee} onChange={(v) => set({ assignee: v })} allowAny className="w-full lg:w-[190px]" /> : null}
+        <RangePicker
+          value={query.from && query.to ? { from: query.from, to: query.to } : null}
+          onChange={(r) => set({ from: r?.from ?? null, to: r?.to ?? null })}
+          presets={duePresets()}
+          placeholder="Any due date"
+          allowFuture
+          ariaLabel="Due date range"
+          className="w-full sm:w-auto shrink-0"
+        />
+        {isAdmin ? <StaffSelect value={query.assignee} onChange={(v) => set({ assignee: v })} allowAny className="w-full sm:w-[190px]" /> : null}
+        {query.view === "starred" && data ? <PinnedCount count={data.pinnedCount} /> : null}
         <FetchingIndicator show={isFetching && !isInitialLoading} />
       </div>
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
-        <EmptyState title={query.view === "overdue" ? "Nothing overdue" : "No follow-ups here"} description={query.view === "today" ? "No tasks due today." : undefined} />
+        <EmptyState
+          title={query.view === "overdue" ? "Nothing overdue" : query.view === "starred" && !query.q ? "No starred follow-ups" : "No follow-ups here"}
+          description={query.view === "today" ? "No tasks due today." : query.view === "starred" && !query.q ? "Tap the star on any task to keep it here. Pin up to 10 to keep them on top." : undefined}
+        />
       ) : (
         <div className={cn(isStale && "opacity-60")}>
-          <FollowUpList items={data.items} showAssignee={isAdmin} onChanged={refetch} />
+          <FollowUpList items={data.items} showAssignee={isAdmin} showPin={query.view === "starred"} onChanged={refetch} />
           <DataPagination page={query.page} pageSize={query.pageSize} total={data.total} disabled={isFetching}
             onPageChange={(p) => set({ page: String(p) })} onPageSizeChange={(s) => set({ pageSize: String(s) })} />
         </div>

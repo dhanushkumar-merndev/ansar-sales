@@ -6,18 +6,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PAGE_SIZES } from "@/lib/constants";
 import { formatCount } from "@/lib/format";
 import { lastPage } from "@/lib/pagination";
+import { cn } from "@/lib/utils";
 
+/**
+ * Page bar. By default it is pinned to the bottom of the viewport (beside the
+ * sidebar) and a spacer keeps the last rows visible. Lists nested inside a card
+ * pass `inline` so several bars never stack.
+ */
 export function DataPagination({
-  page, pageSize, total, onPageChange, onPageSizeChange, disabled,
+  page, pageSize, total, onPageChange, onPageSizeChange, disabled, inline,
 }: {
   page: number; pageSize: number; total: number;
-  onPageChange: (page: number) => void; onPageSizeChange?: (size: number) => void; disabled?: boolean;
+  onPageChange: (page: number) => void; onPageSizeChange?: (size: number) => void; disabled?: boolean; inline?: boolean;
 }) {
   const pages = lastPage(total, pageSize);
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-  return (
-    <div className="flex flex-col-reverse items-center justify-between gap-3 pt-3 text-sm sm:flex-row">
+  const bar = (
+    <div
+      className={cn(
+        "flex flex-col-reverse items-center justify-between gap-3 text-sm sm:flex-row",
+        inline
+          ? "pt-3"
+          : "fixed inset-x-0 bottom-0 z-20 border-t border-white/[0.08] bg-background/95 px-4 py-2.5 backdrop-blur transition-[left] duration-200 ease-linear supports-[backdrop-filter]:bg-background/80 sm:px-6 md:left-(--sidebar-width) lg:px-8 md:group-has-[[data-state=collapsed]]/sidebar-wrapper:left-(--sidebar-width-icon)",
+      )}
+    >
       <p className="text-muted-foreground">
         {total === 0 ? "No results" : `${formatCount(from)}–${formatCount(to)} of ${formatCount(total)}`}
       </p>
@@ -39,5 +52,12 @@ export function DataPagination({
         </Button>
       </div>
     </div>
+  );
+  if (inline) return bar;
+  return (
+    <>
+      <div className="h-24 sm:h-14" aria-hidden />
+      {bar}
+    </>
   );
 }

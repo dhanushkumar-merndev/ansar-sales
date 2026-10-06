@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -37,6 +38,9 @@ export function NicheCombobox({
     enabled: open,
     pollMs: 0,
   });
+  useEffect(() => {
+    if (error) toast.error(error, { id: "niche-search-error" });
+  }, [error]);
 
   const options = useMemo(() => {
     const list = data?.options ?? (term ? [] : initialOptions.slice(0, 20));
@@ -76,7 +80,6 @@ export function NicheCombobox({
             {(typing || isFetching) && (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Searching…</div>
             )}
-            {error ? <div className="px-3 py-2 text-xs text-destructive">{error}</div> : null}
             {!typing && !isFetching && options.length === 0 && !showCreate ? <CommandEmpty>No niches found.</CommandEmpty> : null}
             {exact && (exact.archived_at || exact.merged_into_id) && !options.some((o) => o.id === exact.id) ? (
               <div className="px-3 py-2 text-xs text-muted-foreground">“{exact.name}” is archived. Choose another niche.</div>

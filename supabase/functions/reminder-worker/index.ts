@@ -1,7 +1,7 @@
-// Reminder delivery worker. Invoked every minute by Supabase Cron (pg_net) only
+// Reminder and notification delivery worker. Invoked every minute by Supabase Cron (pg_net) only
 // when reminders are due. Authenticated with a dedicated secret header.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildReminderMessage, classifyTelegramResult, constantTimeEqual, type ClaimedReminder, type DeliveryOutcome } from "./logic.ts";
+import { buildNotification, buildReminderMessage, classifyTelegramResult, constantTimeEqual, replyMarkup, type ClaimedNotification, type ClaimedReminder, type DeliveryOutcome, type TelegramMessage } from "./logic.ts";
 
 const BATCH_SIZE = 25;
 const LEASE_SECONDS = 120;
@@ -15,12 +15,12 @@ function serviceKey(): string {
   return keys.default ?? Object.values(keys)[0] ?? "";
 }
 
-async function sendTelegram(token: string, chatId: number, text: string): Promise<DeliveryOutcome> {
+async function sendTelegram(token: string, chatId: number, message: TelegramMessage): Promise<DeliveryOutcome> {
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+      body: JSON.stringify({ chat_id: chatId, text: message.text, reply_markup: replyMarkup(message), disable_web_page_preview: true }),
       signal: AbortSignal.timeout(10_000),
     });
     const body = await res.json().catch(() => null);
@@ -76,5 +76,36 @@ Deno.serve(async (req) => {
     if (rateLimitedFor !== null || batch.length < BATCH_SIZE) break;
   }
 
-  return Response.json({ ok: true, counts });
+  // Role-based notifications (lead/finance/library events, overdue alerts, digests), same lease and retry rules.
+  const notified = { sent: 0, retry: 0, failed: 0, blocked: 0, lease_lost: 0 };
+  while (Date.now() - started < MAX_RUNTIME_MS) {
+    const { data, error } = await supabase.rpc("claim_due_notifications", { p_limit: BATCH_SIZE, p_lease_seconds: LEASE_SECONDS });
+    if (error) {
+      console.error("notification claim failed", error.code);
+      break;
+    }
+    const batch = (data ?? []) as ClaimedNotification[];
+    if (batch.length === 0) break;
+    let rateLimitedFor: number | null = null;
+    for (const item of batch) {
+      const outcome: DeliveryOutcome = rateLimitedFor !== null
+        ? { result: "retry", error: "rate limited", retryAfterSeconds: rateLimitedFor, rateLimited: true }
+        : await sendTelegram(botToken, item.chat_id, buildNotification(item, appUrl));
+      if (outcome.result === "retry" && outcome.rateLimited) rateLimitedFor = outcome.retryAfterSeconds;
+      const { data: finished, error: finishError } = await supabase.rpc("finish_notification", {
+        p_id: item.notification_id,
+        p_lease_token: item.lease_token,
+        p_result: outcome.result,
+        p_error: outcome.result === "sent" ? undefined : outcome.error,
+        p_retry_after_seconds: outcome.result === "retry" ? outcome.retryAfterSeconds ?? undefined : undefined,
+      });
+      if (finishError) console.error("notification finish failed", finishError.code);
+      if (finished === "lease_lost") notified.lease_lost++;
+      else notified[outcome.result]++;
+      if (rateLimitedFor === null) await new Promise((r) => setTimeout(r, SEND_GAP_MS));
+    }
+    if (rateLimitedFor !== null || batch.length < BATCH_SIZE) break;
+  }
+
+  return Response.json({ ok: true, counts, notified });
 });

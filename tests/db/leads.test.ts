@@ -54,6 +54,9 @@ describe("transaction integrity", () => {
     await asUser(db, admin, (tx) => tx.query("update public.leads set status = 'interested' where id = $1", [id]));
     await expect(asUser(db, salesA, (tx) => tx.query(
       "select public.update_lead($1, $2, 'Delta 2', '+919999999999', '+919999999999', null, null, 'Retail')", [id, v]))).rejects.toThrow(/version_conflict/);
+    // Must not be a retryable SQLSTATE (40001/40P01): PostgREST re-runs those transactions until the gateway times out.
+    await expect(asUser(db, salesA, (tx) => tx.query(
+      "select public.update_lead($1, $2, 'Delta 2', '+919999999999', '+919999999999', null, null, 'Retail')", [id, v]))).rejects.toMatchObject({ code: "PT409" });
   });
 
   it("keeps note history when a note is corrected", async () => {

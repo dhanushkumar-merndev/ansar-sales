@@ -29,6 +29,12 @@ export const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   miscellaneous: "Miscellaneous",
 };
 
+export const PAYMENT_MODES = ["cash", "upi", "bank_transfer", "cheque", "card", "other"] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number];
+export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
+  cash: "Cash", upi: "UPI", bank_transfer: "Bank transfer", cheque: "Cheque", card: "Card", other: "Other",
+};
+
 export const PAGE_SIZES = [20, 50, 100] as const;
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;

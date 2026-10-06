@@ -9,20 +9,31 @@ const ROLES: ("admin" | "account")[] = ["admin", "account"];
 
 export async function saveExpense(input: unknown) {
   return runAction(ROLES, expenseSchema, input, async (d, { supabase, profile }) => {
-    const values = { expense_date: d.expenseDate, category: d.category, amount: d.amount as unknown as number, description: d.description ?? null };
+    const values = {
+      expense_date: d.expenseDate, category: d.category, amount: d.amount as unknown as number,
+      payment_mode: d.paymentMode, item: d.item ?? null, quantity: d.quantity ?? null, description: d.description ?? null,
+    };
     const q = d.id
       ? supabase.from("expenses").update(values).eq("id", d.id).is("archived_at", null)
       : supabase.from("expenses").insert({ ...values, created_by: profile.id });
-    const { data, error } = await q.select("id").maybeSingle();
+    const { data, error } = await q.select("id, recurrence_id").maybeSingle();
     if (error) return dbError(error);
     if (!data) return dbError({ message: "not_found" });
+    // The saved expense becomes the template of its monthly series (or stops it).
+    if (d.repeatMonthly || data.recurrence_id) {
+      const { error: recurrenceError } = await supabase.rpc("set_expense_recurrence", { p_expense_id: data.id, p_repeat: d.repeatMonthly });
+      if (recurrenceError) return dbError(recurrenceError);
+    }
     return { ok: true, data: { id: data.id } };
   });
 }
 
 export async function saveCapital(input: unknown) {
   return runAction(ROLES, capitalSchema, input, async (d, { supabase, profile }) => {
-    const values = { entry_date: d.entryDate, contributor: d.contributor, amount: d.amount as unknown as number, description: d.description ?? null };
+    const values = {
+      entry_date: d.entryDate, contributor: d.contributor, amount: d.amount as unknown as number,
+      payment_mode: d.paymentMode, item: d.item ?? null, quantity: d.quantity ?? null, description: d.description ?? null,
+    };
     const q = d.id
       ? supabase.from("capital_entries").update(values).eq("id", d.id).is("archived_at", null)
       : supabase.from("capital_entries").insert({ ...values, created_by: profile.id });

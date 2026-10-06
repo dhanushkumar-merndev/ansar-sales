@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { publicEnv } from "@/lib/env";
 
-const PUBLIC_PATHS = ["/login", "/api/telegram/webhook"];
+// "/s" is the public share page: it reads data only through token-checked functions.
+const PUBLIC_PATHS = ["/login", "/api/telegram/webhook", "/s"];
 
 /** Refreshes the Supabase session cookie and redirects signed-out users to /login. */
 export async function updateSession(request: NextRequest) {

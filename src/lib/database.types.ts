@@ -60,6 +60,9 @@ export type Database = {
           description: string | null
           entry_date: string
           id: string
+          item: string | null
+          payment_mode: string | null
+          quantity: number | null
           updated_at: string
           updated_by: string | null
         }
@@ -73,6 +76,9 @@ export type Database = {
           description?: string | null
           entry_date: string
           id?: string
+          item?: string | null
+          payment_mode?: string | null
+          quantity?: number | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -86,6 +92,9 @@ export type Database = {
           description?: string | null
           entry_date?: string
           id?: string
+          item?: string | null
+          payment_mode?: string | null
+          quantity?: number | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -113,6 +122,62 @@ export type Database = {
           },
         ]
       }
+      expense_recurrences: {
+        Row: {
+          active: boolean
+          amount: number
+          category: Database["public"]["Enums"]["expense_category"]
+          created_at: string
+          created_by: string
+          day_of_month: number
+          description: string | null
+          id: string
+          item: string | null
+          next_date: string
+          payment_mode: string | null
+          quantity: number | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          amount: number
+          category: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          created_by: string
+          day_of_month: number
+          description?: string | null
+          id?: string
+          item?: string | null
+          next_date: string
+          payment_mode?: string | null
+          quantity?: number | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          amount?: number
+          category?: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          created_by?: string
+          day_of_month?: number
+          description?: string | null
+          id?: string
+          item?: string | null
+          next_date?: string
+          payment_mode?: string | null
+          quantity?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_recurrences_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expenses: {
         Row: {
           amount: number
@@ -124,6 +189,10 @@ export type Database = {
           description: string | null
           expense_date: string
           id: string
+          item: string | null
+          payment_mode: string | null
+          quantity: number | null
+          recurrence_id: string | null
           updated_at: string
           updated_by: string | null
         }
@@ -137,6 +206,10 @@ export type Database = {
           description?: string | null
           expense_date: string
           id?: string
+          item?: string | null
+          payment_mode?: string | null
+          quantity?: number | null
+          recurrence_id?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -150,6 +223,10 @@ export type Database = {
           description?: string | null
           expense_date?: string
           id?: string
+          item?: string | null
+          payment_mode?: string | null
+          quantity?: number | null
+          recurrence_id?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -166,6 +243,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_recurrence_id_fkey"
+            columns: ["recurrence_id"]
+            isOneToOne: false
+            referencedRelation: "expense_recurrences"
             referencedColumns: ["id"]
           },
           {
@@ -209,6 +293,78 @@ export type Database = {
           {
             foreignKeyName: "finance_activities_actor_id_fkey"
             columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_nag_silences: {
+        Row: {
+          follow_up_id: string
+          revision: number
+          silenced_at: string
+          user_id: string
+        }
+        Insert: {
+          follow_up_id: string
+          revision: number
+          silenced_at?: string
+          user_id: string
+        }
+        Update: {
+          follow_up_id?: string
+          revision?: number
+          silenced_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_nag_silences_follow_up_id_fkey"
+            columns: ["follow_up_id"]
+            isOneToOne: false
+            referencedRelation: "follow_ups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_nag_silences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_stars: {
+        Row: {
+          created_at: string
+          follow_up_id: string
+          pinned_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          follow_up_id: string
+          pinned_at?: string | null
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          follow_up_id?: string
+          pinned_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_stars_follow_up_id_fkey"
+            columns: ["follow_up_id"]
+            isOneToOne: false
+            referencedRelation: "follow_ups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_stars_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -353,6 +509,161 @@ export type Database = {
           },
         ]
       }
+      lead_share_files: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          file_id: string
+          position: number
+          removed_at: string | null
+          share_id: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          file_id: string
+          position: number
+          removed_at?: string | null
+          share_id: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          file_id?: string
+          position?: number
+          removed_at?: string | null
+          share_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_share_files_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_share_files_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "library_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_share_files_share_id_fkey"
+            columns: ["share_id"]
+            isOneToOne: false
+            referencedRelation: "lead_shares"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_shares: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          id: string
+          last_notified_on: string | null
+          last_viewed_at: string | null
+          lead_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          token: string | null
+          token_hash: string
+          updated_at: string
+          view_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          last_notified_on?: string | null
+          last_viewed_at?: string | null
+          lead_id: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          token?: string | null
+          token_hash: string
+          updated_at?: string
+          view_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          last_notified_on?: string | null
+          last_viewed_at?: string | null
+          lead_id?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          token?: string | null
+          token_hash?: string
+          updated_at?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_shares_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_shares_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_shares_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_stars: {
+        Row: {
+          created_at: string
+          lead_id: string
+          pinned_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          lead_id: string
+          pinned_at?: string | null
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          lead_id?: string
+          pinned_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_stars_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_stars_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           archived_at: string | null
@@ -433,6 +744,154 @@ export type Database = {
           },
         ]
       }
+      library_files: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          created_at: string
+          created_by: string
+          folder_id: string
+          id: string
+          mime_type: string
+          name: string
+          normalized_name: string | null
+          size_bytes: number
+          storage_path: string
+          thumb_path: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          created_at?: string
+          created_by: string
+          folder_id: string
+          id?: string
+          mime_type: string
+          name: string
+          normalized_name?: never
+          size_bytes: number
+          storage_path: string
+          thumb_path?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          created_at?: string
+          created_by?: string
+          folder_id?: string
+          id?: string
+          mime_type?: string
+          name?: string
+          normalized_name?: never
+          size_bytes?: number
+          storage_path?: string
+          thumb_path?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_files_archived_by_fkey"
+            columns: ["archived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_files_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_files_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "library_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_files_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      library_folders: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          normalized_name: string | null
+          parent_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          name: string
+          normalized_name?: never
+          parent_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          normalized_name?: never
+          parent_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "library_folders_archived_by_fkey"
+            columns: ["archived_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_folders_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "library_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "library_folders_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       niches: {
         Row: {
           archived_at: string | null
@@ -477,6 +936,32 @@ export type Database = {
             columns: ["merged_into_id"]
             isOneToOne: false
             referencedRelation: "niches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_settings: {
+        Row: {
+          disabled_kinds: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          disabled_kinds?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          disabled_kinds?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_settings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -580,6 +1065,74 @@ export type Database = {
           },
         ]
       }
+      share_events: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          device: string | null
+          file_id: string | null
+          file_name: string | null
+          id: string
+          lead_id: string
+          meta: Json
+          share_id: string
+          type: Database["public"]["Enums"]["share_event_type"]
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          device?: string | null
+          file_id?: string | null
+          file_name?: string | null
+          id?: string
+          lead_id: string
+          meta?: Json
+          share_id: string
+          type: Database["public"]["Enums"]["share_event_type"]
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          device?: string | null
+          file_id?: string | null
+          file_name?: string | null
+          id?: string
+          lead_id?: string
+          meta?: Json
+          share_id?: string
+          type?: Database["public"]["Enums"]["share_event_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "share_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "share_events_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "library_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "share_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "share_events_share_id_fkey"
+            columns: ["share_id"]
+            isOneToOne: false
+            referencedRelation: "lead_shares"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telegram_connections: {
         Row: {
           chat_id: number
@@ -650,6 +1203,82 @@ export type Database = {
           },
         ]
       }
+      telegram_notifications: {
+        Row: {
+          attempts: number
+          created_at: string
+          dedupe_key: string
+          follow_up_id: string | null
+          id: string
+          kind: string
+          last_error: string | null
+          lead_id: string | null
+          lease_token: string | null
+          next_attempt_at: string
+          payload: Json
+          recipient_id: string
+          sent_at: string | null
+          state: Database["public"]["Enums"]["reminder_state"]
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          dedupe_key: string
+          follow_up_id?: string | null
+          id?: string
+          kind: string
+          last_error?: string | null
+          lead_id?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          payload: Json
+          recipient_id: string
+          sent_at?: string | null
+          state?: Database["public"]["Enums"]["reminder_state"]
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          dedupe_key?: string
+          follow_up_id?: string | null
+          id?: string
+          kind?: string
+          last_error?: string | null
+          lead_id?: string | null
+          lease_token?: string | null
+          next_attempt_at?: string
+          payload?: Json
+          recipient_id?: string
+          sent_at?: string | null
+          state?: Database["public"]["Enums"]["reminder_state"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telegram_notifications_follow_up_id_fkey"
+            columns: ["follow_up_id"]
+            isOneToOne: false
+            referencedRelation: "follow_ups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "telegram_notifications_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "telegram_notifications_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: { [_ in never]: never }
     Functions: {
@@ -668,6 +1297,18 @@ export type Database = {
         }
         Returns: undefined
       }
+      admin_purge_library_file: {
+        Args: {
+          p_file_id: string
+        }
+        Returns: undefined
+      }
+      admin_unregistered_uploads: {
+        Args: {
+          p_limit?: number
+        }
+        Returns: Json
+      }
       admin_update_user: {
         Args: {
           p_user_id: string
@@ -677,12 +1318,30 @@ export type Database = {
         }
         Returns: Database["public"]["Tables"]["profiles"]["Row"]
       }
+      admin_usage: {
+        Args: never
+        Returns: Json
+      }
       check_duplicate_phone: {
         Args: {
           p_phone_normalized: string
           p_exclude_lead_id?: string
         }
         Returns: Json
+      }
+      claim_due_notifications: {
+        Args: {
+          p_limit?: number
+          p_lease_seconds?: number
+        }
+        Returns: {
+          notification_id: string
+          lease_token: string
+          chat_id: number
+          kind: string
+          payload: Json
+          attempts: number
+        }[]
       }
       claim_due_reminders: {
         Args: {
@@ -749,6 +1408,8 @@ export type Database = {
       dashboard_admin: {
         Args: {
           p_days?: number
+          p_from?: string
+          p_to?: string
         }
         Returns: Json
       }
@@ -761,12 +1422,46 @@ export type Database = {
       dashboard_sales: {
         Args: {
           p_days?: number
+          p_from?: string
+          p_to?: string
         }
         Returns: Json
       }
       disconnect_telegram: {
         Args: never
         Returns: undefined
+      }
+      finance_period_report: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      finance_period_totals: {
+        Args: {
+          p_kind: string
+          p_archived?: boolean
+          p_category?: Database["public"]["Enums"]["expense_category"]
+          p_year?: number
+        }
+        Returns: Json
+      }
+      finance_year_overview: {
+        Args: {
+          p_year: number
+        }
+        Returns: Json
+      }
+      finish_notification: {
+        Args: {
+          p_id: string
+          p_lease_token: string
+          p_result: string
+          p_error?: string
+          p_retry_after_seconds?: number
+        }
+        Returns: string
       }
       finish_reminder: {
         Args: {
@@ -779,6 +1474,39 @@ export type Database = {
         }
         Returns: string
       }
+      lead_share_summary: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: Json
+      }
+      library_folder_options: {
+        Args: never
+        Returns: Json
+      }
+      library_folder_path: {
+        Args: {
+          p_folder_id: string
+        }
+        Returns: Json
+      }
+      list_finance_entries: {
+        Args: {
+          p_kind: string
+          p_from: string
+          p_to: string
+          p_search?: string
+          p_category?: Database["public"]["Enums"]["expense_category"]
+          p_mode?: string
+          p_recurring?: boolean
+          p_archived?: boolean
+          p_sort?: string
+          p_dir?: string
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: Json
+      }
       list_follow_ups: {
         Args: {
           p_view?: string
@@ -786,6 +1514,8 @@ export type Database = {
           p_search?: string
           p_limit?: number
           p_offset?: number
+          p_due_from?: string
+          p_due_to?: string
         }
         Returns: Json
       }
@@ -803,8 +1533,15 @@ export type Database = {
           p_dir?: string
           p_limit?: number
           p_offset?: number
+          p_starred_only?: boolean
         }
         Returns: Json
+      }
+      log_call: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: string
       }
       merge_niches: {
         Args: {
@@ -812,6 +1549,133 @@ export type Database = {
           p_target_id: string
         }
         Returns: number
+      }
+      open_lead_share: {
+        Args: {
+          p_token: string
+          p_count_view?: boolean
+          p_device?: string
+        }
+        Returns: Json
+      }
+      remove_share_file: {
+        Args: {
+          p_share_id: string
+          p_file_id: string
+        }
+        Returns: undefined
+      }
+      report_finance: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      report_leads: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
+      resolve_share_file: {
+        Args: {
+          p_token: string
+          p_file_id: string
+        }
+        Returns: Json
+      }
+      revoke_lead_share: {
+        Args: {
+          p_share_id: string
+        }
+        Returns: undefined
+      }
+      send_test_notification: {
+        Args: never
+        Returns: undefined
+      }
+      set_call_outcome: {
+        Args: {
+          p_activity_id: string
+          p_outcome: string
+          p_note?: string
+        }
+        Returns: undefined
+      }
+      set_expense_recurrence: {
+        Args: {
+          p_expense_id: string
+          p_repeat: boolean
+        }
+        Returns: string
+      }
+      set_follow_up_pin: {
+        Args: {
+          p_follow_up_id: string
+          p_pinned: boolean
+        }
+        Returns: Json
+      }
+      set_follow_up_star: {
+        Args: {
+          p_follow_up_id: string
+          p_starred: boolean
+        }
+        Returns: Json
+      }
+      set_lead_pin: {
+        Args: {
+          p_lead_id: string
+          p_pinned: boolean
+        }
+        Returns: Json
+      }
+      set_lead_star: {
+        Args: {
+          p_lead_id: string
+          p_starred: boolean
+        }
+        Returns: Json
+      }
+      set_library_thumbnail: {
+        Args: {
+          p_file_id: string
+          p_path: string
+        }
+        Returns: undefined
+      }
+      set_notification_pref: {
+        Args: {
+          p_kind: string
+          p_enabled: boolean
+        }
+        Returns: string[]
+      }
+      share_lead_files: {
+        Args: {
+          p_lead_id: string
+          p_file_ids: string[]
+          p_expiry: string
+        }
+        Returns: Json
+      }
+      silence_follow_up_nag: {
+        Args: {
+          p_chat_id: number
+          p_follow_up_id: string
+        }
+        Returns: Json
+      }
+      track_share_file: {
+        Args: {
+          p_token: string
+          p_file_id: string
+          p_kind: string
+          p_device?: string
+        }
+        Returns: Json
       }
       update_lead: {
         Args: {
@@ -832,9 +1696,10 @@ export type Database = {
       app_role: "admin" | "sales" | "account"
       expense_category: "salary" | "rent" | "software" | "marketing" | "utilities" | "miscellaneous"
       follow_up_state: "pending" | "completed" | "cancelled"
-      lead_activity_type: "lead_created" | "note" | "note_corrected" | "status_changed" | "assigned" | "lead_updated" | "lead_archived" | "lead_restored" | "follow_up_scheduled" | "follow_up_rescheduled" | "follow_up_updated" | "follow_up_completed" | "follow_up_cancelled"
+      lead_activity_type: "lead_created" | "note" | "note_corrected" | "status_changed" | "assigned" | "lead_updated" | "lead_archived" | "lead_restored" | "follow_up_scheduled" | "follow_up_rescheduled" | "follow_up_updated" | "follow_up_completed" | "follow_up_cancelled" | "call_logged" | "files_shared" | "share_revoked" | "share_opened"
       lead_status: "new" | "contacted" | "interested" | "proposal_sent" | "won" | "lost"
       reminder_state: "pending" | "processing" | "sent" | "failed" | "skipped" | "cancelled"
+      share_event_type: "link_created" | "files_added" | "file_removed" | "opened" | "file_viewed" | "file_downloaded" | "expiry_changed" | "revoked"
       telegram_status: "connected" | "blocked"
     }
     CompositeTypes: { [_ in never]: never }
@@ -853,9 +1718,10 @@ export const Constants = {
       app_role: ["admin", "sales", "account"],
       expense_category: ["salary", "rent", "software", "marketing", "utilities", "miscellaneous"],
       follow_up_state: ["pending", "completed", "cancelled"],
-      lead_activity_type: ["lead_created", "note", "note_corrected", "status_changed", "assigned", "lead_updated", "lead_archived", "lead_restored", "follow_up_scheduled", "follow_up_rescheduled", "follow_up_updated", "follow_up_completed", "follow_up_cancelled"],
+      lead_activity_type: ["lead_created", "note", "note_corrected", "status_changed", "assigned", "lead_updated", "lead_archived", "lead_restored", "follow_up_scheduled", "follow_up_rescheduled", "follow_up_updated", "follow_up_completed", "follow_up_cancelled", "call_logged", "files_shared", "share_revoked", "share_opened"],
       lead_status: ["new", "contacted", "interested", "proposal_sent", "won", "lost"],
       reminder_state: ["pending", "processing", "sent", "failed", "skipped", "cancelled"],
+      share_event_type: ["link_created", "files_added", "file_removed", "opened", "file_viewed", "file_downloaded", "expiry_changed", "revoked"],
       telegram_status: ["connected", "blocked"],
     },
   },

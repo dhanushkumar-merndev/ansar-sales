@@ -1,28 +1,35 @@
-import { AlertCircle, Inbox, Loader2, RotateCw } from "lucide-react";
+"use client";
+
+import { useEffect } from "react";
+import { Inbox, Loader2, RotateCw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-card px-6 py-12 text-center">
-      <Inbox className="size-8 text-muted-foreground/60" aria-hidden />
-      <p className="font-medium">{title}</p>
-      {description ? <p className="max-w-sm text-sm text-muted-foreground">{description}</p> : null}
-      {action ? <div className="mt-2">{action}</div> : null}
+    <div className="flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-white/[0.1] bg-[#262626]/40 px-6 py-14 text-center">
+      <div className="flex size-12 items-center justify-center rounded-xl bg-white/[0.04] border border-white/[0.06] text-muted-foreground/80 mb-1">
+        <Inbox className="size-6" aria-hidden />
+      </div>
+      <p className="font-semibold text-foreground text-sm tracking-tight">{title}</p>
+      {description ? <p className="max-w-sm text-xs text-muted-foreground leading-relaxed">{description}</p> : null}
+      {action ? <div className="mt-3">{action}</div> : null}
     </div>
   );
 }
 
+/** A failed load: the message goes to a toast (once per message); the page keeps only a Retry button. */
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  useEffect(() => {
+    toast.error(message, { id: `load-error:${message}` });
+  }, [message]);
+  if (!onRetry) return null;
   return (
-    <div role="alert" className="flex flex-col items-center gap-2 rounded-lg border border-red-200 bg-red-50/60 px-6 py-8 text-center text-sm text-red-800">
-      <AlertCircle className="size-6" aria-hidden />
-      <p>{message}</p>
-      {onRetry ? (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          <RotateCw /> Retry
-        </Button>
-      ) : null}
+    <div className="flex justify-center py-8">
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        <RotateCw /> Retry
+      </Button>
     </div>
   );
 }

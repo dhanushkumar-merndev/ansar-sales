@@ -1,7 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useProfile } from "@/components/providers/profile-provider";
+import { realtimeTablesFor } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/client";
 
 type Listener = () => void;
@@ -19,16 +21,49 @@ const RealtimeContext = createContext<RealtimeContextValue | null>(null);
  * One authenticated Realtime channel per signed-in session. Supabase applies RLS
  * to each postgres_changes event, so users only receive rows they may read.
  */
-export function RealtimeProvider({ userId, tables, children }: { userId: string; tables: string[]; children: React.ReactNode }) {
+export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>("connecting");
   const listeners = useRef(new Map<Listener, Set<string>>());
-  const tablesKey = tables.join(",");
+
+  const value = useMemo<RealtimeContextValue>(
+    () => ({
+      status,
+      subscribe(tableNames, listener) {
+        listeners.current.set(listener, new Set(tableNames));
+        return () => {
+          listeners.current.delete(listener);
+        };
+      },
+    }),
+    [status],
+  );
+
+  return (
+    <RealtimeContext.Provider value={value}>
+      <Suspense fallback={null}>
+        <RealtimeChannelSubscription listeners={listeners} onStatus={setStatus} />
+      </Suspense>
+      {children}
+    </RealtimeContext.Provider>
+  );
+}
+
+function RealtimeChannelSubscription({
+  listeners,
+  onStatus,
+}: {
+  listeners: React.RefObject<Map<Listener, Set<string>>>;
+  onStatus: (status: Status) => void;
+}) {
+  const profile = useProfile();
+  const userId = profile.id;
+  const tablesKey = realtimeTablesFor(profile.role).join(",");
 
   useEffect(() => {
     const supabase = createClient();
     const tableList = tablesKey ? tablesKey.split(",") : [];
     if (tableList.length === 0) {
-      setStatus("live");
+      onStatus("live");
       return;
     }
     let wasDisconnected = false;
@@ -52,12 +87,12 @@ export function RealtimeProvider({ userId, tables, children }: { userId: string;
       }
       channel.subscribe((state) => {
         if (state === "SUBSCRIBED") {
-          setStatus("live");
+          onStatus("live");
           if (wasDisconnected) notify(null); // refetch anything missed while offline
           wasDisconnected = false;
         } else if (state === "CHANNEL_ERROR" || state === "TIMED_OUT" || state === "CLOSED") {
           wasDisconnected = true;
-          setStatus("offline");
+          onStatus("offline");
         }
       });
     })();
@@ -71,22 +106,9 @@ export function RealtimeProvider({ userId, tables, children }: { userId: string;
       authListener.subscription.unsubscribe();
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [userId, tablesKey]);
+  }, [userId, tablesKey, listeners, onStatus]);
 
-  const value = useMemo<RealtimeContextValue>(
-    () => ({
-      status,
-      subscribe(tableNames, listener) {
-        listeners.current.set(listener, new Set(tableNames));
-        return () => {
-          listeners.current.delete(listener);
-        };
-      },
-    }),
-    [status],
-  );
-
-  return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
+  return null;
 }
 
 export function useRealtime() {

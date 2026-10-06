@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EXPENSE_CATEGORIES, LEAD_STATUSES, ROLES } from "@/lib/constants";
+import { EXPENSE_CATEGORIES, LEAD_STATUSES, PAYMENT_MODES, ROLES } from "@/lib/constants";
 import { normalizePhone } from "@/lib/phone";
 
 export const usernameSchema = z
@@ -78,21 +78,34 @@ export const followUpCompleteSchema = z.object({
   nextTask: optionalText(500),
 });
 
+/** Mode of payment, and an optional item with its quantity (nos), shared by capital and expenses. */
+const purchaseFields = {
+  paymentMode: z.enum(PAYMENT_MODES, "Choose the mode of payment"),
+  item: optionalText(120),
+  quantity: z.string().trim().regex(/^\d{0,7}$/, "Enter a whole number").optional()
+    .transform((v) => (v ? Number(v) : undefined))
+    .refine((v) => v === undefined || (v >= 1 && v <= 1_000_000), "Enter a number from 1 to 10,00,000"),
+};
+const itemForQuantity = (d: { item?: string; quantity?: number }) => d.quantity === undefined || !!d.item;
+
 export const expenseSchema = z.object({
   id: z.uuid().optional(),
   expenseDate: calendarDate,
   category: z.enum(EXPENSE_CATEGORIES),
   amount: z.string().trim().regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter an amount with up to 2 decimals").refine((v) => Number(v) > 0, "Amount must be positive"),
+  ...purchaseFields,
   description: optionalText(500),
-});
+  repeatMonthly: z.boolean().default(false),
+}).refine(itemForQuantity, { path: ["item"], message: "Name the item for this quantity" });
 
 export const capitalSchema = z.object({
   id: z.uuid().optional(),
   entryDate: calendarDate,
   contributor: z.string().trim().min(1, "Who contributed?").max(120),
   amount: z.string().trim().regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter an amount with up to 2 decimals").refine((v) => Number(v) > 0, "Amount must be positive"),
+  ...purchaseFields,
   description: optionalText(500),
-});
+}).refine(itemForQuantity, { path: ["item"], message: "Name the item for this quantity" });
 
 export const createUserSchema = z.object({
   username: usernameSchema,

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { DateTimeField, type IstDateTime } from "@/components/common/date-time-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { addDays, istToUtcIso, istToday, utcToIstParts } from "@/lib/time";
@@ -30,25 +30,26 @@ export function FollowUpDialog({
 }) {
   const [task, setTask] = useState("");
   const [when, setWhen] = useState<IstDateTime>({ date: "", time: "" });
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  useEffect(() => {
-    if (!open) return;
-    setTask(followUp?.task ?? "");
-    setWhen(followUp ? utcToIstParts(followUp.due_at) : { date: addDays(istToday(), 1), time: "10:00" });
-    setError(null);
-  }, [open, followUp]);
+  const [openedFor, setOpenedFor] = useState<{ open: boolean; followUp?: { id: string } }>({ open: false });
+  if (openedFor.open !== open || openedFor.followUp !== followUp) {
+    setOpenedFor({ open, followUp });
+    if (open) {
+      setTask(followUp?.task ?? "");
+      setWhen(followUp ? utcToIstParts(followUp.due_at) : { date: addDays(istToday(), 1), time: "10:00" });
+    }
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const dueAt = toUtc(when);
-    if (!task.trim()) return setError("Describe the task.");
-    if (!dueAt) return setError("Pick a valid date and time.");
-    if (new Date(dueAt).getTime() < Date.now() - 5 * 60_000) return setError("Choose a time in the future.");
+    if (!task.trim()) return void toast.error("Describe the task.");
+    if (!dueAt) return void toast.error("Pick a valid date and time.");
+    if (new Date(dueAt).getTime() < Date.now() - 5 * 60_000) return void toast.error("Choose a time in the future.");
     start(async () => {
       const r = followUp ? await rescheduleFollowUp({ id: followUp.id, task, dueAt }) : await scheduleFollowUp({ leadId, task, dueAt });
-      if (!r.ok) return setError(r.error);
+      if (!r.ok) return void toast.error(r.error);
       toast.success(followUp ? "Follow-up rescheduled" : "Follow-up scheduled");
       onOpenChange(false);
       onDone?.();
@@ -72,7 +73,6 @@ export function FollowUpDialog({
               <FieldLabel htmlFor="fu-date">Due</FieldLabel>
               <DateTimeField idPrefix="fu" value={when} onChange={setWhen} />
             </Field>
-            {error ? <FieldError>{error}</FieldError> : null}
           </FieldGroup>
         </form>
         <DialogFooter>
@@ -91,17 +91,18 @@ export function CompleteFollowUpDialog({
   const [scheduleNext, setScheduleNext] = useState(false);
   const [nextTask, setNextTask] = useState("");
   const [when, setWhen] = useState<IstDateTime>({ date: "", time: "" });
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  useEffect(() => {
-    if (!open) return;
-    setOutcome("");
-    setScheduleNext(false);
-    setNextTask("");
-    setWhen({ date: addDays(istToday(), 2), time: "10:00" });
-    setError(null);
-  }, [open]);
+  const [wasOpen, setWasOpen] = useState(false);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) {
+      setOutcome("");
+      setScheduleNext(false);
+      setNextTask("");
+      setWhen({ date: addDays(istToday(), 2), time: "10:00" });
+    }
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,11 +110,11 @@ export function CompleteFollowUpDialog({
     let nextDueAt: string | undefined;
     if (scheduleNext) {
       nextDueAt = toUtc(when) ?? undefined;
-      if (!nextDueAt) return setError("Pick a valid date and time for the next follow-up.");
+      if (!nextDueAt) return void toast.error("Pick a valid date and time for the next follow-up.");
     }
     start(async () => {
       const r = await completeFollowUp({ id: followUp.id, outcome, nextDueAt, nextTask: scheduleNext ? nextTask : undefined });
-      if (!r.ok) return setError(r.error);
+      if (!r.ok) return void toast.error(r.error);
       toast.success("Follow-up completed");
       onOpenChange(false);
       onDone?.();
@@ -149,7 +150,6 @@ export function CompleteFollowUpDialog({
                 </Field>
               </div>
             ) : null}
-            {error ? <FieldError>{error}</FieldError> : null}
           </FieldGroup>
         </form>
         <DialogFooter>

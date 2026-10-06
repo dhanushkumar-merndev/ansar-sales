@@ -1,20 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { parseStartCommand, safeEqual } from "@/lib/telegram";
+import { parseSilenceCallback, parseStartCommand, safeEqual, withoutCallbackButtons } from "@/lib/telegram";
 
-async function reply(chatId: number, text: string) {
+/** Best-effort Bot API call; the CRM shows connection and delivery state either way. */
+async function botApi(method: string, body: Record<string, unknown>) {
   try {
-    await fetch(`https://api.telegram.org/bot${serverEnv("TELEGRAM_BOT_TOKEN")}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${serverEnv("TELEGRAM_BOT_TOKEN")}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
   } catch {
-    // Best effort; the CRM shows the connection state either way.
+    // Ignored.
   }
 }
+
+const reply = (chatId: number, text: string) => botApi("sendMessage", { chat_id: chatId, text });
 
 /** Telegram webhook: only accepts requests carrying our secret token header. */
 export async function POST(request: NextRequest) {
@@ -28,6 +31,30 @@ export async function POST(request: NextRequest) {
   if (!safeEqual(header, secret)) return new NextResponse(null, { status: 401 });
 
   const update = await request.json().catch(() => null);
+
+  // 🔕 Silence on an overdue alert. The database checks that this chat belongs to the assignee.
+  const silence = parseSilenceCallback(update);
+  if (silence) {
+    const { data, error } = await createAdminClient().rpc("silence_follow_up_nag", {
+      p_chat_id: silence.chatId,
+      p_follow_up_id: silence.followUpId,
+    });
+    const result = data as { ok?: boolean; lead_name?: string } | null;
+    const ok = !error && result?.ok;
+    await botApi("answerCallbackQuery", {
+      callback_query_id: silence.callbackId,
+      text: ok ? `🔕 Overdue alerts silenced for ${result?.lead_name}` : "This alert can't be silenced from this chat.",
+    });
+    if (ok) {
+      await botApi("editMessageReplyMarkup", {
+        chat_id: silence.chatId,
+        message_id: silence.messageId,
+        reply_markup: withoutCallbackButtons(silence.keyboard),
+      });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
   const start = parseStartCommand(update);
   if (!start) {
     const chatId = (update as { message?: { chat?: { id?: number; type?: string } } })?.message?.chat;
