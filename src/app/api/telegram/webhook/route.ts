@@ -2,17 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { publicEnv, serverEnv } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseSilenceCallback, parseStartCommand, safeEqual, withoutCallbackButtons } from "@/lib/telegram";
-import {
-  botCommandsFor,
-  buildHelp,
-  buildTestReply,
-  buildToday,
-  commandOf,
-  NOT_CONNECTED_TEXT,
-  parseIncomingText,
-  type BotReply,
-  type BotSummary,
-} from "@/lib/telegram-bot";
+import { buildDashboard, NOT_CONNECTED_TEXT, parseIncomingText, type BotReply, type BotSummary } from "@/lib/telegram-bot";
 
 /** Best-effort Bot API call; the CRM shows connection and delivery state either way. */
 async function botApi(method: string, body: Record<string, unknown>) {
@@ -28,7 +18,7 @@ async function botApi(method: string, body: Record<string, unknown>) {
   }
 }
 
-const reply = (chatId: number, text: string, extra: Omit<BotReply, "text"> = {}) =>
+const reply = (chatId: number, text: string, extra: Partial<Omit<BotReply, "text">> = {}) =>
   botApi("sendMessage", { chat_id: chatId, text, ...extra, link_preview_options: { is_disabled: true } });
 const send = (chatId: number, r: BotReply) => reply(chatId, r.text, { reply_markup: r.reply_markup });
 
@@ -40,10 +30,10 @@ async function summaryFor(chatId: number): Promise<BotSummary> {
   return error || !data ? { connected: false } : (data as unknown as BotSummary);
 }
 
-/** Help menu, plus Telegram's "/" command list for this chat's role (best effort). */
-async function welcome(chatId: number, summary: Extract<BotSummary, { connected: true }>) {
-  await botApi("setMyCommands", { commands: botCommandsFor(summary.role), scope: { type: "chat", chat_id: chatId } });
-  await send(chatId, buildHelp(summary, appUrl()));
+/** The user's dashboard summary. Also clears the "/" command menu an earlier version set for this chat. */
+async function dashboard(chatId: number, summary: Extract<BotSummary, { connected: true }>) {
+  await botApi("deleteMyCommands", { scope: { type: "chat", chat_id: chatId } });
+  await send(chatId, buildDashboard(summary, appUrl()));
 }
 
 /** Telegram webhook: only accepts requests carrying our secret token header. */
@@ -84,18 +74,12 @@ export async function POST(request: NextRequest) {
 
   const start = parseStartCommand(update);
   if (!start) {
-    // Any other private message: connected users get their role's menu or summary.
+    // Any other private message: connected users get their role's dashboard summary.
     const incoming = parseIncomingText(update);
     if (incoming) {
       const summary = await summaryFor(incoming.chatId);
-      if (!summary.connected) {
-        await reply(incoming.chatId, NOT_CONNECTED_TEXT);
-      } else {
-        const command = commandOf(incoming.text);
-        if (command === "today") await send(incoming.chatId, buildToday(summary, appUrl()));
-        else if (command === "test") await send(incoming.chatId, buildTestReply(summary));
-        else await welcome(incoming.chatId, summary);
-      }
+      if (summary.connected) await dashboard(incoming.chatId, summary);
+      else await reply(incoming.chatId, NOT_CONNECTED_TEXT);
     }
     return NextResponse.json({ ok: true });
   }
@@ -111,7 +95,7 @@ export async function POST(request: NextRequest) {
   } else {
     await reply(start.chatId, `Connected. Hi ${result.display_name}! Your CRM alerts will arrive here.`);
     const summary = await summaryFor(start.chatId);
-    if (summary.connected) await welcome(start.chatId, summary);
+    if (summary.connected) await dashboard(start.chatId, summary);
   }
   // Always 200 so Telegram does not retry the update.
   return NextResponse.json({ ok: true });

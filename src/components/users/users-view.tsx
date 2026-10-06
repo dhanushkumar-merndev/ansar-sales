@@ -5,6 +5,7 @@ import { KeyRound, Loader2, MoreHorizontal, Pencil, Plus, Search, UserCheck, Use
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataPagination } from "@/components/common/data-pagination";
+import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -68,6 +69,12 @@ export function UsersView() {
   return (
     <>
       <PageHeader title="Users" description={`Staff accounts of ${me.company.name}: create users, change roles, reset passwords.`} actions={<Button onClick={() => setCreateOpen(true)}><Plus /> New user</Button>} />
+      {me.isSuperAdmin ? (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Ads managers work across companies, so they&apos;re created in{" "}
+          <Link href="/super?tab=ads" className="font-medium text-foreground underline underline-offset-4">Super settings → Ads</Link>.
+        </p>
+      ) : null}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
