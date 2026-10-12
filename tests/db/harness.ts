@@ -78,6 +78,25 @@ export async function asService<T>(db: PGlite, fn: (tx: Transaction) => Promise<
   });
 }
 
+/**
+ * Simulates an upload to Tigris as the server records it in the object ledger: confirmed with
+ * its real size/type (or pending: an upload URL was issued). ageHours backdates the record.
+ */
+export async function recordObject(
+  db: PGlite, path: string, size: number, mime: string, opts: { bucket?: "library" | "logos"; pending?: boolean; ageHours?: number } = {},
+) {
+  const bucket = opts.bucket ?? "library";
+  await asService(db, (tx) =>
+    opts.pending
+      ? tx.query("select public.storage_record_object($1, $2)", [bucket, path])
+      : tx.query("select public.storage_record_object($1, $2, $3, $4)", [bucket, path, size, mime]),
+  );
+  if (opts.ageHours) {
+    await db.query("update private.storage_objects set created_at = now() - make_interval(hours => $3) where bucket = $1 and name = $2", [bucket, path, opts.ageHours]);
+  }
+  return path;
+}
+
 export async function one<T = Record<string, unknown>>(q: Queryable, sql: string, params: unknown[] = []) {
   const res = await q.query<T>(sql, params);
   return res.rows[0];

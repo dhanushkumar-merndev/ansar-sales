@@ -1,12 +1,11 @@
-import { publicEnv } from "@/lib/env";
-
-export const COMPANY_LOGO_BUCKET = "company-logos";
-
 export type CompanyBrand = { id: string; name: string; brandHighlight: string | null; logoUrl: string | null };
 
-/** Logos live in a public bucket (they are not sensitive), so a plain URL works everywhere, including share pages. */
+/**
+ * Logos are in the private Tigris bucket; /logo/<path> redirects to a short-lived signed URL.
+ * Logos are not sensitive, so that route needs no session and works on public share pages too.
+ */
 export function companyLogoUrl(path: string | null | undefined) {
-  return path ? `${publicEnv.supabaseUrl}/storage/v1/object/public/${COMPANY_LOGO_BUCKET}/${path}` : null;
+  return path ? `/logo/${path}` : null;
 }
 
 export function toCompanyBrand(c: { id: string; name: string; brand_highlight: string | null; logo_path: string | null }): CompanyBrand {

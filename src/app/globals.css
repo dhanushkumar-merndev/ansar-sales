@@ -147,3 +147,57 @@
     scrollbar-width: none;
   }
 }
+/* Presentation (Reports → Present): calm, consistent motion; off with "reduce motion". */
+.deck-enter {
+  animation: deck-enter 450ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+.deck-exit {
+  animation: deck-exit 250ms ease-in both;
+  pointer-events: none;
+}
+@keyframes deck-enter {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--deck-dir, 1) * 24px));
+  }
+}
+@keyframes deck-exit {
+  to {
+    opacity: 0;
+  }
+}
+
+.deck-reveal {
+  animation: deck-reveal 600ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+@keyframes deck-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.deck-grow {
+  transform-origin: left center;
+  animation: deck-grow 900ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+@keyframes deck-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-enter, .deck-exit, .deck-reveal, .deck-grow {
+    animation: none;
+  }
+}
+
+/* Drawing viewer (projects/files/cad-preview.tsx): only the drawing shows; the library's own command bar,
+   toolbars, notification bell and colour loupe stay hidden (the file panel has its own controls). */
+.cad-host > :not(canvas) {
+  display: none !important;
+}
+.ml-ui-simple-toolbar__menu, .ml-aci-loupe {
+  display: none !important;
+}

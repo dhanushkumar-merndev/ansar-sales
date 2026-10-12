@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Presentation as PresentationIcon } from "lucide-react";
 import { SERIES, seriesColor } from "@/components/charts/chart";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { Bars, ChartCard, Donut, Funnel, GroupedBars, MultiLine, ScrollTable, StatCard, WeekHourHeatmap } from "@/components/dashboard/widgets";
 import { useProfile } from "@/components/providers/profile-provider";
+import { PresentCompanyDialog } from "@/components/reports/present-company-dialog";
+import { Presentation } from "@/components/reports/presentation/presentation";
 import { MAX_RANGE_DAYS, presets, ReportRangePicker, type ReportRange } from "@/components/reports/report-range-picker";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
@@ -21,7 +25,7 @@ import { addDays, formatCalendarDate, formatDayLabel, formatMonth, istToday } fr
 type Bucket = "day" | "week" | "month";
 export type RangeInfo = { from: string; to: string; bucket: Bucket };
 
-type LeadReport = {
+export type LeadReport = {
   range: RangeInfo; scope: "team" | "mine";
   cards: {
     created: number; won: number; lost: number; notes: number; calls: number; follow_ups_scheduled: number;
@@ -87,10 +91,13 @@ function usePeriodLabel(bucket?: Bucket) {
 const rangeText = (r: { from: string; to: string }) => `${formatCalendarDate(r.from)} – ${formatCalendarDate(r.to)} (IST)`;
 
 export function ReportsView() {
-  const { role } = useProfile();
+  const { role, roles, isSuperAdmin } = useProfile();
   const { params, set } = useUrlState();
   const [range, setRange] = useRange();
-  const tabs = [...(can.useLeads(role) ? (["sales"] as const) : []), ...(can.useFinance(role) ? (["finance"] as const) : [])];
+  const [choosingCompany, setChoosingCompany] = useState(false);
+  const presenting = params.get("present") === "1";
+  const present = () => set({ present: "1" });
+  const tabs = [...(can.useLeads(roles) ? (["sales"] as const) : []), ...(can.useFinance(roles) ? (["finance"] as const) : [])];
   const requested = params.get("tab");
   const tab = tabs.find((t) => t === requested) ?? tabs[0];
 
@@ -99,8 +106,15 @@ export function ReportsView() {
       <PageHeader
         title="Reports"
         description={`${tab === "finance" ? "Capital and operating expenses" : role === "admin" ? "Team pipeline and activity" : "Your pipeline and activity"} for ${rangeText(range)}.`}
-        actions={<ReportRangePicker value={range} onChange={setRange} />}
+        actions={(
+          <>
+            <ReportRangePicker value={range} onChange={setRange} />
+            <Button onClick={() => (isSuperAdmin ? setChoosingCompany(true) : present())}><PresentationIcon /> Present</Button>
+          </>
+        )}
       />
+      {isSuperAdmin ? <PresentCompanyDialog open={choosingCompany} onOpenChange={setChoosingCompany} range={range} onPresent={present} /> : null}
+      {presenting ? <Presentation range={range} onClose={() => set({ present: null }, { replace: true })} /> : null}
       {tabs.length > 1 ? (
         <Tabs value={tab} onValueChange={(v) => set({ tab: v === "finance" ? "finance" : null })} className="mb-4">
           <TabsList><TabsTrigger value="sales">Sales</TabsTrigger><TabsTrigger value="finance">Finance</TabsTrigger></TabsList>
@@ -343,6 +357,20 @@ function FinanceReportView({ range }: { range: ReportRange }) {
           <ChartCard title="Capital by contributor" description="Who contributed in this range (top 10)">
             {data ? (data.contributors.length ? <Bars horizontal items={data.contributors.map((x) => ({ name: x.name, value: num(x.total) }))} label="Capital" format={formatINRCompact} /> : <NoData />) : <ListSkeleton rows={4} />}
           </ChartCard>
+          <ChartCard title="Items by quantity" description="Quantity of each named item in this range (top 30)">
+            {data ? (
+              data.items.filter((i) => num(i.quantity) > 0).length ? (
+                <Bars
+                  horizontal
+                  items={data.items
+                    .filter((i) => num(i.quantity) > 0)
+                    .map((i) => ({ name: `${i.item} (${i.kind === "expense" ? "expense" : "capital"})`, value: num(i.quantity) }))}
+                  label="Nos"
+                  format={(n) => `${formatCount(n)} nos`}
+                />
+              ) : <NoData text="No item quantities recorded in this range." />
+            ) : <ListSkeleton rows={4} />}
+          </ChartCard>
           <ChartCard className="lg:col-span-2" title="Items" description="Quantity (nos), amount and average amount per unit">
             {data ? (data.items.length ? (
               <ScrollTable><Table>
@@ -379,6 +407,17 @@ function FinanceReportView({ range }: { range: ReportRange }) {
                 </TableBody>
               </Table></ScrollTable>
             ) : <NoData />) : <ListSkeleton rows={4} />}
+          </ChartCard>
+          <ChartCard title="Expense transactions by category" description="Number of expense entries recorded in each category">
+            {data ? (
+              data.categories.length ? (
+                <Bars
+                  items={data.categories.map((c) => ({ name: categoryLabel(c.category), value: c.entries }))}
+                  label="Transactions"
+                  format={(n) => `${formatCount(n)}`}
+                />
+              ) : <NoData />
+            ) : <ListSkeleton rows={4} />}
           </ChartCard>
         </div>
       )}

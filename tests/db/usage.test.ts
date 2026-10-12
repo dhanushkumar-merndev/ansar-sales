@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
+import { asService, asUser, createDb, createLead, createUser, one, recordObject, rows, type Db } from "./harness";
 
 let db: Db;
 let owner: string, admin: string, sales: string, account: string;
@@ -21,13 +21,7 @@ async function folder(name: string) {
 /** Uploads an object (optionally backdated) and, unless `register` is false, registers it. */
 async function addFile(folderId: string, size: number, opts: { mime?: string; register?: boolean; ageHours?: number } = {}) {
   const mime = opts.mime ?? "application/pdf";
-  const path = `${folderId}/${randomUUID()}.${mime === "application/pdf" ? "pdf" : "png"}`;
-  await asUser(db, sales, (tx) =>
-    tx.query("insert into storage.objects (bucket_id, name, owner, metadata) values ('library', $1, $2, $3)", [path, sales, { size, mimetype: mime }]),
-  );
-  if (opts.ageHours) {
-    await asService(db, (tx) => tx.query(`update storage.objects set created_at = now() - make_interval(hours => $2) where name = $1`, [path, opts.ageHours]));
-  }
+  const path = await recordObject(db, `${folderId}/${randomUUID()}.${mime === "application/pdf" ? "pdf" : "png"}`, size, mime, { ageHours: opts.ageHours });
   if (opts.register === false) return { path, id: null as string | null };
   const id = await asUser(db, sales, async (tx) =>
     (await one<{ id: string }>(tx, "insert into public.library_files (folder_id, name, storage_path) values ($1, 'File', $2) returning id", [folderId, path])).id,
@@ -37,13 +31,13 @@ async function addFile(folderId: string, size: number, opts: { mime?: string; re
 
 const archive = (id: string) => asUser(db, admin, (tx) => tx.query("update public.library_files set archived_at = now() where id = $1", [id]));
 const usage = () => asUser(db, owner, async (tx) => (await one<{ r: Usage }>(tx, "select public.admin_usage() as r")).r);
-const deleteObject = (userId: string, path: string) =>
-  asUser(db, userId, async (tx) => (await tx.query("delete from storage.objects where bucket_id = 'library' and name = $1", [path])).affectedRows);
+const unregistered = () =>
+  asUser(db, owner, async (tx) => (await one<{ r: { path: string; bytes: number }[] }>(tx, "select public.admin_unregistered_uploads() as r")).r);
+const forget = (paths: string[]) => asService(db, (tx) => tx.query("select public.storage_forget_objects('library', $1)", [paths]));
 
 let activePdf: { path: string; id: string | null };
 let archivedPdf: { path: string; id: string | null };
 let oldOrphan: { path: string };
-let newOrphan: { path: string };
 
 beforeAll(async () => {
   db = await createDb();
@@ -58,7 +52,7 @@ beforeAll(async () => {
   archivedPdf = await addFile(brochures, 7000);
   await archive(archivedPdf.id!);
   oldOrphan = await addFile(brochures, 400, { register: false, ageHours: 2 });
-  newOrphan = await addFile(brochures, 100, { register: false });
+  await addFile(brochures, 100, { register: false }); // too new to count as leftover
 });
 
 describe("admin usage", () => {
@@ -90,12 +84,12 @@ describe("admin usage", () => {
 });
 
 describe("freeing space", () => {
-  it("lets admin delete only archived files' objects and old unregistered uploads", async () => {
-    expect(await deleteObject(sales, archivedPdf.path)).toBe(0);
-    expect(await deleteObject(admin, activePdf.path)).toBe(0);
-    expect(await deleteObject(admin, newOrphan.path)).toBe(0);
-    expect(await deleteObject(admin, oldOrphan.path)).toBe(1);
-    expect(await deleteObject(admin, archivedPdf.path)).toBe(1);
+  it("lists abandoned (pending) uploads too, and drops objects the server deleted", async () => {
+    const pending = await recordObject(db, `${brochures}/${randomUUID()}.pdf`, 0, "", { pending: true, ageHours: 3 });
+    expect(await unregistered()).toEqual([{ path: pending, bytes: 0 }, { path: oldOrphan.path, bytes: 400 }]);
+    await forget([pending, oldOrphan.path]);
+    expect(await unregistered()).toEqual([]);
+    expect(Number((await usage()).storage_objects)).toBe(4);
   });
 
   it("purges an archived file's records, keeps shares working, and audits it", async () => {
@@ -125,17 +119,15 @@ describe("thumbnails and usage", () => {
   it("counts a thumbnail as part of its file and lets admin delete it with the archived file", async () => {
     const f = await addFile(photos, 1000);
     const thumb = `${photos}/thumbs/${randomUUID()}.webp`;
-    await asUser(db, sales, (tx) => tx.query("insert into storage.objects (bucket_id, name, metadata) values ('library', $1, $2)", [thumb, { size: 10, mimetype: "image/webp" }]));
-    await asService(db, (tx) => tx.query("update storage.objects set created_at = now() - interval '2 hours' where name = $1", [thumb]));
+    await recordObject(db, thumb, 10, "image/webp", { ageHours: 2 });
     await asUser(db, sales, (tx) => tx.query("select public.set_library_thumbnail($1, $2)", [f.id, thumb]));
 
     const before = await usage();
-    const list = await asUser(db, owner, async (tx) => (await one<{ r: { path: string }[] }>(tx, "select public.admin_unregistered_uploads() as r")).r);
-    expect(list.map((x) => x.path)).not.toContain(thumb);
-    expect(await deleteObject(admin, thumb)).toBe(0);
+    expect((await unregistered()).map((x) => x.path)).not.toContain(thumb);
 
     await archive(f.id!);
-    expect(await deleteObject(admin, thumb)).toBe(1);
-    expect(before.library.unregistered_files).toBe((await usage()).library.unregistered_files);
+    const after = await usage();
+    expect(after.library.unregistered_files).toBe(before.library.unregistered_files);
+    expect(after.library.archived_bytes - before.library.archived_bytes).toBe(1000 + 10);
   });
 });

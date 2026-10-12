@@ -7,17 +7,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 
+/** A confirm step. Pass `trigger`, or control it with `open` / `onOpenChange` (e.g. from a right-click menu). */
 export function ConfirmDialog({
-  trigger, title, description, confirmLabel = "Confirm", destructive, onConfirm,
+  trigger, title, description, confirmLabel = "Confirm", destructive, onConfirm, open: controlled, onOpenChange,
 }: {
-  trigger: React.ReactNode; title: string; description: React.ReactNode; confirmLabel?: string; destructive?: boolean;
-  onConfirm: () => Promise<boolean | void>;
+  trigger?: React.ReactNode; title: string; description: React.ReactNode; confirmLabel?: string; destructive?: boolean;
+  onConfirm: () => Promise<boolean | void>; open?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [own, setOwn] = useState(false);
+  const open = controlled ?? own;
+  const setOpen = (o: boolean) => { setOwn(o); onOpenChange?.(o); };
   const [pending, start] = useTransition();
   return (
     <AlertDialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+      {trigger ? <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger> : null}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { EChart, GRID, SERIES, useChartTheme } from "@/components/charts/chart";
 import type { ChartClick } from "@/components/charts/echart-core";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -36,12 +36,15 @@ export function StatCard({ label, value, hint, tone, icon }: { label: string; va
   );
 }
 
-export function ChartCard({ title, description, children, className }: { title: string; description: string; children: React.ReactNode; className?: string }) {
+export function ChartCard({ title, description, children, className, action }: {
+  title: string; description: string; children: React.ReactNode; className?: string; action?: React.ReactNode;
+}) {
   return (
     <Card className={className}>
       <CardHeader>
         <CardTitle className="text-base">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
+        {action ? <CardAction>{action}</CardAction> : null}
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
@@ -75,8 +78,8 @@ export function TrendLine({ points, label, format = formatCount, dateLabel }: {
 }
 
 /** Vertical bars for one measure per category (rounded data-ends, per-bar tooltip). */
-export function Bars({ items, label, format = formatCount, horizontal }: {
-  items: { name: string; value: number }[]; label: string; format?: (n: number) => string; horizontal?: boolean;
+export function Bars({ items, label, format = formatCount, horizontal, height }: {
+  items: { name: string; value: number }[]; label: string; format?: (n: number) => string; horizontal?: boolean; height?: number;
 }) {
   const ct = useChartTheme();
   const option = useMemo(() => {
@@ -91,7 +94,7 @@ export function Bars({ items, label, format = formatCount, horizontal }: {
         itemStyle: { color: SERIES[0], borderRadius: horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0] } }],
     };
   }, [items, label, format, horizontal, ct]);
-  return <EChart option={option} height={horizontal ? Math.max(160, items.length * 34) : 240} ariaLabel={`${label} bar chart`} />;
+  return <EChart option={option} height={height ?? (horizontal ? Math.max(160, items.length * 34) : 240)} ariaLabel={`${label} bar chart`} />;
 }
 
 /** Grouped (or stacked) bars for a few series per category; legend always present. */
@@ -115,8 +118,8 @@ export function GroupedBars({ categories, series, stacked, format = formatCount,
 }
 
 /** A few lines over the same periods; legend always present. `area` fills under a single cumulative series. */
-export function MultiLine({ categories, series, format = formatCount, area }: {
-  categories: string[]; series: { name: string; values: number[]; color?: string }[]; format?: (n: number) => string; area?: boolean;
+export function MultiLine({ categories, series, format = formatCount, area, height = 260 }: {
+  categories: string[]; series: { name: string; values: number[]; color?: string }[]; format?: (n: number) => string; area?: boolean; height?: number;
 }) {
   const ct = useChartTheme();
   const option = useMemo(() => ({
@@ -131,13 +134,13 @@ export function MultiLine({ categories, series, format = formatCount, area }: {
       areaStyle: area ? { color: s.color ?? SERIES[i], opacity: 0.12 } : undefined,
     })),
   }), [categories, series, format, area, ct]);
-  return <EChart option={option} height={260} ariaLabel={`${series.map((s) => s.name).join(", ")} line chart`} />;
+  return <EChart option={option} height={height} ariaLabel={`${series.map((s) => s.name).join(", ")} line chart`} />;
 }
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Weekday × hour (IST) counts; one sequential hue, values in the tooltip. */
-export function WeekHourHeatmap({ cells, label }: { cells: { dow: number; hour: number; count: number }[]; label: string }) {
+export function WeekHourHeatmap({ cells, label, height = 280 }: { cells: { dow: number; hour: number; count: number }[]; label: string; height?: number }) {
   const ct = useChartTheme();
   const max = Math.max(1, ...cells.map((c) => c.count));
   const option = useMemo(() => ({
@@ -151,11 +154,11 @@ export function WeekHourHeatmap({ cells, label }: { cells: { dow: number; hour: 
     series: [{ type: "heatmap", data: cells.map((c) => [c.hour, c.dow - 1, c.count]),
       itemStyle: { borderColor: ct.surface, borderWidth: 2, borderRadius: 3 }, emphasis: { itemStyle: { borderColor: ct.text } } }],
   }), [cells, max, label, ct]);
-  return <EChart option={option} height={280} ariaLabel={`${label} by weekday and hour heatmap`} />;
+  return <EChart option={option} height={height} ariaLabel={`${label} by weekday and hour heatmap`} />;
 }
 
 /** Stage funnel with the count and share of the first stage on every step. */
-export function Funnel({ steps }: { steps: { name: string; value: number }[] }) {
+export function Funnel({ steps, height = 260 }: { steps: { name: string; value: number }[]; height?: number }) {
   const ct = useChartTheme();
   const first = steps[0]?.value ?? 0;
   const option = useMemo(() => ({
@@ -169,12 +172,12 @@ export function Funnel({ steps }: { steps: { name: string; value: number }[] }) 
     }],
   }), [steps, first, ct]);
   if (first === 0) return <p className="py-10 text-center text-sm text-muted-foreground">No leads in this range.</p>;
-  return <EChart option={option} height={260} ariaLabel="Lead stage funnel" />;
+  return <EChart option={option} height={height} ariaLabel="Lead stage funnel" />;
 }
 
 /** Donut with a labelled legend table (identity never by color alone; values always visible). */
-export function Donut({ items, format = formatCount, totalLabel }: {
-  items: { name: string; value: number; color: string }[]; format?: (n: number) => string; totalLabel: string;
+export function Donut({ items, format = formatCount, totalLabel, size = 180 }: {
+  items: { name: string; value: number; color: string }[]; format?: (n: number) => string; totalLabel: string; size?: number;
 }) {
   const total = items.reduce((s, i) => s + i.value, 0);
   const ct = useChartTheme();
@@ -188,9 +191,9 @@ export function Donut({ items, format = formatCount, totalLabel }: {
   }), [items, format, ct]);
   if (total === 0) return <p className="py-10 text-center text-sm text-muted-foreground">No data yet.</p>;
   return (
-    <div className="grid items-center gap-4 sm:grid-cols-[180px_1fr]">
+    <div className="grid items-center gap-4 sm:grid-cols-[var(--donut)_1fr]" style={{ "--donut": `${size}px` } as React.CSSProperties}>
       <div className="relative">
-        <EChart option={option} height={180} ariaLabel={`${totalLabel} donut chart`} />
+        <EChart option={option} height={size} ariaLabel={`${totalLabel} donut chart`} />
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-lg font-semibold tabular-nums">{format(total)}</span>
           <span className="text-[11px] text-muted-foreground">{totalLabel}</span>

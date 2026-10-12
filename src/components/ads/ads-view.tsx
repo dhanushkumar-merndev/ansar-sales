@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Loader2, Plug, Plus, Tags, Trash2 } from "lucide-react";
+import { Check, ListPlus, Loader2, Plug, Plus, Tags, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdAccountForm } from "@/components/ads/ad-account-form";
 import { AdsDashboard } from "@/components/ads/ads-dashboard";
@@ -13,14 +13,21 @@ import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import type { AdAccount, AdCategory } from "@/lib/ads";
+import type { AdAccount, AdCampaignRow, AdCategory } from "@/lib/ads";
+import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import { hasAnyRole } from "@/lib/permissions";
+import { cleanSearch } from "@/lib/search";
+import { addDays, istToday } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { archiveAdCategory, saveAdCategory } from "@/server/actions/ads";
+import { archiveAdCategory, deleteAdAccountHistory, saveAdCategory, setCampaignCategory } from "@/server/actions/ads";
 
 /** Dashboard / Clients switch shown on every ads page. */
 export function AdsTabs() {
@@ -54,21 +61,55 @@ export function AdsView() {
   const [picked, setPicked] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [editingCategories, setEditingCategories] = useState(false);
+  const [categoryVersion, setCategoryVersion] = useState(0);
   const list = accounts.data ?? [];
   const current = list.find((a) => a.id === picked) ?? list[0];
   const own = list.find((a) => a.company_id === profile.company.id && !a.archived_at) ?? null;
+
+  const picker = current && list.length > 1 ? (
+    <Select value={current.id} onValueChange={setPicked}>
+      <SelectTrigger className="w-64" aria-label="Ad account"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        {list.map((a) => (
+          <SelectItem key={a.id} value={a.id}>
+            {a.name ?? `act_${a.act_id}`}{a.company_id !== profile.company.id ? ` · shared by ${a.company_name}` : ""}{a.archived_at ? " · disconnected" : ""}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : null;
 
   return (
     <>
       <PageHeader
         title="Ads"
         description={`Facebook and Instagram ad results for ${profile.company.name}, synced from Meta every hour.`}
-        actions={current?.scope === "all" && !current.archived_at ? (
+        actions={(
           <>
-            <Button variant="outline" onClick={() => setEditingCategories(true)}><Tags /> Categories</Button>
-            {current.company_id === profile.company.id ? <Button variant="outline" onClick={() => setConnecting(true)}><Plug /> Connection</Button> : null}
+            {picker}
+            {current?.scope === "all" && !current.archived_at ? (
+              <>
+                <Button variant="outline" onClick={() => setEditingCategories(true)}><Tags /> Categories</Button>
+                {current.company_id === profile.company.id ? <Button variant="outline" onClick={() => setConnecting(true)}><Plug /> Connection</Button> : null}
+              </>
+            ) : current?.scope === "all" && current.archived_at && hasAnyRole(profile.roles, ["admin"]) ? (
+              <ConfirmDialog
+                trigger={<Button variant="outline"><Trash2 /> Delete history</Button>}
+                title="Delete this ad history?"
+                description={`Everything synced from ${current.name ?? `act_${current.act_id}`} (campaigns, ads, daily results and categories) is deleted for good. This can't be undone.`}
+                confirmLabel="Delete history"
+                destructive
+                onConfirm={async () => {
+                  const r = await deleteAdAccountHistory({ accountId: current.id });
+                  if (!r.ok) { toast.error(r.error); return false; }
+                  toast.success("Ad history deleted");
+                  setPicked(null);
+                  accounts.refetch();
+                }}
+              />
+            ) : null}
           </>
-        ) : null}
+        )}
       />
       <AdsTabs />
       {accounts.error && !accounts.data ? <ErrorState message={accounts.error} onRetry={accounts.refetch} />
@@ -81,24 +122,12 @@ export function AdsView() {
           />
         ) : (
           <div className="space-y-4">
-            {list.length > 1 ? (
-              <Select value={current.id} onValueChange={setPicked}>
-                <SelectTrigger className="w-80" aria-label="Ad account"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {list.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name ?? `act_${a.act_id}`}{a.company_id !== profile.company.id ? ` · shared by ${a.company_name}` : ""}{a.archived_at ? " · disconnected" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
             {current.scope === "company" ? (
               <p className="text-sm text-muted-foreground">
                 This ad account belongs to <span className="text-foreground">{current.company_name}</span>. You see only the campaigns in {profile.company.name}&apos;s category.
               </p>
             ) : null}
-            <AdsDashboard key={current.id} accountId={current.id} canManage={current.scope === "all"} />
+            <AdsDashboard key={current.id} accountId={current.id} canManage={current.scope === "all"} version={categoryVersion} />
           </div>
         )}
       <Dialog open={connecting} onOpenChange={setConnecting}>
@@ -110,12 +139,14 @@ export function AdsView() {
           <AdAccountForm kind="company" ownerId={profile.company.id} account={own} onChanged={accounts.refetch} />
         </DialogContent>
       </Dialog>
-      {current ? <CategoriesDialog open={editingCategories} onOpenChange={setEditingCategories} accountId={current.id} /> : null}
+      {current ? <CategoriesDialog open={editingCategories} onOpenChange={setEditingCategories} accountId={current.id} onChanged={() => setCategoryVersion((v) => v + 1)} /> : null}
     </>
   );
 }
 
-function CategoriesDialog({ open, onOpenChange, accountId }: { open: boolean; onOpenChange: (o: boolean) => void; accountId: string }) {
+function CategoriesDialog({ open, onOpenChange, accountId, onChanged }: {
+  open: boolean; onOpenChange: (o: boolean) => void; accountId: string; onChanged: () => void;
+}) {
   const cats = useLiveQuery({
     queryKey: `ads-categories:${accountId}`,
     fetcher: async (signal) => {
@@ -128,33 +159,35 @@ function CategoriesDialog({ open, onOpenChange, accountId }: { open: boolean; on
   });
   const [name, setName] = useState("");
   const [match, setMatch] = useState("");
+  const newNameRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const add = () => start(async () => {
     const r = await saveAdCategory({ accountId, name, matchText: match });
     if (!r.ok) { toast.error(r.error); return; }
     setName(""); setMatch("");
     cats.refetch();
+    onChanged();
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85svh] flex-col sm:max-w-xl">
+      <DialogContent className="flex max-h-[85svh] flex-col sm:max-w-4xl" onOpenAutoFocus={(e) => { e.preventDefault(); newNameRef.current?.focus(); }}>
         <DialogHeader>
           <DialogTitle>Campaign categories</DialogTitle>
           <DialogDescription>
             Split one ad account&apos;s campaigns, for example by company. A campaign whose name contains the &quot;match&quot; text is filed automatically;
-            you can also pick a category per campaign in the table. Companies sharing this account have fixed categories.
+            use &quot;Add campaigns&quot; to pick several by hand. Companies sharing this account, and ads clients run from it, have fixed categories.
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {!cats.data ? <ListSkeleton rows={3} /> : cats.data.length === 0 ? <p className="text-sm text-muted-foreground">No categories yet.</p> : (
             <ul className="divide-y rounded-lg border">
-              {cats.data.map((c) => <CategoryRow key={`${c.id}:${c.match_text}`} accountId={accountId} category={c} onChanged={cats.refetch} />)}
+              {cats.data.map((c) => <CategoryRow key={`${c.id}:${c.name}:${c.match_text}`} accountId={accountId} category={c} onChanged={() => { cats.refetch(); onChanged(); }} />)}
             </ul>
           )}
         </div>
-        <div className="grid gap-2 border-t pt-3 sm:grid-cols-[1fr_1fr_auto]">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="New category, e.g. Star Tech India" aria-label="Category name" />
+        <div className="grid gap-2 border-t pt-3 sm:grid-cols-[2fr_1fr_auto]">
+          <Input ref={newNameRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="New category, e.g. Star Tech India" aria-label="Category name" />
           <Input value={match} onChange={(e) => setMatch(e.target.value)} placeholder="Match text (optional), e.g. STI" aria-label="Match text" />
           <Button onClick={add} disabled={pending || !name.trim()}>{pending ? <Loader2 className="animate-spin" /> : <Plus />} Add</Button>
         </div>
@@ -164,25 +197,37 @@ function CategoriesDialog({ open, onOpenChange, accountId }: { open: boolean; on
 }
 
 function CategoryRow({ accountId, category, onChanged }: { accountId: string; category: AdCategory; onChanged: () => void }) {
+  const [name, setName] = useState(category.name);
   const [match, setMatch] = useState(category.match_text ?? "");
   const [pending, start] = useTransition();
-  const saveMatch = () => {
-    if ((category.match_text ?? "") === match.trim()) return;
+  // A merged company's or an ads client's category keeps its name and can't be removed here.
+  const fixed = Boolean(category.company_id || category.ads_client_id);
+  // Saves the name and match text on blur.
+  const save = () => {
+    if (!name.trim()) { setName(category.name); return; }
+    if (category.name === name.trim() && (category.match_text ?? "") === match.trim()) return;
     start(async () => {
-      const r = await saveAdCategory({ accountId, id: category.id, name: category.name, matchText: match });
+      const r = await saveAdCategory({ accountId, id: category.id, name, matchText: match });
       if (!r.ok) { toast.error(r.error); return; }
       toast.success("Saved; matching campaigns were filed");
       onChanged();
     });
   };
   return (
-    <li className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
-      <span className="min-w-0 flex-1 font-medium">{category.name}</span>
-      {category.company_id ? <Badge variant="outline" className="text-muted-foreground">Company</Badge> : null}
-      <span className="text-xs text-muted-foreground">{category.campaigns} campaigns</span>
-      <Input value={match} onChange={(e) => setMatch(e.target.value)} onBlur={saveMatch} disabled={pending}
-        placeholder="Match text" className="h-8 w-36" aria-label={`Match text for ${category.name}`} />
-      {!category.company_id ? (
+    <li className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm sm:flex-nowrap">
+      {fixed ? <span className="min-w-0 flex-1 truncate font-medium">{category.name}</span> : (
+        <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={save} disabled={pending} maxLength={60}
+          className="h-8 min-w-48 flex-1 font-medium" aria-label={`Name of ${category.name}`} />
+      )}
+      {category.company_id ? <Badge variant="outline" className="shrink-0 text-muted-foreground">Company</Badge> : null}
+      {category.ads_client_id ? (
+        <Badge variant="outline" className="max-w-40 shrink-0 truncate text-muted-foreground" title="Linked on the client's page">Client · {category.client_name}</Badge>
+      ) : null}
+      <span className="shrink-0 text-xs text-muted-foreground">{category.campaigns} campaigns</span>
+      <Input value={match} onChange={(e) => setMatch(e.target.value)} onBlur={save} disabled={pending}
+        placeholder="Match text" className="h-8 w-44 shrink-0" aria-label={`Match text for ${category.name}`} />
+      <AddCampaigns accountId={accountId} category={category} onChanged={onChanged} />
+      {!fixed ? (
         <ConfirmDialog
           trigger={<Button variant="ghost" size="icon-sm" aria-label={`Remove ${category.name}`}><Trash2 /></Button>}
           title={`Remove "${category.name}"?`}
@@ -196,5 +241,98 @@ function CategoryRow({ accountId, category, onChanged }: { accountId: string; ca
         />
       ) : null}
     </li>
+  );
+}
+
+const PICK_LIMIT = 100;
+
+/** Files several campaigns into one category at once: search, tick, save (up to 100 per save). */
+export function AddCampaigns({ accountId, category, onChanged }: { accountId: string; category: Pick<AdCategory, "id" | "name">; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const search = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
+  const [picked, setPicked] = useState<Map<string, string>>(() => new Map());
+  const [pending, start] = useTransition();
+  const list = useLiveQuery({
+    queryKey: `ads-campaign-pick:${accountId}:${search}`,
+    fetcher: async (signal) => {
+      const today = istToday();
+      const { data, error } = await createClient().rpc("list_ad_campaigns", {
+        p_account: accountId, p_from: addDays(today, -29), p_to: today,
+        p_search: search || undefined, p_sort: "name", p_dir: "asc", p_limit: 50, p_offset: 0,
+      }).abortSignal(signal);
+      if (error) throw error;
+      return data as unknown as { items: AdCampaignRow[]; total: number };
+    },
+    enabled: open,
+    pollMs: 0,
+  });
+
+  const toggle = (c: AdCampaignRow) => setPicked((prev) => {
+    const next = new Map(prev);
+    if (next.has(c.id)) next.delete(c.id);
+    else if (next.size >= PICK_LIMIT) toast.error(`Pick up to ${PICK_LIMIT} at a time.`);
+    else next.set(c.id, c.name);
+    return next;
+  });
+  const save = () => start(async () => {
+    const r = await setCampaignCategory({ campaignIds: [...picked.keys()], categoryId: category.id });
+    if (!r.ok) { toast.error(r.error); return; }
+    toast.success(`${picked.size} campaign${picked.size === 1 ? "" : "s"} filed under ${category.name}`);
+    setPicked(new Map());
+    setInput("");
+    setOpen(false);
+    onChanged();
+  });
+  const items = list.data?.items ?? [];
+
+  return (
+    <Popover open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" aria-label={`Add campaigns to ${category.name}`}><ListPlus /> Add campaigns</Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Search campaigns…" value={input} onValueChange={setInput} maxLength={100} />
+          <CommandList className="max-h-72">
+            {list.error && !list.data ? <div className="px-3 py-6 text-center text-sm text-destructive">{list.error}</div>
+              : !list.data ? <div className="flex justify-center py-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div>
+              : items.length === 0 ? <CommandEmpty>No campaigns found.</CommandEmpty>
+              : (
+                <CommandGroup>
+                  {items.map((c) => {
+                    const here = c.category?.id === category.id;
+                    const on = picked.has(c.id);
+                    return (
+                      <CommandItem key={c.id} value={c.id} disabled={here} onSelect={() => toggle(c)} className="items-start">
+                        <span className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border",
+                          on || here ? "border-primary bg-primary text-primary-foreground" : "border-input")} aria-hidden>
+                          {on || here ? <Check className="size-3" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{c.name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {here ? "Already in this category" : c.category ? `Now in ${c.category.name}` : "Uncategorised"}
+                          </span>
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              )}
+            {list.data && list.data.total > items.length ? (
+              <p className="px-3 py-2 text-xs text-muted-foreground">Showing {items.length} of {list.data.total}. Search to find the rest.</p>
+            ) : null}
+          </CommandList>
+        </Command>
+        <div className="flex items-center gap-2 border-t p-2">
+          <span className="mr-auto text-xs text-muted-foreground">{picked.size} selected</span>
+          {picked.size ? <Button variant="ghost" size="sm" disabled={pending} onClick={() => setPicked(new Map())}>Clear</Button> : null}
+          <Button size="sm" disabled={pending || !picked.size} onClick={save}>
+            {pending ? <Loader2 className="animate-spin" /> : null} Add {picked.size || ""}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

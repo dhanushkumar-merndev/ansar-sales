@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { isLibraryMime, LIBRARY_BUCKET, LIBRARY_MAX_BYTES, LIBRARY_MIME_TYPES } from "@/lib/library";
-import { createClient } from "@/lib/supabase/client";
-import { attachThumbnail } from "@/lib/thumbnail";
+import { isLibraryMime, LIBRARY_MAX_BYTES } from "@/lib/library";
+import { attachThumbnail, putObject } from "@/lib/thumbnail";
 import type { LibraryFile } from "@/lib/library-queries";
-import { registerLibraryFile, setLibraryThumbnail } from "@/server/actions/library";
+import { registerLibraryFile } from "@/server/actions/library";
+import { copyLibraryFile, createLibraryUpload } from "@/server/actions/storage";
 
 /** Uploads files one by one into a folder, with a single progress toast. */
 export async function uploadLibraryFiles(folderId: string, picked: File[], folderName?: string) {
@@ -14,7 +14,6 @@ export async function uploadLibraryFiles(folderId: string, picked: File[], folde
   const into = folderName ? ` to ${folderName}` : "";
   const label = (i: number) => (picked.length === 1 ? `Uploading ${picked[0].name}${into}…` : `Uploading ${i + 1} of ${picked.length}${into}…`);
   const toastId = toast.loading(label(0));
-  const storage = createClient().storage.from(LIBRARY_BUCKET);
   const failed: string[] = [];
 
   for (const [i, file] of picked.entries()) {
@@ -22,12 +21,14 @@ export async function uploadLibraryFiles(folderId: string, picked: File[], folde
     if (!isLibraryMime(file.type)) { failed.push(`${file.name}: only PDF, PNG, JPEG or WEBP`); continue; }
     if (file.size > LIBRARY_MAX_BYTES) { failed.push(`${file.name}: larger than 25 MB`); continue; }
     if (file.size === 0) { failed.push(`${file.name}: empty file`); continue; }
-    const path = `${folderId}/${crypto.randomUUID()}.${LIBRARY_MIME_TYPES[file.type]}`;
-    const { error: upError } = await storage.upload(path, file, { contentType: file.type, upsert: false });
-    if (upError) { failed.push(`${file.name}: upload failed`); continue; }
+    // The server checks the folder and returns a short-lived Tigris URL; the bytes go straight there.
+    const target = await createLibraryUpload({ folderId, mime: file.type, size: file.size });
+    if (!target.ok) { failed.push(`${file.name}: ${target.error}`); continue; }
+    if (!(await putObject(target.data.url, file, file.type))) { failed.push(`${file.name}: upload failed`); continue; }
+    const path = target.data.path;
     const r = await registerLibraryFile({ folderId, name: file.name.slice(0, 200), storagePath: path });
     if (!r.ok) { failed.push(`${file.name}: ${r.error}`); continue; }
-    await attachThumbnail({ id: r.data.id, folder_id: folderId, mime_type: file.type }, file);
+    await attachThumbnail({ id: r.data.id, mime_type: file.type }, file);
   }
 
   const ok = picked.length - failed.length;
@@ -35,28 +36,17 @@ export async function uploadLibraryFiles(folderId: string, picked: File[], folde
   else toast.error(ok ? `${ok} uploaded, ${failed.length} failed` : failed.length === 1 ? "Upload failed" : `${failed.length} uploads failed`, { id: toastId, description: failed.join("\n"), duration: 10_000 });
 }
 
-/** Copies files into a folder: Storage copies each object, then the copy is registered like an upload. */
-export async function copyLibraryFiles(files: Pick<LibraryFile, "name" | "storage_path" | "thumb_path">[], folderId: string, folderName: string) {
+/** Copies files into a folder: the server copies each object in Tigris and registers the copy. */
+export async function copyLibraryFiles(files: Pick<LibraryFile, "id" | "name">[], folderId: string, folderName: string) {
   if (!files.length) return 0;
   const label = (i: number) => (files.length === 1 ? `Copying ${files[0].name} to ${folderName}…` : `Copying ${i + 1} of ${files.length} to ${folderName}…`);
   const toastId = toast.loading(label(0));
-  const storage = createClient().storage.from(LIBRARY_BUCKET);
   const failed: string[] = [];
 
   for (const [i, file] of files.entries()) {
     toast.loading(label(i), { id: toastId });
-    const ext = file.storage_path.split(".").pop();
-    const path = `${folderId}/${crypto.randomUUID()}.${ext}`;
-    const { error: copyError } = await storage.copy(file.storage_path, path);
-    if (copyError) { failed.push(`${file.name}: copy failed`); continue; }
-    const r = await registerLibraryFile({ folderId, name: file.name, storagePath: path });
-    if (!r.ok) { failed.push(`${file.name}: ${r.error}`); continue; }
-    if (file.thumb_path) {
-      // A missing preview is remade on the next visit, so a failure here is not reported.
-      const thumb = `${folderId}/thumbs/${crypto.randomUUID()}.webp`;
-      const { error: thumbError } = await storage.copy(file.thumb_path, thumb);
-      if (!thumbError) await setLibraryThumbnail({ fileId: r.data.id, path: thumb });
-    }
+    const r = await copyLibraryFile({ fileId: file.id, folderId });
+    if (!r.ok) failed.push(`${file.name}: ${r.error}`);
   }
 
   const ok = files.length - failed.length;

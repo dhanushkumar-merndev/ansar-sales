@@ -3,9 +3,8 @@
 // Small WEBP previews made in the browser: page 1 of a PDF (Mozilla pdf.js) or a
 // resized image. Stored next to the file so every view shows a light preview
 // instead of downloading the full document.
-import { LIBRARY_BUCKET } from "@/lib/library";
-import { createClient } from "@/lib/supabase/client";
 import { setLibraryThumbnail } from "@/server/actions/library";
+import { createThumbnailUpload } from "@/server/actions/storage";
 
 const THUMB_WIDTH = 480;
 
@@ -67,13 +66,26 @@ export async function makeThumbnail(source: Blob, mime: string): Promise<Blob | 
   }
 }
 
+/** PUTs a body to a presigned Tigris upload URL (type and length must match what was signed). */
+export async function putObject(url: string, body: Blob, contentType: string) {
+  try {
+    const res = await fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Makes, uploads and links a preview for a library file. Never throws; false if it couldn't. */
-export async function attachThumbnail(file: { id: string; folder_id: string; mime_type: string }, source: Blob) {
+export async function attachThumbnail(file: { id: string; mime_type: string }, source: Blob) {
   const thumb = await makeThumbnail(source, file.mime_type);
   if (!thumb) return false;
-  const path = `${file.folder_id}/thumbs/${crypto.randomUUID()}.webp`;
-  const { error } = await createClient().storage.from(LIBRARY_BUCKET).upload(path, thumb, { contentType: "image/webp", upsert: false });
-  if (error) return false;
-  const r = await setLibraryThumbnail({ fileId: file.id, path });
-  return r.ok;
+  try {
+    const target = await createThumbnailUpload({ fileId: file.id, size: thumb.size });
+    if (!target.ok || !(await putObject(target.data.url, thumb, "image/webp"))) return false;
+    const r = await setLibraryThumbnail({ fileId: file.id, path: target.data.path });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }

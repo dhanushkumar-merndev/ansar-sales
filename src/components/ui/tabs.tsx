@@ -60,11 +60,17 @@ function TabsTrigger({
 }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
   const ref = React.useRef<React.ComponentRef<typeof TabsPrimitive.Trigger>>(null)
 
+  // Keep the active tab visible in a horizontally scrolling tab list. Only the list scrolls,
+  // sideways: scrollIntoView would also scroll the page back up to the tabs on every render.
   React.useEffect(() => {
     const el = ref.current
-    if (el && (el.dataset.state === "active" || el.getAttribute("data-active") === "true")) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
-    }
+    const list = el?.parentElement
+    if (!el || !list || !(el.dataset.state === "active" || el.getAttribute("data-active") === "true")) return
+    if (list.scrollWidth <= list.clientWidth) return
+    const box = list.getBoundingClientRect()
+    const tab = el.getBoundingClientRect()
+    if (tab.left < box.left) list.scrollBy({ left: tab.left - box.left - 8, behavior: "smooth" })
+    else if (tab.right > box.right) list.scrollBy({ left: tab.right - box.right + 8, behavior: "smooth" })
   })
 
   return (

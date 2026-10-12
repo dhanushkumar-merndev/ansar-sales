@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
-  ChevronRight,
   FileText,
   Folder,
   FolderPlus,
@@ -14,7 +13,7 @@ import {
   LayoutGrid,
   List,
   Loader2,
-  MoreHorizontal,
+  MoreVertical,
   Pencil,
   Search,
   Share2,
@@ -538,7 +537,7 @@ export function FolderCard({
         </p>
       </div>
 
-      {/* Right: Actions Menu & subtle arrow */}
+      {/* Right: Actions Menu */}
       <div className="relative z-10 flex shrink-0 items-center gap-1">
         {isArchived ? (
           <Badge variant="outline" className="border-white/[0.1] bg-white/[0.04] text-[10px] text-zinc-400">
@@ -546,7 +545,6 @@ export function FolderCard({
           </Badge>
         ) : null}
         {isAdmin ? <FolderMenu folder={f} onRename={onRename} onDone={onChanged} /> : null}
-        <ChevronRight className="size-3.5 text-zinc-500 opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:text-zinc-300" />
       </div>
     </div>
   );
@@ -641,7 +639,7 @@ function FolderMenu({ folder, onRename, onDone }: { folder: LibraryFolder; onRen
           className="relative z-10 size-7.5 text-muted-foreground hover:text-foreground hover:bg-white/10"
           aria-label={`Actions for ${folder.name}`}
         >
-          <MoreHorizontal className="size-4" />
+          <MoreVertical className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">

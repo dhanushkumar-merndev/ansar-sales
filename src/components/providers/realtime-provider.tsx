@@ -57,7 +57,7 @@ function RealtimeChannelSubscription({
 }) {
   const profile = useProfile();
   const userId = profile.id;
-  const tablesKey = realtimeTablesFor(profile.role).join(",");
+  const tablesKey = realtimeTablesFor(profile.roles, profile.features).join(",");
 
   useEffect(() => {
     const supabase = createClient();
@@ -109,6 +109,11 @@ function RealtimeChannelSubscription({
   }, [userId, tablesKey, listeners, onStatus]);
 
   return null;
+}
+
+/** The Realtime context, or null outside the staff app (the client portal has no Realtime tables). */
+export function useOptionalRealtime() {
+  return useContext(RealtimeContext);
 }
 
 export function useRealtime() {

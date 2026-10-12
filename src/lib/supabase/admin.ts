@@ -12,7 +12,8 @@ import { publicEnv, serverEnv } from "@/lib/env";
  * the Facebook Lead Ads webhook (signature-verified) and the admins' Meta connect/sync, which
  * read a company's Meta secrets from Vault and create its leads, the ad sync (the secret-checked
  * cron route, or after the database authorized the user for that ad account), and creating client
- * portal logins after ads_client_login_check.
+ * portal logins after ads_client_login_check, and writing the file-storage object ledger
+ * (storage_record_object / storage_forget_objects) after the user's own RLS client authorized the file.
  */
 export function createAdminClient() {
   return createClient<Database>(publicEnv.supabaseUrl, serverEnv("SUPABASE_SECRET_KEY"), {

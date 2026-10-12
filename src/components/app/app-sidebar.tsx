@@ -3,7 +3,9 @@
 import { startTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarClock, ChartColumn, ChevronsUpDown, FolderOpen, LayoutDashboard, LogOut, Settings, Users, Wallet, Workflow, Contact, Megaphone } from "lucide-react";
+import {
+  CalendarClock, ChartColumn, ChevronsUpDown, ClipboardList, Contact, FolderKanban, FolderOpen, IndianRupee, LayoutDashboard, LogOut, MapPin, Megaphone, Settings, Users, UsersRound, Wallet, Workflow,
+} from "lucide-react";
 import { CompanySwitcher } from "@/components/app/company-switcher";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -15,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar,
 } from "@/components/ui/sidebar";
-import { ROLE_LABELS, SUPER_ADMIN_LABEL } from "@/lib/constants";
+import { rolesLabel, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { initials } from "@/lib/format";
 import { type NavKey, navFor } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -23,8 +25,13 @@ import { signOut } from "@/server/actions/auth";
 
 const ITEMS: Record<NavKey, { label: string; href: string; icon: React.ComponentType<{ className?: string }> }> = {
   dashboard: { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  "my-work": { label: "My work", href: "/my-work", icon: ClipboardList },
+  team: { label: "Team", href: "/team", icon: UsersRound },
   leads: { label: "Leads", href: "/leads", icon: Contact },
   "follow-ups": { label: "Follow-ups", href: "/follow-ups", icon: CalendarClock },
+  projects: { label: "Projects", href: "/projects", icon: FolderKanban },
+  "site-visits": { label: "Site visits", href: "/site-visits", icon: MapPin },
+  payments: { label: "Payments", href: "/payments", icon: IndianRupee },
   library: { label: "Library", href: "/library", icon: FolderOpen },
   finance: { label: "Finance", href: "/finance", icon: Wallet },
   reports: { label: "Reports", href: "/reports", icon: ChartColumn },
@@ -36,7 +43,7 @@ const ITEMS: Record<NavKey, { label: string; href: string; icon: React.Component
 export function AppSidebar() {
   const pathname = usePathname();
   const profile = useProfile();
-  const nav = navFor(profile.role);
+  const nav = navFor(profile.roles, profile.features);
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
 
@@ -94,7 +101,7 @@ export function AppSidebar() {
               <DropdownMenuContent side="top" align="start" className="w-56">
                 <DropdownMenuLabel className="font-normal">
                   <div className="text-sm font-medium">{profile.display_name}</div>
-                  <div className="text-xs text-muted-foreground">{profile.isSuperAdmin ? SUPER_ADMIN_LABEL : ROLE_LABELS[profile.role]}</div>
+                  <div className="text-xs text-muted-foreground">{profile.isSuperAdmin ? SUPER_ADMIN_LABEL : rolesLabel(profile.roles, profile.features)}</div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

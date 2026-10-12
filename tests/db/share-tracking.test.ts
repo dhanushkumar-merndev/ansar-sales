@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
+import { asService, asUser, createDb, createLead, createUser, one, recordObject, rows, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string;
@@ -16,9 +16,7 @@ type Summary = {
 
 async function addFile(name: string) {
   const path = `${folder}/${randomUUID()}.pdf`;
-  await asUser(db, salesA, (tx) =>
-    tx.query("insert into storage.objects (bucket_id, name, metadata) values ('library', $1, $2)", [path, { size: 100, mimetype: "application/pdf" }]),
-  );
+  await recordObject(db, path, 100, "application/pdf");
   return asUser(db, salesA, async (tx) =>
     (await one<{ id: string }>(tx, "insert into public.library_files (folder_id, name, storage_path) values ($1, $2, $3) returning id", [folder, name, path])).id,
   );

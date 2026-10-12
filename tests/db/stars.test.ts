@@ -66,6 +66,19 @@ describe("lead stars", () => {
     expect(page.pinned_count).toBe(2);
   });
 
+  it("puts pinned leads first in the normal list too; filters still apply", async () => {
+    const user = await createUser(db, "sales.allpins", "sales", "All pins");
+    const ids: Record<string, string> = {};
+    for (const n of ["Echo", "Foxtrot", "Golf"]) ids[n] = await createLead(db, user, { name: n });
+    await pin(user, ids.Golf);
+    const list = (search?: string) => asUser(db, user, async (tx) => (await one<{ r: Page }>(tx,
+      "select public.list_leads(p_search => $1, p_sort => 'name', p_dir => 'asc', p_limit => 100) as r", [search ?? null])).r);
+    const all = await list();
+    expect(all.items.map((i) => i.id)).toEqual([ids.Golf, ids.Echo, ids.Foxtrot]);
+    expect(all.items[0].pinned_at).not.toBeNull();
+    expect((await list("Echo")).items.map((i) => i.id)).toEqual([ids.Echo]);
+  });
+
   it("allows at most 10 pins; unpinning frees a slot", async () => {
     const user = await createUser(db, "sales.limit", "sales", "Limit");
     const ids: string[] = [];
@@ -113,5 +126,20 @@ describe("follow-up stars", () => {
     await expect(asUser(db, salesB, (tx) => tx.query("select public.set_follow_up_star($1, true)", [first]))).rejects.toThrow(/not_found/);
     const other = await asUser(db, salesB, async (tx) => (await one<{ r: Page }>(tx, "select public.list_follow_ups('starred', null, null, 20, 0) as r")).r);
     expect(other.items.map((i) => i.id)).not.toContain(first);
+  });
+
+  it("puts a pinned task first in the normal 'pending' view too", async () => {
+    const user = await createUser(db, "sales.fupin", "sales", "FU pin");
+    const lead = await createLead(db, user, { name: "PinTasks" });
+    const fu = await asUser(db, user, async (tx) => {
+      for (const due of ["2099-02-01T04:30:00Z", "2099-02-02T04:30:00Z", "2099-02-03T04:30:00Z"]) {
+        await tx.query("insert into public.follow_ups (lead_id, task, due_at, created_by) values ($1, 'Call', $2, $3)", [lead, due, user]);
+      }
+      return rows<{ id: string }>(tx, "select id from public.follow_ups where lead_id = $1 order by due_at", [lead]);
+    });
+    const [first, second, third] = fu.map((f) => f.id);
+    await asUser(db, user, (tx) => tx.query("select public.set_follow_up_pin($1, true)", [third]));
+    const page = await asUser(db, user, async (tx) => (await one<{ r: Page }>(tx, "select public.list_follow_ups('pending', null, null, 20, 0) as r")).r);
+    expect(page.items.map((i) => i.id)).toEqual([third, first, second]);
   });
 });

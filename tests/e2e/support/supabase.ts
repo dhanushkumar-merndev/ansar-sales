@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../../src/lib/database.types";
 import { type AccountKey, type AppRole, storageState } from "./accounts";
@@ -25,11 +26,16 @@ const chunkIndex = (cookieName: string) => Number(/\.(\d+)$/.exec(cookieName)?.[
  * spending another sign-in against the Auth rate limit.
  */
 export function accessToken(key: AccountKey): string {
-  const state = JSON.parse(fs.readFileSync(storageState(key), "utf8")) as { cookies: { name: string; value: string }[] };
+  return accessTokenFrom(storageState(key));
+}
+
+/** The access token in a saved Playwright storage-state file. */
+export function accessTokenFrom(stateFile: string): string {
+  const state = JSON.parse(fs.readFileSync(stateFile, "utf8")) as { cookies: { name: string; value: string }[] };
   const chunks = state.cookies
     .filter((c) => /^sb-.+-auth-token(\.\d+)?$/.test(c.name))
     .sort((a, b) => chunkIndex(a.name) - chunkIndex(b.name));
-  if (!chunks.length) throw new Error(`No Supabase session cookie in ${storageState(key)}`);
+  if (!chunks.length) throw new Error(`No Supabase session cookie in ${stateFile}`);
   let raw = chunks.map((c) => decodeURIComponent(c.value)).join("");
   if (raw.startsWith("base64-")) raw = Buffer.from(raw.slice("base64-".length), "base64url").toString("utf8");
   return (JSON.parse(raw) as { access_token: string }).access_token;
@@ -37,9 +43,14 @@ export function accessToken(key: AccountKey): string {
 
 /** REST client acting as one of the signed-in test accounts (RLS applies). */
 export function userClient(key: AccountKey): Db {
+  return tokenClient(accessToken(key));
+}
+
+/** REST client for a saved session's access token (RLS applies). */
+export function tokenClient(token: string): Db {
   return createClient<Database>(env.supabaseUrl, env.publishableKey, {
     auth: NO_SESSION,
-    global: { headers: { Authorization: `Bearer ${accessToken(key)}` } },
+    global: { headers: { Authorization: `Bearer ${token}` } },
   });
 }
 
@@ -72,15 +83,81 @@ async function must<T>(label: string, p: PromiseLike<{ error: { message: string 
   return data as T;
 }
 
+/** The test company for the projects module (Star Gardens flow). Reused across runs; never a real company. */
+export const E2E_GARDENS = "E2E Gardens";
+
+export async function e2eGardensCompany() {
+  const sb = serviceClient();
+  const { data } = await sb.from("companies").select("id, features").eq("name", E2E_GARDENS).is("archived_at", null).maybeSingle();
+  if (data) {
+    if (!data.features.includes("projects")) {
+      await must("companies", sb.from("companies").update({ features: [...data.features, "projects"] }).eq("id", data.id));
+    }
+    return data.id;
+  }
+  // finance_group_id is filled in by the companies trigger.
+  const { data: created, error } = await sb.from("companies").insert({ name: E2E_GARDENS, features: ["projects"] } as never).select("id").single();
+  if (error || !created) throw new Error(`Could not create ${E2E_GARDENS}: ${error?.message}`);
+  return (created as { id: string }).id;
+}
+
+/** Creates an Auth user + profile in E2E Gardens with any role, exactly like the app's "New user" flow. */
+export async function createGardensUser(u: { username: string; displayName: string; role: string; password: string }) {
+  const companyId = await e2eGardensCompany();
+  const { data, error } = await serviceClient().auth.admin.createUser({
+    email: authEmail(u.username),
+    password: u.password,
+    email_confirm: true,
+    app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role, crm_company_id: companyId },
+  });
+  if (error || !data.user) throw new Error(`Could not create ${u.username}: ${error?.message}`);
+  return data.user.id;
+}
+
+function tigris() {
+  const { TIGRIS_STORAGE_ACCESS_KEY_ID: id, TIGRIS_STORAGE_SECRET_ACCESS_KEY: secret, TIGRIS_STORAGE_BUCKET: bucket } = process.env;
+  if (!id || !secret || !bucket) return null;
+  const client = new S3Client({
+    region: "auto", endpoint: process.env.TIGRIS_STORAGE_ENDPOINT || "https://t3.storage.dev",
+    credentials: { accessKeyId: id, secretAccessKey: secret },
+  });
+  return { client, bucket };
+}
+
+/** Deletes E2E Gardens' projects (children cascade), their Tigris objects and site visits. */
+async function cleanupE2EProjects(sb: Db) {
+  const companies = await must<{ id: string }[]>("companies", sb.from("companies").select("id").eq("name", E2E_GARDENS));
+  let projects = 0;
+  for (const c of companies) {
+    const rows = await must<{ id: string }[]>("projects", sb.from("projects").select("id").eq("company_id", c.id));
+    const s3 = tigris();
+    for (const p of rows) {
+      const versions = await must<{ storage_path: string }[]>("project_file_versions", sb.from("project_file_versions").select("storage_path").eq("project_id", p.id));
+      if (s3) {
+        const listed = await s3.client.send(new ListObjectsV2Command({ Bucket: s3.bucket, Prefix: `projects/${p.id}/` }));
+        const keys = (listed.Contents ?? []).map((o) => ({ Key: o.Key! }));
+        if (keys.length) await s3.client.send(new DeleteObjectsCommand({ Bucket: s3.bucket, Delete: { Objects: keys, Quiet: true } }));
+      }
+      const names = versions.map((v) => v.storage_path);
+      if (names.length) await must("storage_forget_objects", sb.rpc("storage_forget_objects", { p_bucket: "projects", p_names: names }));
+    }
+    await must("site_visits", sb.from("site_visits").delete().eq("company_id", c.id));
+    for (const part of chunk(rows.map((r) => r.id))) await must("projects", sb.from("projects").delete().in("id", part));
+    projects += rows.length;
+  }
+  return projects;
+}
+
 /**
  * Hard-deletes every row created by `e2e_*` users, then the users themselves.
  * Real users and their data are never matched.
  */
 export async function cleanupE2EData() {
   const sb = serviceClient();
+  const projects = await cleanupE2EProjects(sb);
   const profiles = await must<{ id: string }[]>("profiles", sb.from("profiles").select("id").like("username", "e2e\\_%"));
   const ids = profiles.map((p) => p.id);
-  if (!ids.length) return { users: 0 };
+  if (!ids.length) return { users: 0, projects };
 
   const leadIds = new Set<string>();
   for (const part of chunk(ids)) {
@@ -132,5 +209,5 @@ export async function cleanupE2EData() {
     const { error } = await sb.auth.admin.deleteUser(id);
     if (error) throw new Error(`cleanup auth user ${id}: ${error.message}`);
   }
-  return { users: ids.length, leads: leadIds.size, niches: niches.length };
+  return { users: ids.length, leads: leadIds.size, niches: niches.length, projects };
 }

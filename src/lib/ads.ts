@@ -1,6 +1,7 @@
 /** Shapes returned by the ads RPCs (supabase/migrations/20261006009610_ads_data.sql) and KPI helpers. */
 
-export type AdScope = "all" | "company" | "client";
+// client_category: a client login on the agency's account, limited to the category run for that client.
+export type AdScope = "all" | "company" | "client" | "client_category";
 
 export type AdAccount = {
   id: string; kind: "company" | "client"; company_id: string; company_name: string; ads_client_id: string | null;
@@ -33,7 +34,20 @@ export type AdCampaignRow = {
   last_active: string | null; ads: number;
 };
 
-export type AdCategory = { id: string; name: string; company_id: string | null; match_text: string | null; campaigns: number };
+export type AdCategory = {
+  id: string; name: string; company_id: string | null; match_text: string | null; campaigns: number;
+  ads_client_id?: string | null; client_name?: string | null;
+};
+
+/** Where an ads client's ads run: a category of the agency's own account, or the client's own account. */
+export type AgencySource = { category_id: string; category_name: string; match_text?: string | null; campaigns?: number; account: AdAccount };
+
+type SourceTotals = { spend: number; impressions: number; clicks: number; link_clicks: number; leads: number; conversions: number };
+export type AdsClientSource = SourceTotals & {
+  source: "agency" | "own"; account_id: string; category_id: string | null; category_name: string | null; currency: string | null; archived: boolean;
+};
+/** ads_client_summary: per source, and totals per currency (different currencies are never added). */
+export type AdsClientSummary = { sources: AdsClientSource[]; totals: (SourceTotals & { currency: string | null })[] };
 
 export type AdCampaignDetail = {
   campaign: Omit<AdCampaignRow, "spend" | "impressions" | "clicks" | "link_clicks" | "leads" | "conversions" | "last_active" | "ads">;

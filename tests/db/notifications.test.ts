@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createLead, createUser, one, rows, stageId, type Db } from "./harness";
+import { asService, asUser, createDb, createLead, createUser, one, recordObject, rows, stageId, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string, account: string, offline: string;
@@ -67,8 +67,7 @@ describe("instant events are routed by role and never sent to the actor", () => 
   it("library uploads → admin + other sales, never account", async () => {
     const folder = await asUser(db, salesA, async (tx) => (await one<{ id: string }>(tx, "insert into public.library_folders (name) values ('Decks') returning id")).id);
     const path = `${folder}/${randomUUID()}.pdf`;
-    await asUser(db, salesA, (tx) => tx.query("insert into storage.objects (bucket_id, name, owner, metadata) values ('library', $1, $2, $3)",
-      [path, salesA, { size: 10, mimetype: "application/pdf" }]));
+    await recordObject(db, path, 10, "application/pdf");
     const file = await asUser(db, salesA, async (tx) => (await one<{ id: string }>(tx,
       "insert into public.library_files (folder_id, name, storage_path) values ($1, 'Pitch.pdf', $2) returning id", [folder, path])).id);
     const rowsForFile = await queued("kind = 'library_file_added' and payload ->> 'id' = $1", [file]);

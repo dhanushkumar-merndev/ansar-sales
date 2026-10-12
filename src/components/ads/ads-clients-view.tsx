@@ -33,7 +33,10 @@ import { createAdsClient } from "@/server/actions/ads";
 
 type ClientRow = AdsClient & {
   account: AdAccount | null;
-  last_30d: { spend: number; leads: number; clicks: number; impressions: number };
+  /** Live sources: a category on our own ad account, and/or the client's own account. */
+  sources: { agency: boolean; own: boolean };
+  /** Last 30 days of all sources, one row per currency (never added across currencies). */
+  last_30d: { currency: string | null; spend: number; leads: number; clicks: number; impressions: number }[];
   logins: number;
 };
 
@@ -99,7 +102,7 @@ export function AdsClientsView() {
                 <TableRow>
                   <TableHead className="min-w-56">Client</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Ad account</TableHead>
+                  <TableHead>Ad source</TableHead>
                   <TableHead className="text-right">Spent (30 days)</TableHead>
                   <TableHead className="text-right">Results</TableHead>
                   <TableHead className="text-right">Cost / result</TableHead>
@@ -108,8 +111,12 @@ export function AdsClientsView() {
               </TableHeader>
               <TableBody>
                 {list.data.items.map((c) => {
-                  const money = moneyFormat(c.account?.currency);
-                  const k = adKpis({ ...c.last_30d, conversions: 0, conversion_value: 0 });
+                  // Older databases (before 20261008002300) return one object without currencies.
+                  const totals = Array.isArray(c.last_30d) ? c.last_30d : [];
+                  const sources = c.sources ?? { agency: false, own: Boolean(c.account && !c.account.archived_at) };
+                  const single = totals.length === 1 ? totals[0] : null;
+                  const k = single ? adKpis({ ...single, conversions: 0, conversion_value: 0 }) : null;
+                  const leads = totals.reduce((n, t) => n + Number(t.leads), 0);
                   return (
                     <TableRow key={c.id}>
                       <TableCell>
@@ -117,10 +124,18 @@ export function AdsClientsView() {
                         <div className="text-xs text-muted-foreground">{[c.business, c.phone].filter(Boolean).join(" · ") || "—"}</div>
                       </TableCell>
                       <TableCell><Badge variant="outline" className={cn(clientStatusTone(c.status))}>{ADS_CLIENT_STATUS_LABELS[c.status]}</Badge></TableCell>
-                      <TableCell><AdAccountStatus account={c.account} /></TableCell>
-                      <TableCell className="text-right tabular-nums">{c.account ? money(c.last_30d.spend) : "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{c.account ? formatCount(Number(c.last_30d.leads)) : "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{k.cpl != null ? money(k.cpl) : "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {sources.agency ? <Badge variant="outline" className="text-muted-foreground">Our account</Badge> : null}
+                          {sources.own ? <AdAccountStatus account={c.account} /> : null}
+                          {!sources.agency && !sources.own ? <Badge variant="outline" className="border-red-400/30 text-red-300">No ad source</Badge> : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {totals.length ? totals.map((t) => <div key={t.currency ?? ""}>{moneyFormat(t.currency)(t.spend)}</div>) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{totals.length ? formatCount(leads) : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{single && k?.cpl != null ? moneyFormat(single.currency)(k.cpl) : "—"}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{formatDate(c.started_at)}</TableCell>
                     </TableRow>
                   );

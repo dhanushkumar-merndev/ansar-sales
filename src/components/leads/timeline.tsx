@@ -1,6 +1,7 @@
 "use client";
 
-import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
+import Link from "next/link";
+import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, FolderKanban, Hand, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
 import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
 import type { Activity } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
@@ -24,6 +25,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   files_shared: Send,
   share_revoked: Link2Off,
   share_opened: Eye,
+  handed_off: Hand,
+  project_created: FolderKanban,
 };
 
 /** Stage names are stored in the history itself, so it stays readable after a stage is renamed. */
@@ -97,6 +100,15 @@ function describe(a: Activity): { title: string; detail?: React.ReactNode } {
       return { title: "revoked a shared link", detail: typeof m.shared_at === "string" ? `Shared ${dt(m.shared_at)}` : undefined };
     case "share_opened":
       return { title: "opened the shared documents for the first time", detail: typeof m.device === "string" ? m.device : undefined };
+    case "handed_off":
+      return { title: "handed the lead to the admins", detail: a.body ?? undefined };
+    case "project_created":
+      return {
+        title: "created a project from this lead",
+        detail: typeof m.project_id === "string"
+          ? <Link className="underline underline-offset-2" href={`/projects/${m.project_id}`}>{typeof m.name === "string" ? m.name : "Open project"}</Link>
+          : undefined,
+      };
     default:
       return { title: a.type.replaceAll("_", " ") };
   }

@@ -32,7 +32,7 @@ export function BrandName({
 /** Brand mark for the dark-only theme: the company logo when it has one, else the light-stroke default logo. */
 export function BrandMark({ size = 32, className, alt = "", logoUrl }: { size?: number; className?: string; alt?: string; logoUrl?: string | null }) {
   if (logoUrl) {
-    // Company logos come from Supabase Storage; a plain img avoids configuring remote image hosts.
+    // Company logos come from /logo (a redirect to a signed Tigris URL); a plain img avoids configuring remote image hosts.
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={logoUrl} alt={alt} width={size} height={size} className={cn("shrink-0 rounded-md object-contain", className)} style={{ width: size, height: size }} />;
   }

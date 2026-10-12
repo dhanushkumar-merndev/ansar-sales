@@ -47,6 +47,7 @@ export function useChartTheme() {
         borderColor: c.border,
         textStyle: { color: c.text, fontSize: 12 },
         extraCssText: `box-shadow:0 4px 16px ${c.shadow};border-radius:12px;`,
+        confine: true,
       },
     };
   }, [dark]);

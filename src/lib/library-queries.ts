@@ -1,11 +1,11 @@
 "use client";
 
 // Library and share reads, run in the browser as the signed-in user (RLS applies).
-import { LIBRARY_BUCKET } from "@/lib/library";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
 import { createClient } from "@/lib/supabase/client";
 import type { UsageSummary } from "@/lib/usage";
+import { signLibraryFiles } from "@/server/actions/storage";
 
 const sb = () => createClient();
 
@@ -65,20 +65,27 @@ export async function fetchLibraryFolder(id: string, signal: AbortSignal) {
   return folder.data ? { ...folder.data, path: (path.data ?? []) as unknown as FolderCrumb[] } : null;
 }
 
-/** One batched request for a page of files (no per-file round trips). */
+/**
+ * Signed Tigris URLs for a page of files: one server request per 100 paths (no per-file round
+ * trips). The server signs only files this user can read; others are missing from the result.
+ */
 export async function signLibraryUrls(paths: string[], expiresInSeconds = 600): Promise<Record<string, string>> {
-  if (!paths.length) return {};
-  const { data, error } = await sb().storage.from(LIBRARY_BUCKET).createSignedUrls(paths, expiresInSeconds);
-  if (error) throw error;
+  const unique = [...new Set(paths)];
   const urls: Record<string, string> = {};
-  for (const d of data ?? []) if (d.path && d.signedUrl) urls[d.path] = d.signedUrl;
+  for (let i = 0; i < unique.length; i += 100) {
+    const r = await signLibraryFiles({ paths: unique.slice(i, i + 100), expiresIn: expiresInSeconds });
+    if (!r.ok) throw new Error(r.error);
+    Object.assign(urls, r.data);
+  }
   return urls;
 }
 
 export async function signLibraryUrl(path: string, opts: { download?: string } = {}) {
-  const { data, error } = await sb().storage.from(LIBRARY_BUCKET).createSignedUrl(path, 300, opts.download ? { download: opts.download } : undefined);
-  if (error) throw error;
-  return data.signedUrl;
+  const r = await signLibraryFiles({ paths: [path], download: opts.download, expiresIn: 300 });
+  if (!r.ok) throw new Error(r.error);
+  const url = r.data[path];
+  if (!url) throw new Error("not_found");
+  return url;
 }
 
 /** Active files for the share picker: at most 20, optionally within one folder. */

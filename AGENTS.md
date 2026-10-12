@@ -41,7 +41,7 @@ Small supporting packages are acceptable when they replace substantial custom wo
 
 ## Roles and responsibilities
 
-There are exactly three business roles: `admin`, `sales`, and `account`.
+The core business roles are `admin`, `sales`, and `account` (plus `super_admin`, `ads_manager`, `client`, and the project roles of the Star Gardens module below). A person has one main role (`profiles.role`) and optional extra roles (`profiles.extra_roles`); permissions are the union. SQL checks use `private.has_role()`; `private.app_role()` returns one role by precedence (admin, then sales, then the main role) for older code.
 
 | Capability | Admin | Sales | Account |
 | --- | --- | --- | --- |
@@ -62,6 +62,20 @@ Default scope: a lead belongs to its assigned salesperson. Sales can access lead
 Admin can manage all business records, including archive/restore, with an audit trail. Prefer soft deletion to destructive deletion. Admin account management must preserve at least one active Admin.
 
 Enforce access in the database using Row Level Security and in every server mutation. Hiding buttons or navigation is not authorization. Store authoritative roles in a protected profile table, not user-editable auth metadata. Ordinary CRM operations use the signed-in user's Supabase client and RLS; do not bypass RLS with a service key.
+
+## Star Gardens module (companies with the `projects` feature)
+
+`companies.features` switches optional modules per company (super admin: Super settings → Companies). `projects` adds:
+
+- **Roles:** `architect_manager`, `landscape_designer`, `execution` (labelled "Execution manager"); `sales` shows as "BDM". Project roles can be main or extra roles and are only assignable where the module is on.
+- **Flow:** BDM hands an interested lead to admins (`handoff_lead`) → admin creates a project (`create_project`: team, phases from `STAR_GARDENS_TEMPLATE`, payment schedule from `DEFAULT_SCHEDULE`, default folders) → timeline, files, site visits, BOQ/execution, payments, client portal.
+- **Access:** admin sees all; team members see their projects (`can_access_project`, `can_work_on_project`); `can_manage_project` = admin or the project's architect manager; money (`project_financials`, milestones, payments, payment-proof folder) only admin/account (`can_see_project_money`). Clients read nothing directly; the portal uses definer RPCs returning approved-or-later file versions only.
+- **Derived, never stored:** phase lateness, milestone status (due / overdue a week after), project progress.
+- **Payments:** any amount. Schedule payments fill the parts oldest first; the rest of a part stays due. `is_extra` payments are outside the schedule. Money (`project_payment_status`) is for Admin/Super admin/Accounts only.
+- **Phase status:** owners move their phase between not started / in progress / in review; done, skipped and changes requested are the manager's (architect manager of the project, admin, super admin). The Gantt shows the history from `project_phase_history`.
+- **End date:** `projects.original_end_date` is set at creation and never changes, so extensions show.
+- **Files:** Tigris prefix `projects/<projectId>/<uuid>.<ext>`, ≤ 5 GB each, per-project quota (`storage_quota_bytes`, 100 GB). The browser uploads straight to Tigris like the Library (pick or drop, one progress toast; `src/components/projects/files/upload.ts`), each request signed by `signProjectUpload`; multipart above 64 MB, 3 parts at a time with retries. Bucket CORS must allow GET/PUT/POST/DELETE/HEAD and expose `ETag` (`scripts/tigris-cors.mjs`). Folders nest; whoever made a folder (or a manager) archives it with what's inside, and admins/architect managers restore it or delete it for good (`deleteProjectFolder`: Tigris objects first, then `purge_project_folder`). DWG/DXF open in the file panel (`cad-preview.tsx` → `cad-engine.ts`, mlightcad's MIT viewer + its GPL-3.0 LibreDWG converter for DWG, loaded only when a drawing is opened; workers/wasm copied to `public/cad/` by `scripts/copy-cad-assets.mjs` before dev/build), with note pins in drawing coordinates (`cad_x`/`cad_y`). SketchUp preview is a later version.
+- **Alerts:** Telegram kinds listed in `20261008000800_project_alerts.sql`; timed ones run from cron `crm-project-alerts` every 15 minutes with daily/weekly dedupe keys.
 
 ## Authentication: simple username and password
 

@@ -81,7 +81,12 @@ export function buildReminderMessage(r: ClaimedReminder, appUrl: string | null):
 export type NotificationKind =
   | "recurring_expense" | "lead_created" | "lead_assigned" | "lead_closed" | "follow_up_changed" | "overdue_nag"
   | "expense_added" | "capital_added" | "library_file_added" | "digest_sales" | "digest_admin" | "digest_finance" | "test"
-  | "ads_client_new" | "ad_account_problem";
+  | "ads_client_new" | "ad_account_problem"
+  | "lead_handed_off" | "project_assigned" | "phase_assigned" | "phase_due_soon" | "phase_overdue" | "phase_submitted"
+  | "phase_changes" | "project_at_risk" | "site_visit_reminder" | "payment_due" | "payment_overdue" | "payment_received"
+  | "boq_status" | "snag_assigned" | "project_completed" | "client_feedback";
+
+const MEMBER_ROLE: Record<string, string> = { architect_manager: "Architect manager", landscape_designer: "Landscape designer", execution: "Execution manager" };
 
 export type ClaimedNotification = {
   notification_id: string;
@@ -111,21 +116,35 @@ function moneyLines(p: Record<string, unknown>) {
   ];
 }
 
+const projectLine = (p: Record<string, unknown>) => `Project: ${p.project}${s(p.code) ? ` (${p.code})` : ""}${s(p.client) && p.client !== p.project ? ` · ${p.client}` : ""}`;
+const projectPath = (p: Record<string, unknown>, tab?: string) => `/projects/${s(p.project_id) ?? ""}${tab ? `?tab=${tab}` : ""}`;
+
+/** What a notification says, before it becomes a Telegram message: also shown by the app's bell. */
+export type NotificationParts = { lines: string[]; path: string; extra: InlineButton[]; label?: string };
+
 /** Text and buttons for one queued notification. `now` is only used for "overdue by". */
 export function buildNotification(n: ClaimedNotification, appUrl: string | null, now = new Date()): TelegramMessage {
-  const p = n.payload;
+  const d = describeNotification(n.kind, n.payload, now);
+  return finish([...d.lines], appUrl, d.path, d.extra, d.label);
+}
+
+/**
+ * The lines (first one is the title), the in-app path and the extra buttons of a notification. The super
+ * admin's copies name the company and open the link in it.
+ */
+export function describeNotification(kind: NotificationKind, payload: Record<string, unknown>, now = new Date()): NotificationParts {
+  const p = payload;
   const leadPath = `/leads/${s(p.lead_id) ?? ""}`;
   // The super admin gets every company's alerts: name the company, and open the link in it.
   const company = s(p.company);
   const companyId = s(p.company_id);
-  const fin = (lines: string[], path: string, extra: InlineButton[] = [], label?: string) => finish(
-    company ? [lines[0], `🏢 ${company}`, ...lines.slice(1)] : lines,
-    appUrl,
-    companyId ? `/switch?company=${companyId}&next=${encodeURIComponent(path)}` : path,
+  const fin = (lines: string[], path: string, extra: InlineButton[] = [], label?: string): NotificationParts => ({
+    lines: company ? [lines[0], `🏢 ${company}`, ...lines.slice(1)] : lines,
+    path: companyId ? `/switch?company=${companyId}&next=${encodeURIComponent(path)}` : path,
     extra,
     label,
-  );
-  switch (n.kind) {
+  });
+  switch (kind) {
     case "recurring_expense":
       return fin(["🔁 Monthly expense added", `Category: ${CATEGORY[String(p.category)] ?? p.category}`, ...moneyLines(p)], "/finance");
     case "expense_added":
@@ -208,6 +227,58 @@ export function buildNotification(n: ClaimedNotification, appUrl: string | null,
       ], s(p.ads_client_id) ? `/ads/clients/${p.ads_client_id}` : "/ads", [], "Open");
     case "test":
       return fin(["✅ Test message", `Hi ${p.name}, Telegram notifications from the CRM are working.`], "/dashboard");
+
+    // ----- Projects (Star Gardens) -----
+    case "lead_handed_off":
+      return fin(["🤝 Lead ready for a project", `Lead: ${p.lead_name}`, ...(s(p.phone) ? [`Phone: ${p.phone}`] : []),
+        ...(s(p.note) ? [`Note: ${p.note}`] : []), `Handed over by: ${p.actor}`, "Next: create the project and assign the team."], leadPath, [], "Open lead");
+    case "project_assigned":
+      return fin(["🌿 You're on a new project", projectLine(p), `Role: ${MEMBER_ROLE[String(p.role)] ?? p.role}`, `Added by: ${p.actor}`], projectPath(p), [], "Open project");
+    case "phase_assigned":
+      return fin(["📌 Phase assigned to you", projectLine(p), `Phase: ${p.phase}`, `Deadline: ${day(String(p.deadline))}`, ...(s(p.actor) ? [`By: ${p.actor}`] : [])],
+        projectPath(p, "timeline"), [], "Open timeline");
+    case "phase_due_soon":
+      return fin(["⏳ Deadline tomorrow", projectLine(p), `Phase: ${p.phase}`, `Deadline: ${day(String(p.deadline))}`, ...(s(p.owner) ? [`Owner: ${p.owner}`] : [])],
+        projectPath(p, "timeline"), [], "Open timeline");
+    case "phase_overdue":
+      return fin(["🚨 Phase is late", projectLine(p), `Phase: ${p.phase}`, `Deadline was: ${day(String(p.deadline))} (${p.late_days} day${Number(p.late_days) === 1 ? "" : "s"} late)`,
+        ...(s(p.owner) ? [`Owner: ${p.owner}`] : ["Owner: nobody yet"]), "Update the status or move the deadline in the timeline."], projectPath(p, "timeline"), [], "Open timeline");
+    case "phase_submitted":
+      return fin(["📤 Phase sent for review", projectLine(p), `Phase: ${p.phase}`, `By: ${p.actor}`,
+        ...(Number(p.late_days) > 0 ? [`Submitted ${p.late_days} day${Number(p.late_days) === 1 ? "" : "s"} after the deadline`] : ["On time"])], projectPath(p, "timeline"), [], "Review");
+    case "phase_changes":
+      return fin(["✏️ Changes requested", projectLine(p), `Phase: ${p.phase}`, ...(s(p.remark) ? [`Note: ${p.remark}`] : []), `By: ${p.actor}`], projectPath(p, "timeline"), [], "Open phase");
+    case "project_at_risk":
+      return fin(["⚠️ Project at risk", projectLine(p),
+        p.reason === "past_end" ? `End date ${day(String(p.end_date))} passed ${p.late_days} day${Number(p.late_days) === 1 ? "" : "s"} ago and it isn't completed.`
+          : `A phase runs until ${day(String(p.last_deadline))}, after the project end date ${day(String(p.end_date))}.`], projectPath(p, "timeline"), [], "Open timeline");
+    case "site_visit_reminder":
+      return fin(["📍 Site visit soon", `${p.project ? `Project: ${p.project}` : `Lead: ${p.lead}`}`, `What: ${p.purpose}`, `When: ${due(String(p.at))}`,
+        ...(s(p.site_address) ? [`Where: ${p.site_address}`] : []), ...(s(p.phone) ? [`Client: ${p.phone}`] : []), "Open the visit on site to check in."],
+        s(p.project_id) ? projectPath(p, "visits") : "/site-visits", [], "Open visit");
+    case "payment_due":
+      return fin(["💳 Payment due", projectLine(p), `Part: ${p.milestone}`, `Due: ${inr.format(Number(p.balance ?? p.amount))}`, ...(s(p.due_on) ? [`Since: ${day(String(p.due_on))}`] : [])],
+        projectPath(p, "payments"), [], "Open payments");
+    case "payment_overdue":
+      return fin(["🔴 Payment overdue", projectLine(p), `Part: ${p.milestone}`, `Outstanding: ${inr.format(Number(p.balance))}`,
+        `Due since: ${day(String(p.due_on))} (${p.days_overdue} days)`], projectPath(p, "payments"), [], "Open payments");
+    case "payment_received":
+      return fin(["✅ Payment received", projectLine(p), `Amount: ${inr.format(Number(p.amount))}`, `Mode: ${PAYMENT[String(p.mode)] ?? p.mode}${s(p.reference) ? ` · ${p.reference}` : ""}`,
+        ...(s(p.milestone) ? [`For: ${p.milestone}`] : []), `Date: ${day(String(p.paid_on))}`, `Recorded by: ${p.actor}`], projectPath(p, "payments"), [], "Open payments");
+    case "boq_status":
+      return fin([p.status === "client_approved" ? "👍 BOQ approved by the client" : "📨 BOQ sent to the client", projectLine(p), `Revision: ${p.label}`, `By: ${p.actor}`],
+        projectPath(p, "execution"), [], "Open BOQ");
+    case "snag_assigned":
+      return fin(["🔧 Snag for you to fix", projectLine(p), `Snag: ${p.snag}`, ...(s(p.actor) ? [`Added by: ${p.actor}`] : [])], projectPath(p, "execution"), [], "Open snags");
+    case "client_feedback":
+      return fin([p.approved ? "👍 Client approved a file" : "✏️ Client asked for changes", projectLine(p), `File: ${p.file} (v${p.version_no})`,
+        ...(s(p.comment) ? [`Client: “${p.comment}”`] : []), ...(s(p.client) ? [`By: ${p.client}`] : [])],
+        `/projects/${s(p.project_id) ?? ""}?tab=files&file=${s(p.file_id) ?? ""}`, [], "Open file");
+    case "project_completed":
+      return fin(["🎉 Project completed", projectLine(p), ...(s(p.completed_on) ? [`Completed: ${day(String(p.completed_on))}`] : []), `Marked by: ${p.actor}`], projectPath(p), [], "Open project");
+    default:
+      // A kind this code doesn't know yet (newer database): still show something sensible.
+      return fin([`🔔 ${String(kind).replace(/_/g, " ")}`], "/dashboard");
   }
 }
 

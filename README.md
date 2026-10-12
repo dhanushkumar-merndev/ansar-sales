@@ -31,6 +31,21 @@ cp .env.example .env.local      # then fill in the values (see comments in the f
    - `supabase/config.toml` records the same settings. With the CLI you can run `pnpm dlx supabase config push` instead.
 4. Set `AUTH_LOGIN_DOMAIN` to a domain or subdomain you own, such as `login.yourcompany.com`. Each username maps internally to `username@AUTH_LOGIN_DOMAIN`. No mail is ever sent there. Don't change this value after users exist.
 
+### File storage (Tigris)
+
+Library files, their previews and company logos live in one **private** [Tigris](https://www.tigrisdata.com) bucket (S3-compatible), not in Supabase Storage. Nobody can read the bucket without a URL signed by the app.
+
+```bash
+npx @tigrisdata/cli login                     # browser sign-in
+npx @tigrisdata/cli buckets create <bucket> --access private --locations sin --enable-snapshots
+npx @tigrisdata/cli access-keys create <app-name> --bucket <bucket> --role Editor
+```
+
+1. `sin` (Singapore) is the closest Tigris location to India; Tigris has no Mumbai region.
+2. Put the key in `.env.local` as `TIGRIS_STORAGE_ACCESS_KEY_ID` / `TIGRIS_STORAGE_SECRET_ACCESS_KEY`, plus `TIGRIS_STORAGE_BUCKET=<bucket>` and `TIGRIS_STORAGE_ENDPOINT=https://t3.storage.dev`. The key is scoped to that one bucket; these are server-only (never `NEXT_PUBLIC_`).
+3. Allow the app's origins to upload from the browser: `pnpm storage:cors` (uses `APP_URL`, `NEXT_PUBLIC_APP_URL` and localhost; pass more origins as arguments). Run it again when the production domain changes.
+4. Moving from Supabase Storage (one time): `pnpm storage:migrate` copies every object from the Supabase `library` and `company-logos` buckets to `library/…` and `logos/…` in Tigris. Re-running skips what is already there; Supabase Storage is left untouched as a rollback copy until you delete those buckets by hand.
+
 ### First admin (one time)
 
 ```bash
@@ -132,7 +147,7 @@ select kind, state, attempts, last_error, created_at from telegram_notifications
 ## 3. Deploy to Vercel
 
 1. Import the repository in Vercel. It detects Next.js; no `vercel.json` is needed.
-2. Add the variables from `.env.example` under **Project → Settings → Environment Variables**. Set `NEXT_PUBLIC_APP_URL` to the production URL.
+2. Add the variables from `.env.example` under **Project → Settings → Environment Variables**, including the four `TIGRIS_STORAGE_*` values. Set `NEXT_PUBLIC_APP_URL` to the production URL, and make sure `pnpm storage:cors` included that origin.
 3. Deploy, then run `pnpm telegram:webhook` once with the production `NEXT_PUBLIC_APP_URL`. Set `APP_URL` in the Edge Function secrets so reminder links point there.
 
 Plan notes (checked 2026-10-05; recheck before deploying):
@@ -140,6 +155,51 @@ Plan notes (checked 2026-10-05; recheck before deploying):
 - No Vercel Cron is used. Reminders run on Supabase Cron.
 - Supabase free projects pause after a week of inactivity and have quotas.
 - The cron job invokes the Edge Function only when work is due, so it stays well under the 500k/month invocation allowance.
+
+### Rolling out the Star Gardens projects module
+
+Run these in order. The worker goes out first: the old worker has no message for the new alert kinds.
+
+1. Deploy the new worker. It still handles all the old kinds:
+   `pnpm dlx supabase functions deploy reminder-worker --no-verify-jwt`
+2. Check what is already applied, then apply the rest:
+   ```bash
+   pnpm dlx supabase migration list   # Local vs Remote columns
+   pnpm dlx supabase db push
+   ```
+   Never edit a migration that is already applied: `db push` skips it. Add a new migration instead.
+   `src/lib/database.types.ts` is already generated from them (`pnpm db:types`). To compare it with the live schema: `pnpm dlx supabase gen types typescript --linked --schema public | diff - src/lib/database.types.ts`. Only formatting should differ.
+   The migrations are `20261008000100`–`20261008002100`. On 2026-10-07, 0100–1100 were already on the live project. Until 1200–2100 are applied, these features fail with "needs a database update" or run in a reduced form:
+   - 1200: recording payments
+   - 1300: the phase history and end-date extensions
+   - 1400: folders inside folders
+   - 1500: the projects page's year/month folders (until then: counted from start dates, with no late counts or phase details)
+   - 1600: the notification bell (until then it stays empty), separate In app / Telegram switches, and shared folder colours. After it, redeploy `reminder-worker`: its message text is now shared with the bell.
+   - 1700: the Team page (what each person on a manager's projects is doing). It also limits the dashboard's team board to the manager's own people.
+   - 1800: move project folders up and down (right-click in the folder tree).
+   - 1900: Ads and Automation switched off for Star Gardens ("no_ads"; Super settings → Companies → Ads & automation).
+   - 2000: archiving project folders (whoever made a folder, or a manager), and restoring or deleting them for good (admin or the architect manager).
+   - 2100: note pins on DWG/DXF drawings (drawing coordinates) and pin colours. The drawing viewer itself works without it.
+
+   Two details:
+   - They run in order; the enum values come first, in files of their own.
+   - The `crm-project-alerts` cron job (every 15 minutes) is created only if `pg_cron` is installed.
+3. Run `pnpm storage:cors` so the bucket allows the multipart methods (POST, DELETE) and exposes `ETag`. Large uploads fail without it.
+4. Deploy the app to Vercel. No new environment variables are needed.
+5. In the app:
+   - **Super settings → Companies → Star Gardens:** check "Projects" is on. The migration switches it on for a company named "Star Gardens".
+   - **Users:** give people their roles: Architect manager, Landscape designer, Execution manager, and BDM (`sales`).
+6. Smoke test:
+   - Run `E2E_PROJECTS=1 pnpm test:e2e projects` (see §4).
+   - Or by hand: hand a lead over, create a project, then upload, approve, sign in to the client portal and record a payment.
+   - Then set a phase's deadline to yesterday. A `phase_overdue` Telegram message should arrive within about 15 minutes.
+
+Demo data for trying it (optional): `pnpm seed:star-gardens` adds 24 leads and 13 `SG-DEMO-*` projects to Star Gardens. It needs every project migration up to `20261008001600`.
+- It covers the edge cases: late, extended, on hold, cancelled, completed and archived projects, partly paid and overdue payments, every file status, client approvals, far-off check-ins, folders three levels deep, projects from last year and next month, payments ahead of the schedule, and bell notifications.
+- With `--logins`, you can sign in as each demo role. They share one password, shown once.
+- `pnpm seed:star-gardens --clean` removes all of it, including the placeholder files. Remove it before the real team starts: overdue demo phases and payments send alerts to the company's admins.
+
+To roll back, switch "Projects" off for the company. The menus and routes disappear, and the data stays.
 
 ---
 
@@ -178,6 +238,7 @@ pnpm test:e2e:report                             # HTML report with traces of fa
 - **Needs** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` and `AUTH_LOGIN_DOMAIN`. The Telegram specs also need `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAM_BOT_USERNAME`, and skip themselves otherwise.
 - **Sign-in rate limit:** a full run makes about 25 sign-ins, close to Supabase's limit of 30 per 5 minutes per IP. Wait 5 minutes between full runs. For local iteration, `E2E_KEEP_DATA=1 E2E_REUSE_SESSIONS=1` keeps the accounts and reuses sessions younger than 45 minutes.
 - **Opt-in worker check:** `E2E_WORKER=1 pnpm test:e2e reminders` waits for a real pg_cron → Edge Function run (about 2 minutes) and checks the delivery is recorded.
+- **Opt-in projects flow:** `E2E_PROJECTS=1 pnpm test:e2e projects` runs the Star Gardens flow (handoff → project → upload to Tigris → approval → client portal → payment) in a test company named "E2E Gardens". It needs the project migrations applied and the Tigris CORS rules set; teardown deletes its projects, files and users.
 - The browser runs in `America/New_York` on purpose, so the suite proves the app enters and shows times in IST whatever the device timezone.
 
 **Database types:** `pnpm db:types` regenerates `src/lib/database.types.ts` from the migrations (via PGlite, so no Docker is needed). Against a linked project, use `pnpm db:types:remote`.
@@ -203,15 +264,16 @@ pnpm test:e2e:report                             # HTML report with traces of fa
 - **Time and money:** timestamps are stored as UTC `timestamptz` and shown and entered in `Asia/Kolkata`. Amounts use `numeric(14,2)`. Capital is kept separate from expenses, and no profit or cash figure is shown.
 - **Calls:** the lead page's **Call** button records a `call_logged` timeline event, opens the phone dialer, then asks for the outcome (Connected / No answer / Busy / Wrong number) and an optional note. Only the caller can set the outcome, within 24 hours.
 - **Library:**
-  - Folders of PDF / PNG / JPEG / WEBP files live in the private Storage bucket `library`. The migration creates the bucket, with a 25 MB per-file limit and only those four types allowed.
+  - Folders of PDF / PNG / JPEG / WEBP files (25 MB each at most) live under `library/` in the private Tigris bucket; logos under `logos/`.
   - Admin and Sales can create folders and upload; only Admin can rename or archive. Account has no access.
-  - The browser uploads straight to Storage. The database then registers the file only if the object really exists in that folder, and takes its size and type from Storage's own metadata.
-  - The Supabase free plan includes 1 GB of file storage.
-  - **Settings → Usage** (Admin only) shows file storage and database size against the Free plan limits (1 GB / 500 MB), storage by folder, and archived files largest first. Archiving doesn't free space: there you can **delete archived files permanently** (Storage object removed with the admin's session, allowed only for archived files by an RLS delete policy, and logged in `admin_audit_log`) and clean up leftover uploads older than an hour.
+  - Uploads: a server action checks the user's access to the folder (RLS) and returns a 5-minute presigned PUT URL whose type and size are fixed in the signature. The browser uploads straight to Tigris. The server then reads the object back (HEAD), records its real size and type in the object ledger `private.storage_objects`, and the database registers the file only if that record exists, as before.
+  - Reads: the server signs GET URLs only for files the user can read through RLS. Share links (`/s/<token>/f/<id>`) check the token first; logos go through `/logo/<path>`, which needs no session because logos are not secret.
+  - The ledger is written only with the server's secret key (`storage_record_object` / `storage_forget_objects` are granted to `service_role` alone); users can't read or change it.
+  - **Settings → Usage** (super admin) shows the bytes recorded in the ledger, storage by folder, and archived files largest first. Archiving doesn't free space: there you can **delete archived files permanently** (the Tigris objects are deleted, then the records purged and logged in `admin_audit_log`) and clean up uploads older than an hour that were never registered.
 - **WhatsApp sharing:**
   - On a lead, **Share files** picks up to 10 library files and an expiry (24 hours, 7 days, 30 days or never), creates a link, and opens `wa.me/<lead phone>` with the message and link filled in.
   - The link (`/s/<token>`) is a public page showing the sender's name and the files, never the customer's name or number. Only a SHA-256 hash of the token is stored.
-  - Every file opens through `/s/<token>/f/<id>`. It re-checks the token in the database, then redirects to a 2-minute signed Storage URL. So PDFs always load, and revoked or expired links stop at once.
+  - Every file opens through `/s/<token>/f/<id>`. It re-checks the token in the database, then redirects to a 2-minute signed Tigris URL. So PDFs always load, and revoked or expired links stop at once.
   - The lead page lists each link with its status and open count, and lets you revoke it.
   - **`NEXT_PUBLIC_APP_URL` must be the public HTTPS address of the app**, or the links sent on WhatsApp won't open for customers.
 
@@ -230,6 +292,6 @@ Everything listed in §1–§3 that needs your accounts or secrets:
 The following have **not** been run against a live Supabase/Telegram/Vercel environment. Verify them after provisioning:
 - Realtime cross-session updates (an open admin dashboard updating when sales creates a lead)
 - Real Telegram delivery
-- Library uploads to the real Storage bucket, and opening share links on a phone through WhatsApp
+- Opening share links on a phone through WhatsApp
 - Cron invocation
 - Auth rate limits

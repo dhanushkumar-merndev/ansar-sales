@@ -29,6 +29,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 async function getClientProfile(): Promise<ClientProfile> {
-  const { id, username, display_name, role, isSuperAdmin, company, companies } = await requireProfile();
-  return { id, username, display_name, role, isSuperAdmin, company, companies };
+  const { id, username, display_name, role, roles, isSuperAdmin, company, companies, features } = await requireProfile();
+  return { id, username, display_name, role, roles, isSuperAdmin, company, companies, features };
 }

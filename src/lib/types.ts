@@ -1,4 +1,4 @@
-import type { LeadOutcome, ReminderState } from "@/lib/constants";
+import type { AssignableRole, LeadOutcome, ReminderState } from "@/lib/constants";
 
 export type NicheOption = { id: string; name: string };
 
@@ -42,7 +42,9 @@ export type UserListItem = {
   id: string;
   username: string;
   display_name: string;
-  role: "admin" | "sales" | "account";
+  role: AssignableRole;
+  /** "Also works as" roles. */
+  extra_roles: AssignableRole[];
   is_active: boolean;
   created_at: string;
   owned_active_leads: number;

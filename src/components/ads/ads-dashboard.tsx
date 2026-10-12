@@ -28,20 +28,29 @@ import { addDays, formatCalendarDate, formatDate, formatDayLabel, formatRelative
 import { cn } from "@/lib/utils";
 import { refreshAdAccount, setCampaignCategory } from "@/server/actions/ads";
 
+const TOP_CAMPAIGNS = 6;
+
 const ALL = "all";
 const NONE = "none";
 
 /**
  * KPIs, charts and the campaign table of one ad account. Used for a company's ads, an ads client's
  * page and the client's own read-only portal. `canManage` shows Refresh and the category pickers.
+ * A new `version` refetches everything (e.g. after campaigns were filed in the categories dialog).
+ * A given `range` is owned by the parent (which shows the picker); `fixedCategory` shows only that
+ * category (an ads client's slice of the agency account) without the category picker.
  */
-export function AdsDashboard({ accountId, canManage }: { accountId: string; canManage: boolean }) {
-  const [range, setRange] = useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
-  const [category, setCategory] = useState<string>(ALL);
+export function AdsDashboard({ accountId, canManage, version = 0, range: sharedRange, fixedCategory }: {
+  accountId: string; canManage: boolean; version?: number; range?: DayRange; fixedCategory?: string;
+}) {
+  const [ownRange, setRange] = useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
+  const range = sharedRange ?? ownRange;
+  const [picked, setCategory] = useState<string>(ALL);
+  const category = fixedCategory ?? picked;
   const filter = { p_category: category !== ALL && category !== NONE ? category : undefined, p_uncategorised: category === NONE };
 
   const overview = useLiveQuery({
-    queryKey: `ads-overview:${accountId}:${range.from}:${range.to}:${category}`,
+    queryKey: `ads-overview:${accountId}:${range.from}:${range.to}:${category}:${version}`,
     fetcher: async (signal) => {
       const { data, error } = await createClient()
         .rpc("ads_overview", { p_account: accountId, p_from: range.from, p_to: range.to, ...filter }).abortSignal(signal);
@@ -52,7 +61,7 @@ export function AdsDashboard({ accountId, canManage }: { accountId: string; canM
   });
   const scope = overview.data?.account.scope;
   const categories = useLiveQuery({
-    queryKey: `ads-categories:${accountId}`,
+    queryKey: `ads-categories:${accountId}:${version}`,
     fetcher: async (signal) => {
       const { data, error } = await createClient().rpc("ad_categories_list", { p_account: accountId }).abortSignal(signal);
       if (error) throw error;
@@ -63,6 +72,14 @@ export function AdsDashboard({ accountId, canManage }: { accountId: string; canM
   });
 
   const o = overview.data;
+  // The per-campaign charts show the top 6; the button expands them to all returned (up to 20).
+  const [allCampaigns, setAllCampaigns] = useState(false);
+  const campaigns = o ? (allCampaigns ? o.campaigns : o.campaigns.slice(0, TOP_CAMPAIGNS)) : [];
+  const moreCampaigns = o && o.campaigns.length > TOP_CAMPAIGNS ? (
+    <Button size="sm" variant="ghost" onClick={() => setAllCampaigns((v) => !v)}>
+      {allCampaigns ? `Show top ${TOP_CAMPAIGNS}` : `Show top ${o.campaigns.length}`}
+    </Button>
+  ) : null;
   const money = useMemo(() => moneyFormat(o?.account.currency), [o?.account.currency]);
   const moneyCompact = useMemo(() => moneyFormat(o?.account.currency, true), [o?.account.currency]);
   const dayLabel = useCallback((d: string) => formatDayLabel(d), []);
@@ -75,8 +92,8 @@ export function AdsDashboard({ accountId, canManage }: { accountId: string; canM
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="start" />
-        {scope === "all" && (categories.data?.length ?? 0) > 0 ? (
+        {sharedRange ? null : <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="start" />}
+        {scope === "all" && !fixedCategory && (categories.data?.length ?? 0) > 0 ? (
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-52" aria-label="Category"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -113,9 +130,9 @@ export function AdsDashboard({ accountId, canManage }: { accountId: string; canM
         <ChartCard title="Results" description={`Leads per day · ${rangeText}`}>
           {o ? <TrendLine points={o.daily.map((d) => ({ x: d.date, y: Number(d.leads) }))} label="Leads" dateLabel={dayLabel} /> : <ListSkeleton rows={4} />}
         </ChartCard>
-        <ChartCard title="Amount spent per campaign" description="Top campaigns in the range">
-          {o ? (o.campaigns.length
-            ? <Bars horizontal items={o.campaigns.map((c) => ({ name: c.name, value: Number(c.spend) }))} label="Spent" format={moneyCompact} />
+        <ChartCard title="Amount spent per campaign" description={`Top ${campaigns.length || TOP_CAMPAIGNS} campaigns in the range`} action={moreCampaigns}>
+          {o ? (campaigns.length
+            ? <Bars horizontal items={campaigns.map((c) => ({ name: c.name, value: Number(c.spend) }))} label="Spent" format={moneyCompact} />
             : <p className="py-10 text-center text-sm text-muted-foreground">No spend in this range.</p>) : <ListSkeleton rows={4} />}
         </ChartCard>
         {o?.categories ? (
@@ -125,16 +142,16 @@ export function AdsDashboard({ accountId, canManage }: { accountId: string; canM
               : <p className="py-10 text-center text-sm text-muted-foreground">No spend in this range.</p>}
           </ChartCard>
         ) : (
-          <ChartCard title="Leads per campaign" description="Top campaigns in the range">
-            {o ? (o.campaigns.length
-              ? <Bars horizontal items={o.campaigns.map((c) => ({ name: c.name, value: Number(c.leads) }))} label="Leads" />
+          <ChartCard title="Leads per campaign" description={`Top ${campaigns.length || TOP_CAMPAIGNS} campaigns by spend in the range`} action={moreCampaigns}>
+            {o ? (campaigns.length
+              ? <Bars horizontal items={campaigns.map((c) => ({ name: c.name, value: Number(c.leads) }))} label="Leads" />
               : <p className="py-10 text-center text-sm text-muted-foreground">No results in this range.</p>) : <ListSkeleton rows={4} />}
           </ChartCard>
         )}
       </div>
 
       <CampaignTable
-        accountId={accountId} range={range} filter={filter} money={money}
+        accountId={accountId} range={range} filter={filter} money={money} version={version}
         categories={scope === "all" && canManage ? (categories.data ?? []) : null}
         onCategoryChanged={() => { overview.refetch(); categories.refetch(); }}
       />
@@ -176,8 +193,8 @@ function statusTone(status: string | null) {
   return "text-muted-foreground";
 }
 
-function CampaignTable({ accountId, range, filter, money, categories, onCategoryChanged }: {
-  accountId: string; range: DayRange; filter: { p_category?: string; p_uncategorised: boolean };
+function CampaignTable({ accountId, range, filter, money, version, categories, onCategoryChanged }: {
+  accountId: string; range: DayRange; filter: { p_category?: string; p_uncategorised: boolean }; version: number;
   money: (v: number | string | null | undefined) => string; categories: AdCategory[] | null; onCategoryChanged: () => void;
 }) {
   const [page, setPage] = useState(1);
@@ -193,7 +210,7 @@ function CampaignTable({ accountId, range, filter, money, categories, onCategory
   if (pageKey !== key) { setPageKey(key); setPage(1); }
 
   const list = useLiveQuery({
-    queryKey: `ads-campaigns:${key}:${page}:${pageSize}`,
+    queryKey: `ads-campaigns:${key}:${page}:${pageSize}:${version}`,
     fetcher: async (signal) => {
       const { data, error } = await createClient().rpc("list_ad_campaigns", {
         p_account: accountId, p_from: range.from, p_to: range.to, ...filter,

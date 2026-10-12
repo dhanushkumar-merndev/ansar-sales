@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Controller, useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,9 +20,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { normalizePhone } from "@/lib/phone";
+import { fetchDuplicatePhone } from "@/lib/queries";
 import { addDays, istToUtcIso, istToday } from "@/lib/time";
 import type { NicheOption } from "@/lib/types";
-import { checkDuplicatePhone, createLead, updateLead } from "@/server/actions/leads";
+import { createLead, updateLead } from "@/server/actions/leads";
 
 const formSchema = z
   .object({
@@ -58,6 +59,9 @@ export function LeadFormDialog({
   const [pending, start] = useTransition();
   const [duplicate, setDuplicate] = useState<{ visibleLeadId: string | null } | null>(null);
   const [phoneWarning, setPhoneWarning] = useState<{ visibleLeadId: string | null } | null>(null);
+  // The number last checked for duplicates, and its request (see onPhoneBlur).
+  const phoneCheck = useRef<{ e164: string | null; abort?: AbortController }>({ e164: null });
+  useEffect(() => () => phoneCheck.current.abort?.abort(), []);
 
   const defaults = (): FormValues => ({
     name: lead?.name ?? "",
@@ -85,20 +89,40 @@ export function LeadFormDialog({
     }
   }
   useEffect(() => {
-    if (open) reset(defaults());
+    if (open) {
+      reset(defaults());
+      phoneCheck.current.abort?.abort();
+      phoneCheck.current = { e164: null };
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const conflict = isEdit && latestVersion !== undefined && lead && latestVersion !== lead.version;
 
+  // Checked on blur, straight from the browser (one indexed RPC). The same number isn't asked twice,
+  // and a slower older answer never replaces the newer one.
+  const phoneField = register("phone");
+  // Editing the number hides the old warning; leaving the field checks the new one.
+  const onPhoneChange = () => {
+    phoneCheck.current.e164 = null;
+    setPhoneWarning(null);
+  };
   const onPhoneBlur = async () => {
-    const phone = form.getValues("phone");
-    if (!normalizePhone(phone) || (lead && normalizePhone(lead.phone)?.e164 === normalizePhone(phone)?.e164)) {
-      setPhoneWarning(null);
-      return;
+    const e164 = normalizePhone(form.getValues("phone"))?.e164 ?? null;
+    if (e164 === phoneCheck.current.e164) return;
+    phoneCheck.current.abort?.abort();
+    phoneCheck.current = { e164 };
+    setPhoneWarning(null);
+    if (!e164 || (lead && normalizePhone(lead.phone)?.e164 === e164)) return;
+    const abort = new AbortController();
+    phoneCheck.current.abort = abort;
+    try {
+      const r = await fetchDuplicatePhone(e164, lead?.id, abort.signal);
+      if (!abort.signal.aborted) setPhoneWarning(r.duplicate ? { visibleLeadId: r.visibleLeadId } : null);
+    } catch {
+      // Only a hint: the save checks again and asks before saving a duplicate.
+      if (!abort.signal.aborted) phoneCheck.current.e164 = null;
     }
-    const r = await checkDuplicatePhone({ phone, excludeLeadId: lead?.id });
-    setPhoneWarning(r.ok && r.data.duplicate ? { visibleLeadId: r.data.visibleLeadId } : null);
   };
 
   const submit = (values: FormValues, allowDuplicate = false) =>
@@ -159,7 +183,8 @@ export function LeadFormDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <Field data-invalid={!!errors.phone}>
                 <FieldLabel htmlFor="lead-phone">Phone</FieldLabel>
-                <Input id="lead-phone" type="tel" inputMode="tel" placeholder="98765 43210" aria-invalid={!!errors.phone} {...register("phone", { onBlur: onPhoneBlur })} />
+                <Input id="lead-phone" type="tel" inputMode="tel" placeholder="98765 43210" aria-invalid={!!errors.phone} {...phoneField}
+                  onChange={(e) => { onPhoneChange(); void phoneField.onChange(e); }} onBlur={(e) => { void phoneField.onBlur(e); void onPhoneBlur(); }} />
               </Field>
               <Field data-invalid={!!errors.email}>
                 <FieldLabel htmlFor="lead-email">Email <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>

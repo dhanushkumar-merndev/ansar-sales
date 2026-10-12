@@ -122,7 +122,7 @@ export function SharedLinksCard({ leadId, leadName, phone, profileId, canEdit, o
                 return (
                   <li key={f.id} className="flex items-center gap-2.5 rounded-md border p-2">
                     {thumb ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Storage URL
+                      // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Tigris URL
                       <img src={thumb} alt="" className="size-10 shrink-0 rounded border object-cover object-top" />
                     ) : (
                       <span className="flex size-10 shrink-0 items-center justify-center rounded border bg-muted/40"><FileText className="size-4 text-muted-foreground" /></span>

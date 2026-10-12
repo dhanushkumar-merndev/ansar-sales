@@ -2,18 +2,22 @@
 
 import { createContext, use } from "react";
 import type { CompanyBrand } from "@/lib/companies";
-import type { AppRole } from "@/lib/constants";
+import type { AppRole, CompanyFeature } from "@/lib/constants";
 
 export type ClientProfile = {
   id: string;
   username: string;
   display_name: string;
-  /** Effective role in the current company (a super admin is "admin"). */
+  /** Main effective role in the current company (a super admin is "admin"; admin, then sales, win). */
   role: AppRole;
+  /** Every role this person has here; permissions are their union. */
+  roles: AppRole[];
   isSuperAdmin: boolean;
   company: CompanyBrand;
   /** Switchable companies (super admin: all; ads manager: assigned ones). */
   companies: CompanyBrand[];
+  /** Optional modules on for the current company (e.g. "projects"). */
+  features: CompanyFeature[];
 };
 
 const ProfileContext = createContext<Promise<ClientProfile> | null>(null);

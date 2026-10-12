@@ -119,11 +119,15 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
   const [saving, startSave] = useTransition();
   const [testing, startTest] = useTransition();
   const [syncing, startSync] = useTransition();
+  // Connect & test checks the saved connection, so it's offered only when nothing is waiting to be saved.
+  const [edited, setEdited] = useState(false);
+  const dirty = !saved || edited;
+  const edit = (set: (v: string) => void) => (v: string) => { set(v); setEdited(true); };
 
   const save = () => startSave(async () => {
     const r = await saveFacebookConnection({ companyId: company.company_id, appId, pageId, actId, appSecret, accessToken: token });
     if (!r.ok) { toast.error(r.error); return; }
-    setAppSecret(""); setToken("");
+    setAppSecret(""); setToken(""); setSteps(null); setEdited(false);
     toast.success("Saved. Now press Connect & test.");
     onChanged();
   });
@@ -163,34 +167,36 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="meta-app">App ID</FieldLabel>
-              <Input id="meta-app" inputMode="numeric" value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="e.g. 1234567890123456" />
+              <Input id="meta-app" inputMode="numeric" value={appId} onChange={(e) => edit(setAppId)(e.target.value)} placeholder="e.g. 1234567890123456" />
             </Field>
             <Field>
               <FieldLabel htmlFor="meta-secret">App secret</FieldLabel>
-              <Input id="meta-secret" type="password" autoComplete="off" value={appSecret} onChange={(e) => setAppSecret(e.target.value)}
+              <Input id="meta-secret" type="password" autoComplete="off" value={appSecret} onChange={(e) => edit(setAppSecret)(e.target.value)}
                 placeholder={saved ? "•••••••• saved (type to replace)" : "From App settings → Basic"} />
             </Field>
           </div>
           <Field>
             <FieldLabel htmlFor="meta-token">System user access token</FieldLabel>
-            <Input id="meta-token" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)}
+            <Input id="meta-token" type="password" autoComplete="off" value={token} onChange={(e) => edit(setToken)(e.target.value)}
               placeholder={saved ? "•••••••• saved (type to replace)" : "Never-expiring token with leads_retrieval and ads_read"} />
             <FieldDescription>Stored encrypted in Supabase Vault and never shown again.</FieldDescription>
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="meta-page">Page ID <span className="font-normal text-muted-foreground">(lead forms)</span></FieldLabel>
-              <Input id="meta-page" inputMode="numeric" value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="e.g. 102345678901234" />
+              <Input id="meta-page" inputMode="numeric" value={pageId} onChange={(e) => edit(setPageId)(e.target.value)} placeholder="e.g. 102345678901234" />
             </Field>
             <Field>
               <FieldLabel htmlFor="meta-act">Ad account ID <span className="font-normal text-muted-foreground">(Ads dashboard)</span></FieldLabel>
-              <Input id="meta-act" value={actId} onChange={(e) => setActId(e.target.value)} placeholder="act_1234567890" />
+              <Input id="meta-act" value={actId} onChange={(e) => edit(setActId)(e.target.value)} placeholder="act_1234567890" />
             </Field>
           </div>
         </FieldGroup>
         <div className="flex flex-wrap gap-2">
           <Button onClick={save} disabled={saving || !appId || (!pageId && !actId)}>{saving ? <Loader2 className="animate-spin" /> : <Save />} Save</Button>
-          <Button variant="outline" onClick={test} disabled={testing || !saved}>{testing ? <Loader2 className="animate-spin" /> : <PlugZap />} Connect &amp; test</Button>
+          {!dirty ? (
+            <Button variant="outline" onClick={test} disabled={testing}>{testing ? <Loader2 className="animate-spin" /> : <PlugZap />} Connect &amp; test</Button>
+          ) : null}
           {i ? <Button variant="outline" onClick={sync} disabled={syncing || i.status !== "connected"}>{syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />} Sync last 7 days of leads</Button> : null}
           {saved ? (
             <ConfirmDialog
@@ -206,7 +212,8 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
             />
           ) : null}
         </div>
-        {steps ? (
+        {saved && dirty ? <p className="text-xs text-muted-foreground">Save your changes to test them. Connect &amp; test checks what is saved.</p> : null}
+        {dirty ? null : steps ? (
           <div className="space-y-3 rounded-lg border p-3 text-sm">
             {steps.leads ? <StepList title="Lead forms" steps={steps.leads} /> : null}
             {steps.ads ? <StepList title="Ads dashboard" steps={steps.ads} /> : null}

@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { describeDevice, PREVIEW_BOT_RE } from "@/lib/device";
-import { LIBRARY_BUCKET } from "@/lib/library";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { presignGet } from "@/lib/storage";
 import { createAnonClient } from "@/lib/supabase/anon";
 
 const TOKEN_RE = /^[a-f0-9]{64}$/;
@@ -12,7 +11,7 @@ const noStore = { "Cache-Control": "private, no-store" };
 
 /**
  * Opens one file of a public share. The token is checked by the database on every
- * request; only then is a short-lived signed Storage URL minted and redirected to.
+ * request; only then is a short-lived signed Tigris URL minted and redirected to.
  */
 export async function GET(request: NextRequest, { params }: RouteContext<"/s/[token]/f/[fileId]">) {
   const { token, fileId } = await params;
@@ -35,10 +34,12 @@ export async function GET(request: NextRequest, { params }: RouteContext<"/s/[to
 
   const path = thumb ? (file.thumb_path ?? (file.mime_type.startsWith("image/") ? file.storage_path : null)) : file.storage_path;
   if (!path) return new NextResponse("No preview", { status: 404, headers: noStore });
-  const { data: signed, error: signError } = await createAdminClient()
-    .storage.from(LIBRARY_BUCKET)
-    .createSignedUrl(path, SIGNED_URL_SECONDS, download && !thumb ? { download: file.name } : undefined);
-  if (signError || !signed) return new NextResponse("Couldn't open the file. Please try again.", { status: 502, headers: noStore });
+  let signedUrl: string;
+  try {
+    signedUrl = await presignGet("library", path, { expiresIn: SIGNED_URL_SECONDS, downloadName: download && !thumb ? file.name : undefined });
+  } catch {
+    return new NextResponse("Couldn't open the file. Please try again.", { status: 502, headers: noStore });
+  }
 
-  return NextResponse.redirect(signed.signedUrl, { status: 302, headers: noStore });
+  return NextResponse.redirect(signedUrl, { status: 302, headers: noStore });
 }

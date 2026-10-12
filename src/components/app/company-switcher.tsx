@@ -11,7 +11,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
-import { homePathFor, ROLE_LABELS, SUPER_ADMIN_LABEL } from "@/lib/constants";
+import { homePathFor, roleLabel, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { switchCompany } from "@/server/actions/companies";
 
 /**
@@ -35,7 +35,7 @@ export function CompanySwitcher() {
         <BrandName name={company.name} highlight={company.brandHighlight} className="truncate text-[13px] font-semibold" />
         <span className="truncate text-[11px] text-muted-foreground">
           {profile.isSuperAdmin ? `${SUPER_ADMIN_LABEL} · switch company`
-            : canSwitch ? `${ROLE_LABELS[profile.role]} · switch company` : `${ROLE_LABELS[profile.role]} workspace`}
+            : canSwitch ? `${roleLabel(profile.role, profile.features)} · switch company` : `${roleLabel(profile.role, profile.features)} workspace`}
         </span>
       </div>
     </>

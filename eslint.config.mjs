@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Generated Playwright output (also git-ignored).
     "playwright-report/**",
     "test-results/**",
+    // CAD viewer workers copied from node_modules (scripts/copy-cad-assets.mjs).
+    "public/cad/**",
   ]),
 ]);
 

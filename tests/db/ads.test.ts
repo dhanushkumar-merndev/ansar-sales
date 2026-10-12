@@ -267,6 +267,87 @@ describe("ads clients", () => {
   });
 });
 
+describe("ads clients on the agency's own ad account", () => {
+  type Summary = { sources: { source: string; currency: string; spend: number }[]; totals: { currency: string; spend: number; leads: number }[] };
+  let mehta: string, other: string, mehtaUser: string, otherUser: string, category: string;
+  const link = (user: string, client: string, args = "p_create => true") =>
+    asUser(db, user, async (tx) => (await one<{ id: string | null }>(tx, `select public.set_ads_client_category($1, ${args}) as id`, [client])).id);
+  const summary = (user: string, client: string) =>
+    asUser(db, user, async (tx) => (await one<{ r: Summary }>(tx, "select public.ads_client_summary($1, '2026-09-01', '2026-09-30') as r", [client])).r);
+  const newClient = (name: string) =>
+    asUser(db, adsMgr, async (tx) => (await one<{ id: string }>(tx, "select public.create_ads_client($1, p_business => $1) as id", [name])).id);
+
+  beforeAll(async () => {
+    await switchTo(adsMgr, hub);
+    mehta = await newClient("Mehta Homes");
+    other = await newClient("Other Realty");
+    mehtaUser = await createUser(db, "mehta_client", "client", "Mehta", hub, mehta);
+    otherUser = await createUser(db, "other_client", "client", "Other", hub, other);
+  });
+
+  it("needs an ad source before a client goes Active", async () => {
+    await expect(asUser(db, adsMgr, (tx) => tx.query("select public.set_ads_client_status($1, 'active')", [mehta]))).rejects.toThrow(/ads_source_required/);
+    await asUser(db, adsMgr, (tx) => tx.query("select public.set_ads_client_status($1, 'paused')", [mehta]));
+  });
+
+  it("links a category named after the client and files campaigns into it", async () => {
+    category = (await link(adsMgr, mehta))!;
+    expect(await one(db, "select name, ads_client_id from public.ad_categories where id = $1", [category])).toEqual({ name: "Mehta Homes", ads_client_id: mehta });
+    const c3 = (await one<{ id: string }>(db, "select id from public.ad_campaigns where ad_account_id = $1 and meta_id = 'c3'", [account])).id;
+    await asUser(db, adsMgr, (tx) => tx.query("select public.set_ad_campaign_category($1::uuid[], $2)", [[c3], category]));
+    await asUser(db, adsMgr, (tx) => tx.query("select public.set_ads_client_status($1, 'active')", [mehta]));
+    // Linking again reuses the same category.
+    expect(await link(adsMgr, mehta)).toBe(category);
+  });
+
+  it("shows the client only its own campaigns on the agency account", async () => {
+    const o = await overview(mehtaUser);
+    expect(o.account.scope).toBe("client_category");
+    expect(Number(o.totals.spend)).toBe(200);
+    expect(o.categories).toBeNull();
+    expect(o.reach_month).toBeNull();
+    expect((await campaigns(mehtaUser)).items.map((c) => c.name)).toEqual(["Brand awareness"]);
+    const cats = await asUser(db, mehtaUser, async (tx) => (await one<{ r: { id: string }[] }>(tx, "select public.ad_categories_list($1) as r", [account])).r);
+    expect(cats.map((k) => k.id)).toEqual([category]);
+    const portal = await asUser(db, mehtaUser, async (tx) => (await one<{ r: { agency_sources: { category_id: string; account: { scope: string; app_id: unknown } }[] } }>(tx, "select public.my_portal() as r")).r);
+    expect(portal.agency_sources).toEqual([expect.objectContaining({ category_id: category, account: expect.objectContaining({ scope: "client_category", app_id: null }) })]);
+    // Another client sees nothing of it.
+    await expect(overview(otherUser)).rejects.toThrow(/forbidden/);
+    await expect(summary(otherUser, mehta)).rejects.toThrow(/forbidden/);
+  });
+
+  it("keeps a linked category fixed and refuses taken ones", async () => {
+    await asUser(db, adsMgr, (tx) => tx.query("select public.save_ad_category($1, $2, 'Renamed', 'MH')", [account, category]));
+    expect(await one(db, "select name, match_text from public.ad_categories where id = $1", [category])).toEqual({ name: "Mehta Homes", match_text: "MH" });
+    await expect(asUser(db, adsMgr, (tx) => tx.query("select public.archive_ad_category($1)", [category]))).rejects.toThrow(/category_client/);
+    await expect(link(adsMgr, other, `p_category => '${category}'`)).rejects.toThrow(/category_taken/);
+    const sphCategory = (await one<{ id: string }>(db, "select id from public.ad_categories where ad_account_id = $1 and company_id = $2", [account, sph])).id;
+    await expect(link(adsMgr, other, `p_category => '${sphCategory}'`)).rejects.toThrow(/category_taken/);
+    await expect(link(salesHub, other)).rejects.toThrow(/forbidden/);
+  });
+
+  it("totals both sources per currency, never mixing currencies", async () => {
+    const own = await asUser(db, adsMgr, async (tx) =>
+      (await one<{ id: string }>(tx, "select public.save_ad_account('client', $1, '7654322', '444444', 's', 't') as id", [mehta])).id);
+    await seedAccountData(own, "m");
+    let s = await summary(mehtaUser, mehta);
+    expect(s.sources.map((x) => x.source)).toEqual(["agency", "own"]);
+    expect(s.totals).toHaveLength(1);
+    expect(Number(s.totals[0].spend)).toBe(2700);
+
+    await db.query("update public.ad_accounts set currency = 'USD' where id = $1", [own]);
+    s = await summary(adsMgr, mehta);
+    expect(s.totals.map((t) => [t.currency, Number(t.spend)])).toEqual([["USD", 2500], ["INR", 200]]);
+  });
+
+  it("unlinking keeps the campaigns in the category but ends the client's access", async () => {
+    expect(await link(adsMgr, mehta, "p_category => null")).toBeNull();
+    expect(await one(db, "select ads_client_id from public.ad_categories where id = $1", [category])).toEqual({ ads_client_id: null });
+    expect(await rows(db, "select id from public.ad_campaigns where category_id = $1", [category])).toHaveLength(1);
+    await expect(overview(mehtaUser)).rejects.toThrow(/forbidden/);
+  });
+});
+
 describe("Facebook Lead Ads insights", () => {
   it("counts leads by form, campaign and owner, with spend per lead", async () => {
     await asService(db, async (tx) => {

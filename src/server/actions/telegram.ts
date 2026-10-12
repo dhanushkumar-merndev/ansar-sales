@@ -33,12 +33,24 @@ export async function disconnectTelegram() {
 
 const KIND_VALUES = NOTIFICATION_KINDS.map((k) => k.kind) as [string, ...string[]];
 
-/** Turns one notification type on or off for the signed-in user (the database checks the role). */
+/** Turns one notification type on or off for the signed-in user, in the app or on Telegram (the database checks the role). */
 export async function setNotificationPref(input: unknown) {
-  return runAction(ALL, z.object({ kind: z.enum(KIND_VALUES), enabled: z.boolean() }), input, async (d, { supabase }) => {
-    const { data, error } = await supabase.rpc("set_notification_pref", { p_kind: d.kind, p_enabled: d.enabled });
+  const schema = z.object({ kind: z.enum(KIND_VALUES), enabled: z.boolean(), channel: z.enum(["telegram", "app"]).default("telegram") });
+  return runAction(ALL, schema, input, async (d, { supabase }) => {
+    // Without the channel argument this is the older database's two-argument call (Telegram only).
+    const { data, error } = await supabase.rpc("set_notification_pref",
+      d.channel === "telegram" ? { p_kind: d.kind, p_enabled: d.enabled } : { p_kind: d.kind, p_enabled: d.enabled, p_channel: d.channel });
     if (error) return dbError(error);
     return { ok: true, data: data ?? [] };
+  });
+}
+
+/** Marks the given notifications (or, without ids, all of them) read; returns how many are still unread. */
+export async function markNotificationsRead(input: unknown) {
+  return runAction(ALL, z.object({ ids: z.array(z.uuid()).min(1).max(200).optional() }), input, async (d, { supabase }) => {
+    const { data, error } = await supabase.rpc("mark_notifications_read", d.ids ? { p_ids: d.ids } : {});
+    if (error) return dbError(error);
+    return { ok: true, data: { unread: Number(data ?? 0) } };
   });
 }
 

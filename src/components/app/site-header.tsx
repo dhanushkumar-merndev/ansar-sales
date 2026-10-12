@@ -1,5 +1,8 @@
 "use client";
 
+import { Suspense } from "react";
+import { Bell } from "lucide-react";
+import { NotificationBell } from "@/components/app/notification-bell";
 import { useRealtime } from "@/components/providers/realtime-provider";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
@@ -14,6 +17,10 @@ export function SiteHeader() {
         <SidebarTrigger className="-ml-2 text-muted-foreground hover:bg-white/[0.08] hover:text-foreground" />
       </div>
       <div className="flex items-center gap-2">
+        {/* The bell reads the signed-in profile (streamed by the layout), so it waits in its own boundary. */}
+        <Suspense fallback={<span className="flex size-9 items-center justify-center text-muted-foreground" aria-hidden><Bell className="size-4" /></span>}>
+          <NotificationBell />
+        </Suspense>
         <div
           className="flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-card/70 px-2.5 py-1 text-xs text-muted-foreground shadow-xs"
           role="status"

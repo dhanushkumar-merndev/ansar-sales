@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { Loader2, LogOut } from "lucide-react";
 import { BrandMark, BrandName } from "@/components/app/brand";
-import { AdsDashboard } from "@/components/ads/ads-dashboard";
+import { ClientResults, type ResultSource } from "@/components/ads/client-results";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import type { AdAccount } from "@/lib/ads";
+import type { AdAccount, AgencySource } from "@/lib/ads";
 import { companyLogoUrl } from "@/lib/companies";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/time";
@@ -18,7 +17,18 @@ type Portal = {
   client: { id: string; name: string; business: string | null; status: string; started_at: string };
   agency: { name: string; brand_highlight: string | null; logo_path: string | null };
   accounts: AdAccount[];
+  /** Campaigns the agency runs for the client on its own ad account (one category each). */
+  agency_sources: AgencySource[];
 };
+
+const history = (a: AdAccount) => (a.archived_at ? " · earlier (history)" : "");
+
+function portalSources(p: Portal): ResultSource[] {
+  return [
+    ...(p.agency_sources ?? []).map((s) => ({ accountId: s.account.id, categoryId: s.category_id, label: `Run by ${p.agency.name}${history(s.account)}` })),
+    ...p.accounts.map((a) => ({ accountId: a.id, categoryId: null, label: `Your ad account · ${a.name ?? `act_${a.act_id}`}${history(a)}` })),
+  ];
+}
 
 /** An ads client's own, read-only view of their ad results. */
 export function PortalView() {
@@ -31,10 +41,9 @@ export function PortalView() {
     },
     pollMs: 10 * 60_000,
   });
-  const [accountId, setAccountId] = useState<string | null>(null);
   const [leaving, startLeaving] = useTransition();
   const p = portal.data;
-  const account = p?.accounts.find((a) => a.id === accountId) ?? p?.accounts[0];
+  const sources = p ? portalSources(p) : [];
 
   return (
     <div className="min-h-svh bg-background">
@@ -61,18 +70,10 @@ export function PortalView() {
                   Your Facebook and Instagram ads, updated every hour. Working with {p.agency.name} since {formatDate(p.client.started_at)}.
                 </p>
               </div>
-              {!account ? (
-                <EmptyState title="Your ad account isn't connected yet" description={`${p.agency.name} will connect it shortly. Your results will appear here.`} />
+              {!sources.length ? (
+                <EmptyState title="Your ads aren't set up yet" description={`${p.agency.name} will set them up shortly. Your results will appear here.`} />
               ) : (
-                <div className="space-y-4">
-                  {p.accounts.length > 1 ? (
-                    <Select value={account.id} onValueChange={setAccountId}>
-                      <SelectTrigger className="w-80" aria-label="Ad account"><SelectValue /></SelectTrigger>
-                      <SelectContent>{p.accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name ?? `act_${a.act_id}`}</SelectItem>)}</SelectContent>
-                    </Select>
-                  ) : null}
-                  <AdsDashboard key={account.id} accountId={account.id} canManage={false} />
-                </div>
+                <ClientResults clientId={p.client.id} sources={sources} canManage={false} />
               )}
             </>
           )}

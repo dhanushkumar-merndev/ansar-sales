@@ -3,7 +3,9 @@
 import { z } from "zod";
 import type { TablesInsert } from "@/lib/database.types";
 import { dbError } from "@/lib/errors";
-import { STORAGE_PATH_RE } from "@/lib/library";
+import { LIBRARY_MAX_BYTES, LIBRARY_MIME_TYPES, STORAGE_PATH_RE } from "@/lib/library";
+import { confirmUpload } from "@/lib/storage";
+import { LIBRARY_THUMB_RE } from "@/lib/storage-paths";
 import { runAction } from "@/server/action-utils";
 
 const LEAD_ROLES = ["admin", "sales"] as const satisfies ("admin" | "sales")[];
@@ -54,7 +56,10 @@ export async function setFolderArchived(input: unknown) {
   });
 }
 
-/** Called after the browser uploaded the object; the database verifies the object, folder, size and type. */
+/**
+ * Called after the browser uploaded the object to Tigris: the server checks the object there and
+ * records its real size/type; the database then verifies the folder and that record.
+ */
 export async function registerLibraryFile(input: unknown) {
   const schema = z.object({
     folderId: z.uuid(),
@@ -63,6 +68,8 @@ export async function registerLibraryFile(input: unknown) {
   });
   return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
     if (!d.storagePath.startsWith(`${d.folderId}/`)) return { ok: false, error: "Invalid upload path.", code: "invalid_file" };
+    const problem = await confirmUpload("library", d.storagePath, { mimes: Object.keys(LIBRARY_MIME_TYPES), maxBytes: LIBRARY_MAX_BYTES });
+    if (problem) return dbError({ message: problem });
     const { data, error } = await supabase
       .from("library_files")
       .insert({ folder_id: d.folderId, name: d.name, storage_path: d.storagePath } as FileInsert)
@@ -89,8 +96,10 @@ export async function setFileArchived(input: unknown) {
 
 /** Links a browser-made preview image to a file (once). */
 export async function setLibraryThumbnail(input: unknown) {
-  const schema = z.object({ fileId: z.uuid(), path: z.string().regex(/^[0-9a-f-]{36}\/thumbs\/[0-9a-f-]{36}\.webp$/) });
+  const schema = z.object({ fileId: z.uuid(), path: z.string().regex(LIBRARY_THUMB_RE) });
   return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
+    const problem = await confirmUpload("library", d.path, { mimes: ["image/webp"], maxBytes: 2 * 1024 * 1024 });
+    if (problem) return dbError({ message: problem });
     const { error } = await supabase.rpc("set_library_thumbnail", { p_file_id: d.fileId, p_path: d.path });
     if (error) return dbError(error);
     return { ok: true, data: undefined };

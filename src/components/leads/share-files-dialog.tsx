@@ -173,7 +173,7 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
                         <label className={cn("flex items-center gap-3 px-3 py-2", inLink ? "opacity-60" : "cursor-pointer hover:bg-white/[0.04]")}>
                           <Checkbox checked={checked} disabled={inLink} onCheckedChange={() => toggle(f)} aria-label={inLink ? `${f.name} is already in the link` : undefined} />
                           {thumb ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Storage URL
+                            // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Tigris URL
                             <img src={thumb} alt="" className="size-10 shrink-0 rounded border object-cover object-top" />
                           ) : (
                             <span className="flex size-10 shrink-0 items-center justify-center rounded border bg-muted/40"><Icon className="size-4 text-muted-foreground" /></span>

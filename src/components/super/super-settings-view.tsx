@@ -15,6 +15,7 @@ import { MetaLeadsTab } from "@/components/automation/facebook-leads";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
@@ -24,6 +25,7 @@ import { formatCount } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/time";
 import { switchCompany, type CompanySummary } from "@/server/actions/companies";
+import { setCompanyFeature } from "@/server/actions/features";
 
 const TABS = { companies: "Companies", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", usage: "Usage" } as const;
 type Tab = keyof typeof TABS;
@@ -56,7 +58,45 @@ export function SuperSettingsView() {
 async function fetchCompanies(signal: AbortSignal) {
   const { data, error } = await createClient().rpc("super_list_companies").abortSignal(signal);
   if (error) throw error;
-  return (data ?? []) as CompanySummary[];
+  return (data ?? []) as (CompanySummary & { features?: string[] })[];
+}
+
+/** The Projects module (site visits, timelines, project files, payments) for one company. */
+function ProjectsSwitch({ company, onChanged }: { company: { id: string; name: string; features?: string[] }; onChanged: () => void }) {
+  const [pending, start] = useTransition();
+  const on = (company.features ?? []).includes("projects");
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+      {pending ? <Loader2 className="size-4 animate-spin" /> : (
+        <Checkbox checked={on} aria-label={`Projects module for ${company.name}`} onCheckedChange={(v) => start(async () => {
+          const res = await setCompanyFeature({ companyId: company.id, feature: "projects", enabled: v === true });
+          if (!res.ok) return void toast.error(res.error);
+          toast.success(v === true ? `Projects switched on for ${company.name}` : `Projects switched off for ${company.name}`);
+          onChanged();
+        })} />
+      )}
+      <span className="text-muted-foreground">Projects</span>
+    </label>
+  );
+}
+
+/** Ads and Automation for one company; off where Star Growth Hub runs the company's ads ("no_ads"). */
+function AdsSwitch({ company, onChanged }: { company: { id: string; name: string; features?: string[] }; onChanged: () => void }) {
+  const [pending, start] = useTransition();
+  const on = !(company.features ?? []).includes("no_ads");
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+      {pending ? <Loader2 className="size-4 animate-spin" /> : (
+        <Checkbox checked={on} aria-label={`Ads and automation for ${company.name}`} onCheckedChange={(v) => start(async () => {
+          const res = await setCompanyFeature({ companyId: company.id, feature: "no_ads", enabled: v !== true });
+          if (!res.ok) return void toast.error(res.error);
+          toast.success(v === true ? `Ads and automation switched on for ${company.name}` : `Ads and automation switched off for ${company.name}`);
+          onChanged();
+        })} />
+      )}
+      <span className="text-muted-foreground">Ads &amp; automation</span>
+    </label>
+  );
 }
 
 function CompaniesTab() {
@@ -100,6 +140,7 @@ function CompaniesTab() {
               <TableHead className="text-right">Active users</TableHead>
               <TableHead className="text-right">Admins</TableHead>
               <TableHead className="text-right">Leads</TableHead>
+              <TableHead className="hidden sm:table-cell">Modules</TableHead>
               <TableHead className="hidden md:table-cell">Created</TableHead>
               <TableHead className="w-0" />
             </TableRow>
@@ -119,6 +160,12 @@ function CompaniesTab() {
                   {c.admins === 0 ? <span className="text-amber-400">None yet</span> : formatCount(c.admins)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{formatCount(c.leads)}</TableCell>
+                <TableCell className="hidden sm:table-cell">
+                  <div className="flex flex-col gap-1">
+                    <ProjectsSwitch company={c} onChanged={() => { void companies.refetch(); if (c.id === me.company.id) window.location.reload(); }} />
+                    <AdsSwitch company={c} onChanged={() => { void companies.refetch(); if (c.id === me.company.id) window.location.reload(); }} />
+                  </div>
+                </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(c.created_at)}</TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">

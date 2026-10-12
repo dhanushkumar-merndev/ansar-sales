@@ -2,7 +2,8 @@
 
 // Read queries run in the browser as the signed-in user: RLS decides what is returned.
 // Every list is server-filtered, server-paginated and abortable.
-import type { ExpenseCategory, LeadOutcome, PaymentMode, ReminderState } from "@/lib/constants";
+import type { AppNotificationPage } from "@/lib/app-notifications";
+import type { AssignableRole, ExpenseCategory, LeadOutcome, PaymentMode, ReminderState } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
@@ -81,7 +82,7 @@ export async function fetchLead(id: string, signal: AbortSignal) {
     .select(
       "id, name, phone, phone_normalized, email, status, stage_id, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
         "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
-        "stars:lead_stars(pinned_at)", // RLS returns only the signed-in user's own star
+        "stars:lead_stars(pinned_at), handoff_at, handoff_note, projects(id, code)", // RLS: only the user's own star; projects they may see
     )
     .eq("id", id)
     .abortSignal(signal)
@@ -96,6 +97,9 @@ export type LeadDetail = {
   version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
   niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
   stars: { pinned_at: string | null }[];
+  /** Projects module: handed to admins, and the project made from it (when visible to this user). */
+  handoff_at: string | null; handoff_note: string | null;
+  projects: { id: string; code: string }[] | { id: string; code: string } | null;
 };
 
 export type LeadFollowUp = {
@@ -175,7 +179,7 @@ export async function fetchUsers(p: { q: string; role: string | null; page: numb
   const { data, error } = await sb()
     .rpc("admin_list_users", {
       p_search: cleanSearch(p.q) || undefined,
-      p_role: (p.role as "admin" | "sales" | "account" | null) ?? undefined,
+      p_role: (p.role as AssignableRole | null) ?? undefined,
       p_limit: p.pageSize,
       p_offset: (p.page - 1) * p.pageSize,
     })
@@ -281,11 +285,24 @@ export async function fetchTelegramStatus(signal: AbortSignal) {
   return data;
 }
 
-/** Notification types the signed-in user switched off (RLS: own row only). */
-export async function fetchNotificationSettings(signal: AbortSignal): Promise<string[]> {
-  const { data, error } = await sb().from("notification_settings").select("disabled_kinds").abortSignal(signal).maybeSingle();
+/** Notification types the signed-in user switched off, per channel (RLS: own row only). */
+export async function fetchNotificationSettings(signal: AbortSignal): Promise<{ telegram: string[]; app: string[] }> {
+  const { data, error } = await sb().from("notification_settings").select("*").abortSignal(signal).maybeSingle();
   if (error) throw error;
-  return data?.disabled_kinds ?? [];
+  const row = data as { disabled_kinds?: string[]; muted_app_kinds?: string[] } | null;
+  // muted_app_kinds arrives with migration 20261008001600; before that the bell has no switches of its own.
+  return { telegram: row?.disabled_kinds ?? [], app: row?.muted_app_kinds ?? [] };
+}
+
+/** The bell: the signed-in person's notifications, newest first, with the unread count. */
+export async function fetchMyNotifications(p: { unread: boolean; page: number; pageSize: number }, signal: AbortSignal): Promise<AppNotificationPage> {
+  const { data, error } = await sb().rpc("my_notifications", { p_unread_only: p.unread, p_limit: p.pageSize, p_offset: (p.page - 1) * p.pageSize }).abortSignal(signal);
+  if (error) {
+    // Not applied yet (migration 20261008001600): an empty bell rather than an error everywhere.
+    if (error.code === "PGRST202") return { items: [], total: 0, unread: 0 };
+    throw error;
+  }
+  return data as unknown as AppNotificationPage;
 }
 
 export async function fetchDashboard<T>(fn: "dashboard_admin" | "dashboard_sales" | "dashboard_finance", arg: number | { from: string; to: string }, signal: AbortSignal): Promise<T> {
@@ -332,4 +349,12 @@ export async function fetchItemSuggestions(kind: "expense" | "capital", category
     if (!seen.has(label.toLowerCase())) seen.set(label.toLowerCase(), label);
   }
   return [...seen.values()].slice(0, 30);
+}
+
+/** Whether another live lead of this company has the phone (E.164). One indexed lookup; never reveals a lead the user can't open. */
+export async function fetchDuplicatePhone(e164: string, excludeLeadId: string | undefined, signal: AbortSignal) {
+  const { data, error } = await sb().rpc("check_duplicate_phone", { p_phone_normalized: e164, p_exclude_lead_id: excludeLeadId }).abortSignal(signal);
+  if (error) throw error;
+  const r = data as { duplicate: boolean; visible_lead_id?: string | null };
+  return { duplicate: r.duplicate, visibleLeadId: r.visible_lead_id ?? null };
 }

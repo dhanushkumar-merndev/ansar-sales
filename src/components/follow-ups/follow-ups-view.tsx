@@ -85,7 +85,7 @@ export function FollowUpsView() {
           className="w-full sm:w-auto shrink-0"
         />
         {isAdmin ? <StaffSelect value={query.assignee} onChange={(v) => set({ assignee: v })} allowAny className="w-full sm:w-[190px]" /> : null}
-        {query.view === "starred" && data ? <PinnedCount count={data.pinnedCount} /> : null}
+        {data && data.pinnedCount > 0 ? <PinnedCount count={data.pinnedCount} /> : null}
         <FetchingIndicator show={isFetching && !isInitialLoading} />
       </div>
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
@@ -95,7 +95,7 @@ export function FollowUpsView() {
         />
       ) : (
         <div className={cn(isStale && "opacity-60")}>
-          <FollowUpList items={data.items} showAssignee={isAdmin} showPin={query.view === "starred"} onChanged={refetch} />
+          <FollowUpList items={data.items} showAssignee={isAdmin} onChanged={refetch} />
           <DataPagination page={query.page} pageSize={query.pageSize} total={data.total} disabled={isFetching}
             onPageChange={(p) => set({ page: String(p) })} onPageSizeChange={(s) => set({ pageSize: String(s) })} />
         </div>

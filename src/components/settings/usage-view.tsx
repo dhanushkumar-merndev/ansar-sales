@@ -33,7 +33,7 @@ export function UsageView() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Compared with the Supabase Free plan: 1 GB file storage and 500 MB database.</p>
+        <p className="text-sm text-muted-foreground">Compared with the free allowances: 5 GB file storage on Tigris and a 500 MB Supabase database.</p>
         <FetchingIndicator show={usage.isFetching && !usage.isInitialLoading} />
       </div>
 
@@ -43,7 +43,7 @@ export function UsageView() {
           title="File storage"
           used={u ? Number(u.storage_bytes) : null}
           limit={FREE_PLAN_LIMITS.storageBytes}
-          hint={u ? `${formatCount(Number(u.storage_objects))} files in Supabase Storage` : ""}
+          hint={u ? `${formatCount(Number(u.storage_objects))} files in Tigris storage` : ""}
           warning="Almost full. Delete archived files below to free space."
         />
         <Meter
@@ -198,7 +198,7 @@ function FreeUpSpace({ leftover, onChanged }: { leftover: { files: number; bytes
                       <TableCell className="max-w-[18rem]">
                         <div className="flex items-center gap-2.5">
                         {f.thumb_path && thumbs.data?.[f.thumb_path] ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Storage URL
+                          // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Tigris URL
                           <img src={thumbs.data[f.thumb_path]} alt="" className="size-9 shrink-0 rounded border object-cover object-top" />
                         ) : (
                           <span className="flex size-9 shrink-0 items-center justify-center rounded border bg-muted/40"><FileText className="size-4 text-muted-foreground" /></span>

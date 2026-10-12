@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
+import { asService, asUser, createDb, createLead, createUser, one, recordObject, rows, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string, account: string;
@@ -8,13 +8,9 @@ let folder: string;
 let pdf: string, png: string;
 let leadA: string, leadB: string;
 
-/** Simulates a Storage upload (the object row Supabase Storage writes after the upload). */
-async function upload(userId: string, folderId: string, ext: string, mimetype: string, size = 1234) {
-  const path = `${folderId}/${randomUUID()}.${ext}`;
-  await asUser(db, userId, (tx) =>
-    tx.query("insert into storage.objects (bucket_id, name, owner, metadata) values ('library', $1, $2, $3)", [path, userId, { size, mimetype }]),
-  );
-  return path;
+/** Simulates an upload to Tigris, confirmed by the server (it authorized the folder first). */
+async function upload(_userId: string, folderId: string, ext: string, mimetype: string, size = 1234) {
+  return recordObject(db, `${folderId}/${randomUUID()}.${ext}`, size, mimetype);
 }
 
 async function register(userId: string, folderId: string, path: string, name = "Brochure.pdf") {
@@ -67,15 +63,28 @@ describe("library", () => {
     await expect(register(salesA, folder, svg)).rejects.toThrow(/invalid_file_type/);
   });
 
-  it("only allows uploads into an active folder, by lead users", async () => {
-    await expect(upload(salesA, randomUUID(), "pdf", "application/pdf")).rejects.toThrow(/row-level security/);
-    await expect(upload(account, folder, "pdf", "application/pdf")).rejects.toThrow(/row-level security/);
+  it("registers only uploads the server confirmed, never pending or unknown ones", async () => {
+    await expect(register(salesA, folder, `${folder}/${randomUUID()}.pdf`)).rejects.toThrow(/file_not_uploaded/);
+    const pending = await recordObject(db, `${folder}/${randomUUID()}.pdf`, 0, "", { pending: true });
+    await expect(register(salesA, folder, pending)).rejects.toThrow(/file_not_uploaded/);
+    // A confirmed upload into another folder can't be registered here.
+    const other = await upload(salesA, randomUUID(), "pdf", "application/pdf");
+    await expect(register(salesA, folder, other)).rejects.toThrow(/invalid_file/);
+  });
+
+  it("keeps the object ledger away from users: no reads, no writes, no ledger functions", async () => {
+    for (const user of [salesA, admin, account, null]) {
+      await expect(asUser(db, user, (tx) => tx.query("select * from private.storage_objects"))).rejects.toThrow(/permission denied/);
+      await expect(asUser(db, user, (tx) => tx.query("select public.storage_record_object('library', $1, 10, 'application/pdf')", [`${folder}/${randomUUID()}.pdf`])))
+        .rejects.toThrow(/permission denied/);
+      await expect(asUser(db, user, (tx) => tx.query("select public.storage_forget_objects('library', array[$1])", [`${folder}/x.pdf`])))
+        .rejects.toThrow(/permission denied/);
+    }
   });
 
   it("hides the library from account users and lets only admin rename or archive", async () => {
     expect(await asUser(db, account, (tx) => rows(tx, "select id from public.library_folders"))).toHaveLength(0);
     expect(await asUser(db, account, (tx) => rows(tx, "select id from public.library_files"))).toHaveLength(0);
-    expect(await asUser(db, account, (tx) => rows(tx, "select id from storage.objects"))).toHaveLength(0);
     const r = await asUser(db, salesA, (tx) => tx.query("update public.library_files set archived_at = now() where id = $1", [pdf]));
     expect(r.affectedRows).toBe(0);
     await asUser(db, admin, (tx) => tx.query("update public.library_folders set name = 'Sales brochures' where id = $1", [folder]));
@@ -209,11 +218,13 @@ describe("thumbnails", () => {
     const file = await register(salesA, folder, await upload(salesA, folder, "pdf", "application/pdf"), "Catalog.pdf");
     const thumbPath = `${folder}/thumbs/${randomUUID()}.webp`;
     await expect(setThumb(salesA, file, thumbPath)).rejects.toThrow(/file_not_uploaded/);
-    await asUser(db, salesA, (tx) => tx.query("insert into storage.objects (bucket_id, name, metadata) values ('library', $1, $2)", [thumbPath, { size: 900, mimetype: "image/webp" }]));
+    await recordObject(db, thumbPath, 0, "", { pending: true });
+    await expect(setThumb(salesA, file, thumbPath)).rejects.toThrow(/file_not_uploaded/);
+    await recordObject(db, thumbPath, 900, "image/webp");
     await expect(setThumb(account, file, thumbPath)).rejects.toThrow(/forbidden/);
     await expect(setThumb(salesA, file, `${randomUUID()}/thumbs/${randomUUID()}.webp`)).rejects.toThrow(/invalid_file/);
     const png = `${folder}/thumbs/${randomUUID()}.webp`;
-    await asUser(db, salesA, (tx) => tx.query("insert into storage.objects (bucket_id, name, metadata) values ('library', $1, $2)", [png, { size: 900, mimetype: "image/png" }]));
+    await recordObject(db, png, 900, "image/png");
     await expect(setThumb(salesA, file, png)).rejects.toThrow(/invalid_file_type/);
 
     await setThumb(salesB, file, thumbPath);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtime } from "@/components/providers/realtime-provider";
+import { useOptionalRealtime } from "@/components/providers/realtime-provider";
 import { REALTIME_DEBOUNCE_MS } from "@/lib/constants";
 import { friendlyReadError } from "@/lib/errors";
 import { createRequestGate, isAbortError } from "@/lib/request-gate";
@@ -36,7 +36,8 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
   const rerun = useRef(false);
   const lastRun = useRef(0);
   const runRef = useRef<(reason: "key" | "event") => Promise<void>>(async () => {});
-  const { subscribe } = useRealtime();
+  // Pages outside the staff app (the client portal) have no provider: polling and focus refetch still apply.
+  const subscribe = useOptionalRealtime()?.subscribe;
 
   useEffect(() => {
     fetcherRef.current = fetcher;
@@ -97,7 +98,7 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
   // Realtime: debounce bursts; refetch the current server page (filters/page preserved).
   const tablesKey = tables.join(",");
   useEffect(() => {
-    if (!enabled || !tablesKey) return;
+    if (!enabled || !tablesKey || !subscribe) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = subscribe(tablesKey.split(","), () => {
       clearTimeout(timer);
@@ -132,6 +133,9 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
     return () => g.cancel();
   }, []);
 
+  // Stable identity: views memoize on it (e.g. table columns), and a new function each render would remount their cells.
+  const refetch = useCallback(() => run("event"), [run]);
+
   return {
     data,
     error,
@@ -139,6 +143,6 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
     /** True until the first result for the current query identity has arrived. */
     isStale: dataKey !== queryKey,
     isInitialLoading: data === undefined && !error,
-    refetch: () => run("event"),
+    refetch,
   };
 }

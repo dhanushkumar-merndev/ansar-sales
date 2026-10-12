@@ -46,13 +46,17 @@ export function AdAccountForm({ kind, ownerId, account, onChanged, leadAppAvaila
   const [steps, setSteps] = useState<ConnectStep[] | null>(null);
   const [saving, startSave] = useTransition();
   const [testing, startTest] = useTransition();
+  // Connect & test checks the saved account, so it's offered only when nothing is waiting to be saved.
+  const [edited, setEdited] = useState(false);
+  const dirty = !live || edited;
+  const edit = <T,>(set: (v: T) => void) => (v: T) => { set(v); setEdited(true); };
 
   const save = () => startSave(async () => {
     const r = await saveAdAccount({
       kind, ownerId, actId, appId: useLeadApp ? undefined : appId, appSecret, accessToken: token, useLeadApp,
     });
     if (!r.ok) { toast.error(r.error); return; }
-    setAppSecret(""); setToken("");
+    setAppSecret(""); setToken(""); setSteps(null); setEdited(false);
     toast.success("Saved. Now press Connect & test.");
     onChanged();
   });
@@ -71,12 +75,12 @@ export function AdAccountForm({ kind, ownerId, account, onChanged, leadAppAvaila
       <FieldGroup className="gap-4">
         <Field>
           <FieldLabel htmlFor={`act-${ownerId}`}>Ad account ID</FieldLabel>
-          <Input id={`act-${ownerId}`} value={actId} onChange={(e) => setActId(e.target.value)} placeholder="act_1234567890 or 1234567890" />
+          <Input id={`act-${ownerId}`} value={actId} onChange={(e) => edit(setActId)(e.target.value)} placeholder="act_1234567890 or 1234567890" />
           <FieldDescription>In Meta Ads Manager, the number in the account picker (also in the URL as act=…).</FieldDescription>
         </Field>
         {leadAppAvailable ? (
           <Label className="flex items-start gap-2 font-normal">
-            <Checkbox checked={useLeadApp} onCheckedChange={(v) => setUseLeadApp(v === true)} className="mt-0.5" />
+            <Checkbox checked={useLeadApp} onCheckedChange={(v) => edit(setUseLeadApp)(v === true)} className="mt-0.5" />
             <span>Use the same Meta app and token as Facebook Lead Ads <span className="block text-xs text-muted-foreground">The token must also have ads_read and the ad account assigned.</span></span>
           </Label>
         ) : null}
@@ -84,16 +88,16 @@ export function AdAccountForm({ kind, ownerId, account, onChanged, leadAppAvaila
           <>
             <Field>
               <FieldLabel htmlFor={`app-${ownerId}`}>App ID</FieldLabel>
-              <Input id={`app-${ownerId}`} inputMode="numeric" value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="e.g. 1234567890123456" />
+              <Input id={`app-${ownerId}`} inputMode="numeric" value={appId} onChange={(e) => edit(setAppId)(e.target.value)} placeholder="e.g. 1234567890123456" />
             </Field>
             <Field>
               <FieldLabel htmlFor={`secret-${ownerId}`}>App secret</FieldLabel>
-              <Input id={`secret-${ownerId}`} type="password" autoComplete="off" value={appSecret} onChange={(e) => setAppSecret(e.target.value)}
+              <Input id={`secret-${ownerId}`} type="password" autoComplete="off" value={appSecret} onChange={(e) => edit(setAppSecret)(e.target.value)}
                 placeholder={live ? "•••••••• saved (type to replace)" : "From App settings → Basic"} />
             </Field>
             <Field>
               <FieldLabel htmlFor={`token-${ownerId}`}>System user access token</FieldLabel>
-              <Input id={`token-${ownerId}`} type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)}
+              <Input id={`token-${ownerId}`} type="password" autoComplete="off" value={token} onChange={(e) => edit(setToken)(e.target.value)}
                 placeholder={live ? "•••••••• saved (type to replace)" : "Token that never expires, with ads_read"} />
               <FieldDescription>Stored encrypted in Supabase Vault and never shown again, not even to admins.</FieldDescription>
             </Field>
@@ -102,7 +106,9 @@ export function AdAccountForm({ kind, ownerId, account, onChanged, leadAppAvaila
       </FieldGroup>
       <div className="flex flex-wrap gap-2">
         <Button onClick={save} disabled={saving || !actId || (!useLeadApp && !appId)}>{saving ? <Loader2 className="animate-spin" /> : <Save />} Save</Button>
-        <Button variant="outline" onClick={test} disabled={testing || !live}>{testing ? <Loader2 className="animate-spin" /> : <PlugZap />} Connect &amp; test</Button>
+        {!dirty ? (
+          <Button variant="outline" onClick={test} disabled={testing}>{testing ? <Loader2 className="animate-spin" /> : <PlugZap />} Connect &amp; test</Button>
+        ) : null}
         {live ? (
           <ConfirmDialog
             trigger={<Button variant="ghost"><Unplug /> Disconnect</Button>}
@@ -120,7 +126,8 @@ export function AdAccountForm({ kind, ownerId, account, onChanged, leadAppAvaila
           <Link href="/help/meta-lead-ads#ads" target="_blank">Setup guide <ExternalLink /></Link>
         </Button>
       </div>
-      {steps ? (
+      {live && dirty ? <p className="text-xs text-muted-foreground">Save your changes to test them. Connect &amp; test checks what is saved.</p> : null}
+      {dirty ? null : steps ? (
         <ol className="space-y-1.5 rounded-lg border p-3 text-sm">
           {steps.map((s) => (
             <li key={s.label} className="flex gap-2">

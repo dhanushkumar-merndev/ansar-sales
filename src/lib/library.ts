@@ -1,5 +1,5 @@
 // Shared by the browser upload flow, server actions and the public share page.
-export const LIBRARY_BUCKET = "library";
+import { LIBRARY_FILE_RE } from "@/lib/storage-paths";
 
 export const LIBRARY_MIME_TYPES = {
   "application/pdf": "pdf",
@@ -23,7 +23,7 @@ export const isLibraryMime = (t: string): t is LibraryMimeType => t in LIBRARY_M
 export const isImageMime = (t: string) => t.startsWith("image/");
 
 /** Storage object path: "<folderId>/<uuid>.<ext>" (validated again by the database). */
-export const STORAGE_PATH_RE = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(pdf|png|jpg|jpeg|webp)$/;
+export const STORAGE_PATH_RE = LIBRARY_FILE_RE;
 
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;

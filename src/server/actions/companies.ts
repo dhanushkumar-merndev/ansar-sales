@@ -1,8 +1,9 @@
 "use server";
 
 import { z } from "zod";
-import { COMPANY_LOGO_BUCKET } from "@/lib/companies";
 import { dbError } from "@/lib/errors";
+import { confirmUpload, deleteObjects, forgetObjects } from "@/lib/storage";
+import { LOGO_MAX_BYTES, LOGO_MIME_TYPES, LOGO_PATH_RE } from "@/lib/storage-paths";
 import { runAction } from "@/server/action-utils";
 
 const nameSchema = z.string().trim().min(1, "Enter a name").max(80);
@@ -34,11 +35,16 @@ export async function updateCompany(input: unknown) {
     name: nameSchema.optional(),
     // "" clears the highlight word.
     brandHighlight: z.string().trim().max(40).optional(),
-    logoPath: z.string().max(300).optional(),
+    logoPath: z.string().regex(LOGO_PATH_RE).optional(),
     clearLogo: z.boolean().optional(),
   });
   return runAction("super_admin", schema, input, async (d, { supabase }) => {
     const { data: before } = await supabase.from("companies").select("logo_path").eq("id", d.id).maybeSingle();
+    if (d.logoPath && d.logoPath !== before?.logo_path) {
+      if (!d.logoPath.startsWith(`${d.id}/`)) return dbError({ message: "invalid_file" });
+      const problem = await confirmUpload("logos", d.logoPath, { mimes: Object.keys(LOGO_MIME_TYPES), maxBytes: LOGO_MAX_BYTES });
+      if (problem) return dbError({ message: problem });
+    }
     const { error } = await supabase.rpc("update_company", {
       p_company_id: d.id,
       p_name: d.name,
@@ -49,7 +55,11 @@ export async function updateCompany(input: unknown) {
     if (error) return dbError(error);
     // The old logo file is no longer referenced; removing it is best-effort.
     if (before?.logo_path && (d.clearLogo || (d.logoPath && d.logoPath !== before.logo_path))) {
-      await supabase.storage.from(COMPANY_LOGO_BUCKET).remove([before.logo_path]);
+      try {
+        if (!(await deleteObjects("logos", [before.logo_path])).length) await forgetObjects("logos", [before.logo_path]);
+      } catch {
+        // ignored
+      }
     }
     return { ok: true, data: undefined };
   });

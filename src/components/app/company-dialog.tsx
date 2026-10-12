@@ -8,12 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { COMPANY_LOGO_BUCKET, companyLogoUrl } from "@/lib/companies";
-import { createClient } from "@/lib/supabase/client";
+import { companyLogoUrl } from "@/lib/companies";
+import { isLogoMime, LOGO_MAX_BYTES } from "@/lib/storage-paths";
+import { putObject } from "@/lib/thumbnail";
 import { createCompany, updateCompany } from "@/server/actions/companies";
-
-const LOGO_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
-const MAX_LOGO_BYTES = 1024 * 1024;
+import { createLogoUpload } from "@/server/actions/storage";
 
 export type EditableCompany = { id: string; name: string; brand_highlight: string | null; logo_path: string | null };
 
@@ -46,16 +45,16 @@ function CompanyForm({ company, onDone }: { company: EditableCompany | null; onD
 
   async function uploadLogo(file: File) {
     if (!company) return;
-    const ext = LOGO_TYPES[file.type];
-    if (!ext) return setError("Use a PNG, JPEG or WEBP image.");
-    if (file.size > MAX_LOGO_BYTES) return setError("The logo can be at most 1 MB.");
+    if (!isLogoMime(file.type)) return setError("Use a PNG, JPEG or WEBP image.");
+    if (file.size > LOGO_MAX_BYTES) return setError("The logo can be at most 1 MB.");
     setError(null);
     setUploading(true);
-    const path = `${company.id}/${crypto.randomUUID()}.${ext}`;
-    const { error: uploadError } = await createClient().storage.from(COMPANY_LOGO_BUCKET).upload(path, file, { contentType: file.type });
+    const target = await createLogoUpload({ companyId: company.id, mime: file.type, size: file.size });
+    const uploaded = target.ok && (await putObject(target.data.url, file, file.type));
     setUploading(false);
-    if (uploadError) return setError("Couldn't upload the logo. Please retry.");
-    setLogoPath(path);
+    if (!target.ok) return setError(target.error);
+    if (!uploaded) return setError("Couldn't upload the logo. Please retry.");
+    setLogoPath(target.data.path);
   }
 
   function submit(e: React.FormEvent) {

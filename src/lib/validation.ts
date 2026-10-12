@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PAYMENT_MODES, ROLES } from "@/lib/constants";
+import { PAYMENT_MODES, ASSIGNABLE_ROLES } from "@/lib/constants";
 import { normalizePhone } from "@/lib/phone";
 
 export const usernameSchema = z
@@ -113,17 +113,22 @@ export const capitalSchema = z.object({
   description: optionalText(500),
 }).refine(itemForQuantity, { path: ["item"], message: "Name the item for this quantity" });
 
+/** "Also works as" roles: unique, never the main role (the database drops it too). */
+const extraRolesSchema = z.array(z.enum(ASSIGNABLE_ROLES)).max(6).transform((r) => [...new Set(r)]);
+
 export const createUserSchema = z.object({
   username: usernameSchema,
   displayName: z.string().trim().min(1, "Display name is required").max(80),
-  role: z.enum(ROLES),
+  role: z.enum(ASSIGNABLE_ROLES),
+  extraRoles: extraRolesSchema.default([]),
   password: passwordSchema,
 });
 
 export const updateUserSchema = z.object({
   id: z.uuid(),
   displayName: z.string().trim().min(1).max(80).optional(),
-  role: z.enum(ROLES).optional(),
+  role: z.enum(ASSIGNABLE_ROLES).optional(),
+  extraRoles: extraRolesSchema.optional(),
   isActive: z.boolean().optional(),
 });
 

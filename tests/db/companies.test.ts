@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createCompany, createDb, createLead, createUser, defaultCompany, one, rows, type Db } from "./harness";
+import { asService, asUser, createCompany, createDb, createLead, createUser, defaultCompany, one, recordObject, rows, type Db } from "./harness";
 
 let db: Db;
 let companyA: string, companyB: string;
@@ -66,10 +66,10 @@ describe("company isolation", () => {
     expect(await asUser(db, adminB, (tx) => rows(tx, "select id from public.library_folders where id = $1", [folderA]))).toHaveLength(0);
 
     const path = `${folderA}/${randomUUID()}.pdf`;
-    await asUser(db, salesA, (tx) => tx.query("insert into storage.objects (bucket_id, name, metadata) values ('library', $1, $2)", [path, { size: 10, mimetype: "application/pdf" }]));
+    await recordObject(db, path, 10, "application/pdf");
     const fileA = await asUser(db, salesA, async (tx) =>
       (await one<{ id: string }>(tx, "insert into public.library_files (folder_id, name, storage_path) values ($1, 'A.pdf', $2) returning id", [folderA, path])).id);
-    expect(await asUser(db, salesB, (tx) => rows(tx, "select name from storage.objects where name = $1", [path]))).toHaveLength(0);
+    expect(await asUser(db, salesB, (tx) => rows(tx, "select id from public.library_files where storage_path = $1", [path]))).toHaveLength(0);
     await expect(asUser(db, salesB, (tx) =>
       tx.query("insert into public.library_files (folder_id, name, storage_path) values ($1, 'B.pdf', $2)", [folderA, `${folderA}/${randomUUID()}.pdf`]))).rejects.toThrow();
 

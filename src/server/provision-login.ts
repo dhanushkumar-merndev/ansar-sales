@@ -12,7 +12,7 @@ export const BAN_FOREVER = "876000h";
  * on_auth_user_created trigger from the app_metadata below; a missing profile rolls back.
  */
 export async function provisionLogin(
-  d: { username: string; displayName: string; password: string; role: DbRole; companyId?: string; adsClientId?: string; createdBy: string },
+  d: { username: string; displayName: string; password: string; role: DbRole; extraRoles?: DbRole[]; companyId?: string; adsClientId?: string; projectId?: string; createdBy: string },
 ): Promise<ActionResult<{ id: string }>> {
   // Usernames are unique across all companies, so the check reads beyond the caller's own users.
   const admin = createAdminClient();
@@ -26,7 +26,9 @@ export async function provisionLogin(
     app_metadata: {
       crm_username: d.username, crm_display_name: d.displayName, crm_role: d.role, crm_created_by: d.createdBy,
       ...(d.companyId ? { crm_company_id: d.companyId } : {}),
+      ...(d.extraRoles?.length ? { crm_extra_roles: d.extraRoles } : {}),
       ...(d.adsClientId ? { crm_ads_client_id: d.adsClientId } : {}),
+      ...(d.projectId ? { crm_project_id: d.projectId } : {}),
     },
   });
   if (error || !data.user) {

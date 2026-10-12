@@ -1,8 +1,9 @@
-// Supabase Free plan limits, checked on 2026-10-05 (https://supabase.com/pricing).
+// Free allowances: files on Tigris (5 GB standard storage, free egress; https://www.tigrisdata.com/pricing,
+// checked 2026-10-07), database on Supabase Free (500 MB; https://supabase.com/pricing, checked 2026-10-05).
 // Recheck before relying on them; plans and quotas change.
 export const FREE_PLAN_LIMITS = {
-  storageBytes: 1024 ** 3, // 1 GB file storage
-  databaseBytes: 500 * 1024 ** 2, // 500 MB database
+  storageBytes: 5 * 1024 ** 3, // 5 GB Tigris file storage
+  databaseBytes: 500 * 1024 ** 2, // 500 MB Supabase database
 } as const;
 
 export const USAGE_WARN_PERCENT = 80;

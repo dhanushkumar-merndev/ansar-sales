@@ -7,7 +7,11 @@ declare
   demo_leads uuid[];
   kept integer;
 begin
-  select coalesce(array_agg(id), '{}') into demo from public.profiles where username like 'demo\_%';
+  -- The Star Gardens demo has its own clean script (it also removes the placeholder files).
+  if to_regclass('public.projects') is not null and exists (select 1 from public.projects where code like 'SG-DEMO-%') then
+    raise exception 'Remove the Star Gardens demo first: pnpm seed:star-gardens --clean';
+  end if;
+  select coalesce(array_agg(id), '{}') into demo from public.profiles where username like 'demo\_%' and username not like 'demo\_sg\_%';
   select coalesce(array_agg(id), '{}') into demo_leads from public.leads where created_by = any(demo);
 
   -- Leads: shares (files cascade), activities, follow-ups (reminders and stars cascade), stars, then the leads.

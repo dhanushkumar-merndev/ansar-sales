@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { asService, asUser, createDb, createUser, one, type Db } from "./harness";
+import { asService, asUser, createDb, createUser, one, recordObject, type Db } from "./harness";
 
 type Item = { kind: "folder" | "file"; id: string; name: string; position: number; file_count?: number; subfolder_count?: number };
 type Page = { items: Item[]; total: number };
@@ -14,13 +14,12 @@ async function folder(userId: string, name: string, parentId: string | null = nu
     (await one<{ id: string }>(tx, "insert into public.library_folders (name, parent_id) values ($1, $2) returning id", [name, parentId])).id);
 }
 
-/** Simulates a Storage upload, then registers the file row. */
+/** Simulates a confirmed Tigris upload, then registers the file row. */
 async function file(userId: string, folderId: string, name: string) {
-  const path = `${folderId}/${randomUUID()}.pdf`;
-  return asUser(db, userId, async (tx) => {
-    await tx.query("insert into storage.objects (bucket_id, name, owner, metadata) values ('library', $1, $2, $3)", [path, userId, { size: 100, mimetype: "application/pdf" }]);
-    return (await one<{ id: string }>(tx, "insert into public.library_files (folder_id, name, storage_path) values ($1, $2, $3) returning id", [folderId, name, path])).id;
-  });
+  const path = await recordObject(db, `${folderId}/${randomUUID()}.pdf`, 100, "application/pdf");
+  return asUser(db, userId, async (tx) =>
+    (await one<{ id: string }>(tx, "insert into public.library_files (folder_id, name, storage_path) values ($1, $2, $3) returning id", [folderId, name, path])).id,
+  );
 }
 
 async function list(userId: string, args: Record<string, unknown>): Promise<Page> {

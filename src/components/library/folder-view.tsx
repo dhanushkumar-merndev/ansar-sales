@@ -18,7 +18,7 @@ import {
   LayoutGrid,
   List,
   Loader2,
-  MoreHorizontal,
+  MoreVertical,
   Search,
   SquareCheck,
   Upload,
@@ -712,7 +712,7 @@ function FileCard({
               className="size-7 text-muted-foreground hover:text-foreground hover:bg-white/10"
               aria-label={`Actions for ${file.name}`}
             >
-              <MoreHorizontal className="size-4" />
+              <MoreVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
@@ -827,7 +827,7 @@ function FileListItem({
               size="icon-sm"
               className="size-7 text-muted-foreground hover:text-foreground"
             >
-              <MoreHorizontal className="size-3.5" />
+              <MoreVertical className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-36">

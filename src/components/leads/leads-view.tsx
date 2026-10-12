@@ -124,7 +124,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         cell: ({ row: { original: l } }) => (
           <div className="flex items-center">
             <StarButton id={l.id} starred={l.starred} action={toggleLeadStar} onChanged={refetch} />
-            {query.starred ? <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} /> : null}
+            <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />
           </div>
         ),
       },
@@ -135,7 +135,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Link href={`/leads/${l.id}`} className="font-medium hover:underline">{l.name}</Link>
-              {query.starred && l.pinned_at ? <PinnedBadge /> : null}
+              {l.pinned_at ? <PinnedBadge /> : null}
             </div>
             <div className="truncate text-xs text-muted-foreground">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
           </div>
@@ -165,7 +165,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
     );
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, query.sort, query.dir, query.starred, refetch]);
+  }, [isAdmin, query.sort, query.dir, refetch]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, manualSorting: true, getRowId: (r) => r.id });
@@ -230,23 +230,19 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         }
       />
 
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <Tabs value={query.starred ? "starred" : "all"} onValueChange={(v) => set({ tab: v === "starred" ? "starred" : null })}>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Tabs value={query.starred ? "starred" : "all"} onValueChange={(v) => set({ tab: v === "starred" ? "starred" : null })} className="shrink-0">
           <TabsList>
             <TabsTrigger value="all">All leads</TabsTrigger>
             <TabsTrigger value="starred">Starred</TabsTrigger>
           </TabsList>
         </Tabs>
-        {query.starred && data ? <PinnedCount count={data.pinnedCount} /> : null}
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:w-64 lg:w-72">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative w-full min-w-0 flex-1 sm:min-w-[200px]">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
             placeholder="Search name, phone or email"
-            className="pl-8"
+            className="h-9 rounded-xl border-white/[0.1] bg-card/60 pl-9"
             value={searchInput}
             maxLength={100}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -273,9 +269,9 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
             <SelectItem value="updated_at:desc">Recently updated</SelectItem>
           </SelectContent>
         </Select>
+        {data && data.pinnedCount > 0 ? <PinnedCount count={data.pinnedCount} /> : null}
+        <FetchingIndicator show={isFetching && !isInitialLoading} />
       </div>
-
-      <div className="mb-2 flex h-5 items-center justify-end"><FetchingIndicator show={isFetching && !isInitialLoading} /></div>
 
       {error && !data ? (
         <ErrorState message={error} onRetry={refetch} />
@@ -303,8 +299,8 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
               </TableHeader>
               <TableBody>
                 {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className={cn("cursor-pointer", query.starred && row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button")) router.push(`/leads/${row.id}`); }}>
-                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} className={cn("py-2.5", cell.column.id === "star" && "w-px pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                  <TableRow key={row.id} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
+                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
                   </TableRow>
                 ))}
               </TableBody>
@@ -314,15 +310,15 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           <ul className="space-y-2 md:hidden">
             {data?.items.map((l) => (
               <li key={l.id} className="relative">
-                <Link href={`/leads/${l.id}`} className={cn("block rounded-lg border bg-card p-3 active:bg-muted", query.starred && l.pinned_at && "bg-muted/40")}>
+                <Link href={`/leads/${l.id}`} className={cn("block rounded-lg border bg-card p-3 active:bg-muted", l.pinned_at && "bg-muted/40")}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="flex items-center gap-2 font-medium"><span className="truncate">{l.name}</span>{query.starred && l.pinned_at ? <PinnedBadge /> : null}</p>
+                      <p className="flex items-center gap-2 font-medium"><span className="truncate">{l.name}</span>{l.pinned_at ? <PinnedBadge /> : null}</p>
                       <p className="flex items-center gap-1 text-sm text-muted-foreground"><Phone className="size-3" />{l.phone}</p>
                     </div>
                     <StatusBadge stageId={l.stage_id} status={l.status} />
                   </div>
-                  <div className={cn("mt-2 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground", query.starred ? "pr-[4.5rem]" : "pr-9")}>
+                  <div className={cn("mt-2 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground", "pr-[4.5rem]")}>
                     <span>{l.niche.name}</span>
                     {isAdmin ? <span>{l.owner.display_name}</span> : null}
                     {l.next_follow_up_at ? (
@@ -334,7 +330,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                 </Link>
                 {/* Outside the link: buttons inside an anchor are invalid and would navigate. */}
                 <div className="absolute right-1.5 bottom-1.5 flex items-center">
-                  {query.starred ? <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} /> : null}
+                  <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />
                   <StarButton id={l.id} starred={l.starred} action={toggleLeadStar} onChanged={refetch} />
                 </div>
               </li>

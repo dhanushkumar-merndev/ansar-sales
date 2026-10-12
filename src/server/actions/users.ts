@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { isProjectRole } from "@/lib/constants";
 import { dbError } from "@/lib/errors";
 import { createUserSchema, passwordSchema, updateUserSchema } from "@/lib/validation";
 import { runAction } from "@/server/action-utils";
@@ -8,8 +9,14 @@ import { provisionLogin, setAuthBan, setAuthPassword } from "@/server/provision-
 
 /** Admin-only. The new user joins the company the admin works in (the super admin's active company). */
 export async function createUser(input: unknown) {
-  return runAction(["admin"], createUserSchema, input, (d, { profile }) =>
-    provisionLogin({ username: d.username, displayName: d.displayName, password: d.password, role: d.role, companyId: profile.company.id, createdBy: profile.id }));
+  return runAction(["admin"], createUserSchema, input, async (d, { profile }) => {
+    const extraRoles = d.extraRoles.filter((r) => r !== d.role);
+    if ([d.role, ...extraRoles].some(isProjectRole) && !profile.features.includes("projects")) return dbError({ message: "feature_disabled" });
+    return provisionLogin({
+      username: d.username, displayName: d.displayName, password: d.password, role: d.role, extraRoles,
+      companyId: profile.company.id, createdBy: profile.id,
+    });
+  });
 }
 
 export async function updateUser(input: unknown) {
@@ -20,6 +27,7 @@ export async function updateUser(input: unknown) {
       p_user_id: d.id,
       p_display_name: d.displayName,
       p_role: d.role,
+      p_extra_roles: d.extraRoles,
       p_is_active: d.isActive,
     });
     if (error) return dbError(error);

@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useUrlState } from "@/hooks/use-url-state";
-import { ROLE_LABELS, SUPER_ADMIN_LABEL } from "@/lib/constants";
+import { rolesLabel, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { fetchTelegramStatus } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
 import { changePassword } from "@/server/actions/auth";
@@ -65,7 +65,7 @@ function AccountSettings() {
                   <div className="flex items-center gap-2">
                     <CardTitle className="truncate text-base">{profile.display_name}</CardTitle>
                     <Badge variant="outline" className="border-white/10 bg-white/5 text-xs text-foreground">
-                      {profile.isSuperAdmin ? SUPER_ADMIN_LABEL : ROLE_LABELS[profile.role]}
+                      {profile.isSuperAdmin ? SUPER_ADMIN_LABEL : rolesLabel(profile.roles, profile.features)}
                     </Badge>
                   </div>
                   <CardDescription className="truncate text-xs">@{profile.username}</CardDescription>
@@ -84,7 +84,7 @@ function AccountSettings() {
                 </div>
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs text-muted-foreground">Access role</span>
-                  <span className="font-medium text-foreground">{profile.isSuperAdmin ? SUPER_ADMIN_LABEL : ROLE_LABELS[profile.role]}</span>
+                  <span className="font-medium text-foreground">{profile.isSuperAdmin ? SUPER_ADMIN_LABEL : rolesLabel(profile.roles, profile.features)}</span>
                 </div>
                 <div className="flex items-center justify-between px-3.5 py-2.5">
                   <span className="text-xs text-muted-foreground">Workspace</span>
@@ -115,7 +115,7 @@ function AccountSettings() {
                   <li>Access company capital & operating expenses</li>
                 </ul>
               )}
-              {profile.role === "sales" && (
+              {profile.roles.includes("sales") && profile.role !== "admin" && (
                 <ul className="list-disc space-y-1.5 pl-4 text-foreground/80">
                   <li>Create leads & track personal sales pipeline</li>
                   <li>Schedule, complete & reschedule follow-ups</li>
@@ -124,12 +124,33 @@ function AccountSettings() {
                   <li>Receive private Telegram task reminders</li>
                 </ul>
               )}
-              {profile.role === "account" && (
+              {profile.roles.includes("account") && profile.role !== "admin" && (
                 <ul className="list-disc space-y-1.5 pl-4 text-foreground/80">
                   <li>Record contributed capital entries</li>
                   <li>Track monthly operating expense categories</li>
                   <li>Audit trail for financial corrections</li>
                   <li>Finance summary dashboard & metrics</li>
+                </ul>
+              )}
+              {profile.roles.includes("architect_manager") && (
+                <ul className="list-disc space-y-1.5 pl-4 text-foreground/80">
+                  <li>Run site visits and capture the site location</li>
+                  <li>Lead your projects: phases, deadlines and designers</li>
+                  <li>Approve drawings before the client sees them</li>
+                </ul>
+              )}
+              {profile.roles.includes("landscape_designer") && (
+                <ul className="list-disc space-y-1.5 pl-4 text-foreground/80">
+                  <li>Work on the phases assigned to you</li>
+                  <li>Upload layouts, decks, BOQs and drawings for approval</li>
+                  <li>Telegram alerts before and after deadlines</li>
+                </ul>
+              )}
+              {profile.roles.includes("execution") && (
+                <ul className="list-disc space-y-1.5 pl-4 text-foreground/80">
+                  <li>Daily site logs with photos</li>
+                  <li>BOQ progress and the handover snag list</li>
+                  <li>Approved drawings for your sites</li>
                 </ul>
               )}
               {profile.role === "ads_manager" && (

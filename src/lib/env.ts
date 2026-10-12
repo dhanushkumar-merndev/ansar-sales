@@ -6,7 +6,11 @@ export const publicEnv = {
 };
 
 /** Reads a server-only variable at call time; never import this from client code. */
-export function serverEnv(name: "SUPABASE_SECRET_KEY" | "AUTH_LOGIN_DOMAIN" | "TELEGRAM_BOT_TOKEN" | "TELEGRAM_BOT_USERNAME" | "TELEGRAM_WEBHOOK_SECRET") {
+export function serverEnv(
+  name:
+    | "SUPABASE_SECRET_KEY" | "AUTH_LOGIN_DOMAIN" | "TELEGRAM_BOT_TOKEN" | "TELEGRAM_BOT_USERNAME" | "TELEGRAM_WEBHOOK_SECRET"
+    | "TIGRIS_STORAGE_ACCESS_KEY_ID" | "TIGRIS_STORAGE_SECRET_ACCESS_KEY" | "TIGRIS_STORAGE_BUCKET",
+) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required server environment variable ${name}`);
   return value;

@@ -38,7 +38,8 @@ function runSql(file) {
 }
 
 async function demoProfiles() {
-  const { data, error } = await sb.from("profiles").select("id, username").like("username", "demo\\_%");
+  // demo_sg_* belong to the Star Gardens demo (pnpm seed:star-gardens).
+  const { data, error } = await sb.from("profiles").select("id, username").like("username", "demo\\_%").not("username", "like", "demo\\_sg\\_%");
   if (error) throw error;
   return data;
 }
@@ -69,7 +70,7 @@ for (const u of USERS.filter((u) => !existing.has(u.username))) {
   });
   if (error) throw new Error(`Could not create ${u.username}: ${error.message}`);
 }
-const { error } = await sb.from("profiles").update({ is_active: false }).like("username", "demo\\_%");
+const { error } = await sb.from("profiles").update({ is_active: false }).like("username", "demo\\_%").not("username", "like", "demo\\_sg\\_%");
 if (error) throw error;
 
 runSql(sqlFile("demo.sql"));

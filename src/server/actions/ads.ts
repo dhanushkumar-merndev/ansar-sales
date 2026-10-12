@@ -79,6 +79,15 @@ export async function disconnectAdAccount(input: unknown) {
   });
 }
 
+/** Deletes a disconnected account and everything synced from it (admins only; logged in the audit log). */
+export async function deleteAdAccountHistory(input: unknown) {
+  return runAction(["admin"], z.object({ accountId: z.uuid() }), input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("delete_ad_account_history", { p_account: d.accountId });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Categories and merging
 // ---------------------------------------------------------------------------
@@ -98,6 +107,18 @@ export async function archiveAdCategory(input: unknown) {
     const { error } = await supabase.rpc("archive_ad_category", { p_id: d.id });
     if (error) return dbError(error);
     return { ok: true, data: undefined };
+  });
+}
+
+/** Runs the client's ads on the company's own ad account: links (or creates, or with neither unlinks) its category. */
+export async function setAdsClientCategory(input: unknown) {
+  const schema = z.object({ clientId: z.uuid(), categoryId: z.uuid().nullable().optional(), create: z.boolean().optional() });
+  return runAction([...ADS_ROLES], schema, input, async (d, { supabase }) => {
+    const { data, error } = await supabase.rpc("set_ads_client_category", {
+      p_client: d.clientId, p_category: d.categoryId ?? undefined, p_create: d.create ?? false,
+    });
+    if (error) return dbError(error);
+    return { ok: true, data: { categoryId: (data as string | null) ?? null } };
   });
 }
 

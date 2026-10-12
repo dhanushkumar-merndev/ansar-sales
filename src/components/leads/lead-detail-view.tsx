@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, UserRoundCog, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowDownUp, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, UserRoundCog, X } from "lucide-react";
 import { toast } from "sonner";
 import { DueBadge, ReminderBadge, StatusBadge } from "@/components/common/badges";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
-import { StarButton } from "@/components/common/star-pin-buttons";
+import { PinButton, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { CompleteFollowUpDialog, FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { CallButton } from "@/components/leads/call-button";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
+import { LeadProjectActions } from "@/components/projects/lead-project-actions";
 import { ShareFilesDialog } from "@/components/leads/share-files-dialog";
 import { ScrollBox } from "@/components/common/scroll-box";
 import { SharedLinksCard } from "@/components/leads/shared-links-card";
@@ -33,7 +34,7 @@ import type { NicheOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { cancelFollowUp } from "@/server/actions/follow-ups";
 import { addNote, assignLead, correctNote, setLeadArchived, setLeadStage } from "@/server/actions/leads";
-import { toggleLeadStar } from "@/server/actions/stars";
+import { toggleLeadPin, toggleLeadStar } from "@/server/actions/stars";
 
 const TIMELINE_PAGE = 20;
 const TIMELINE_MAX = 500;
@@ -58,12 +59,30 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
   const [completing, setCompleting] = useState<LeadFollowUp | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
+  const [timelineFilter, setTimelineFilter] = useState<string>("all");
 
   const refreshAll = () => {
     lead.refetch();
     followUps.refetch();
     timeline.refetch();
   };
+
+  // Before the early returns below: hooks must run in the same order on every render.
+  const displayedTimeline = useMemo(() => {
+    let items = timeline.data?.items ?? [];
+    if (timelineFilter !== "all") {
+      if (timelineFilter === "follow_up") {
+        items = items.filter((a) => a.type.startsWith("follow_up_"));
+      } else {
+        items = items.filter((a) => a.type === timelineFilter);
+      }
+    }
+    if (timelineOrder === "oldest") {
+      return [...items].reverse();
+    }
+    return items;
+  }, [timeline.data?.items, timelineFilter, timelineOrder]);
 
   if (lead.error && !lead.data) return <ErrorState message={lead.error} onRetry={lead.refetch} />;
   if (lead.isInitialLoading) return <DetailSkeleton />;
@@ -98,7 +117,12 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         <div className="min-w-0">
           <div className="flex items-center gap-1">
             <h1 className="truncate text-2xl font-semibold tracking-tight">{l.name}</h1>
-            {canEdit ? <StarButton id={l.id} starred={l.stars.length > 0} action={toggleLeadStar} onChanged={lead.refetch} /> : null}
+            {canEdit ? (
+              <>
+                <StarButton id={l.id} starred={l.stars.length > 0} action={toggleLeadStar} onChanged={lead.refetch} />
+                <PinButton id={l.id} pinned={!!l.stars[0]?.pinned_at} action={toggleLeadPin} onChanged={lead.refetch} />
+              </>
+            ) : null}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <StatusBadge stageId={l.stage_id} status={l.status} />
@@ -109,6 +133,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <LeadProjectActions lead={l} onChanged={refreshAll} />
           {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} /> : null}
           {canEdit ? <Button variant="outline" onClick={() => setShareOpen(true)}><Send /> Share files</Button> : null}
           {canEdit ? <StatusSelect leadId={l.id} stageId={l.stage_id} onChanged={refreshAll} /> : null}
@@ -209,18 +234,50 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         <div className="space-y-5">
           {canEdit ? <NoteComposer leadId={l.id} onAdded={timeline.refetch} /> : null}
           <Card>
-            <CardHeader><CardTitle className="text-base">Activity</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+              <CardTitle className="text-base">Activity</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <Select value={timelineFilter} onValueChange={setTimelineFilter}>
+                  <SelectTrigger className="h-7 w-[115px] text-xs" aria-label="Filter activity type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="all">All activity</SelectItem>
+                    <SelectItem value="note">Notes</SelectItem>
+                    <SelectItem value="call_logged">Calls</SelectItem>
+                    <SelectItem value="follow_up">Follow-ups</SelectItem>
+                    <SelectItem value="status_changed">Stages</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setTimelineOrder((o) => (o === "newest" ? "oldest" : "newest"))}
+                  title={timelineOrder === "newest" ? "Showing newest first — click for oldest first" : "Showing oldest first — click for newest first"}
+                >
+                  <ArrowDownUp className="size-3" />
+                  <span>{timelineOrder === "newest" ? "Newest" : "Oldest"}</span>
+                </Button>
+              </div>
+            </CardHeader>
             <CardContent>
               {timeline.isInitialLoading ? (
                 <ListSkeleton rows={4} />
               ) : timeline.error && !timeline.data ? (
                 <ErrorState message={timeline.error} onRetry={timeline.refetch} />
               ) : (
-                <ScrollBox label="Activity history" className="max-h-[min(70svh,720px)]">
-                  <Timeline
-                    items={timeline.data?.items ?? []}
-                    renderNoteActions={(a) => (canEdit && (a.actor_id === profile.id || isAdmin) ? <CorrectNote note={a} onDone={timeline.refetch} /> : null)}
-                  />
+                <ScrollBox label="Activity history" className="h-[380px] sm:h-[420px]">
+                  {displayedTimeline.length === 0 ? (
+                    <p className="py-16 text-center text-xs text-muted-foreground">
+                      No matching activity found.
+                    </p>
+                  ) : (
+                    <Timeline
+                      items={displayedTimeline}
+                      renderNoteActions={(a) => (canEdit && (a.actor_id === profile.id || isAdmin) ? <CorrectNote note={a} onDone={timeline.refetch} /> : null)}
+                    />
+                  )}
                   {timeline.data?.hasMore && timelineLimit < TIMELINE_MAX ? (
                     <Button variant="outline" size="sm" className="mt-4 w-full" disabled={timeline.isFetching} onClick={() => setTimelineLimit((n) => n + TIMELINE_PAGE)}>
                       {timeline.isFetching && <Loader2 className="animate-spin" />} Show older activity

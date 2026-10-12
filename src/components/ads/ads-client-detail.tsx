@@ -2,11 +2,12 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, KeyRound, Loader2, Pencil, Plus, UserCheck, UserX } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown, KeyRound, Loader2, Pencil, Plus, Unlink, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { AdAccountForm, AdAccountStatus } from "@/components/ads/ad-account-form";
 import { clientStatusTone } from "@/components/ads/ads-clients-view";
-import { AdsDashboard } from "@/components/ads/ads-dashboard";
+import { ClientResults, type ResultSource } from "@/components/ads/client-results";
+import { AddCampaigns } from "@/components/ads/ads-view";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -14,24 +15,49 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { type AdAccount, type AdsClient, ADS_CLIENT_STATUS_LABELS, type AdsClientStatus } from "@/lib/ads";
+import { type AdAccount, type AdsClient, ADS_CLIENT_STATUS_LABELS, type AdsClientStatus, type AgencySource } from "@/lib/ads";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
-  createClientLogin, resetClientPassword, setAdsClientStatus, setClientLoginActive, updateAdsClient,
+  createClientLogin, resetClientPassword, saveAdCategory, setAdsClientCategory, setAdsClientStatus, setClientLoginActive, updateAdsClient,
 } from "@/server/actions/ads";
 
 type Login = { id: string; username: string; display_name: string; is_active: boolean; created_at: string };
-type Detail = AdsClient & { company_name: string; accounts: AdAccount[]; logins: Login[] };
+type AgencyCategory = { id: string; name: string; company_id: string | null; ads_client_id: string | null; client_name: string | null };
+type Detail = AdsClient & {
+  company_name: string; accounts: AdAccount[]; logins: Login[];
+  /** The company's own live ad account, with its categories for linking (null when not connected). */
+  agency: { account: AdAccount; categories: AgencyCategory[] } | null;
+  /** Categories of company ad accounts run for this client (disconnected accounts included, for history). */
+  agency_sources: AgencySource[];
+};
+
+const accountLabel = (a: AdAccount) => a.name ?? `act_${a.act_id}`;
+
+/** Every source of results, agency categories first; earlier accounts are marked as history. */
+function resultSources(c: Detail): ResultSource[] {
+  return [
+    ...(c.agency_sources ?? []).map((s) => ({
+      accountId: s.account.id, categoryId: s.category_id,
+      label: `Our account · ${s.category_name}${s.account.archived_at ? " · earlier account (history)" : ""}`,
+    })),
+    ...c.accounts.map((a) => ({
+      accountId: a.id, categoryId: null,
+      label: `Client's account · ${accountLabel(a)}${a.archived_at ? " · earlier account (history)" : ""}`,
+    })),
+  ];
+}
 
 export function AdsClientDetail({ id }: { id: string }) {
   const profile = useProfile();
@@ -44,13 +70,13 @@ export function AdsClientDetail({ id }: { id: string }) {
     },
     pollMs: 5 * 60_000,
   });
-  const [accountId, setAccountId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const c = detail.data;
   if (detail.error && !c) return <ErrorState message={detail.error} onRetry={detail.refetch} />;
   if (!c) return <ListSkeleton rows={8} />;
   const live = c.accounts.find((a) => !a.archived_at) ?? null;
-  const shown = c.accounts.find((a) => a.id === accountId) ?? live ?? c.accounts[0] ?? null;
+  const linked = (c.agency_sources ?? []).find((s) => !s.account.archived_at) ?? null;
+  const sources = resultSources(c);
 
   return (
     <div className="space-y-5">
@@ -60,6 +86,7 @@ export function AdsClientDetail({ id }: { id: string }) {
           <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight md:text-2xl">
             {c.name}
             <Badge variant="outline" className={cn(clientStatusTone(c.status))}>{ADS_CLIENT_STATUS_LABELS[c.status]}</Badge>
+            <SourceBadges agency={Boolean(linked)} own={Boolean(live)} />
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {[c.business, c.phone, c.email].filter(Boolean).join(" · ") || "No contact details"} · client since {formatDate(c.started_at)}
@@ -74,35 +101,32 @@ export function AdsClientDetail({ id }: { id: string }) {
       </div>
       {c.notes ? <p className="max-w-3xl text-sm whitespace-pre-wrap text-muted-foreground">{c.notes}</p> : null}
 
-      <Tabs defaultValue={shown ? "results" : "connection"}>
+      <Tabs defaultValue={sources.length ? "results" : "accounts"}>
         <TabsList>
           <TabsTrigger value="results">Results</TabsTrigger>
-          <TabsTrigger value="connection">Meta connection</TabsTrigger>
+          <TabsTrigger value="accounts">Ad accounts</TabsTrigger>
           <TabsTrigger value="login">Client login</TabsTrigger>
         </TabsList>
         <TabsContent value="results" className="pt-3">
-          {!shown ? (
-            <EmptyState title="No ad account yet" description="Connect the client's Meta app and ad account on the Meta connection tab." />
+          {!sources.length ? (
+            <EmptyState title="No ad source yet"
+              description="On the Ad accounts tab, run this client's ads on our own ad account, connect the client's own ad account, or both." />
           ) : (
             <div className="space-y-4">
-              {c.accounts.length > 1 ? (
-                <Select value={shown.id} onValueChange={setAccountId}>
-                  <SelectTrigger className="w-80" aria-label="Ad account"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {c.accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.name ?? `act_${a.act_id}`}{a.archived_at ? " · earlier account (history)" : ""}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              ) : null}
               {c.status === "closed" ? <p className="text-sm text-muted-foreground">This client is closed: syncing stopped, and everything synced until then is kept below.</p> : null}
-              <AdsDashboard key={shown.id} accountId={shown.id} canManage />
+              <ClientResults clientId={c.id} sources={sources} canManage />
             </div>
           )}
         </TabsContent>
-        <TabsContent value="connection" className="pt-3">
+        <TabsContent value="accounts" className="space-y-4 pt-3">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Set up at least one before the client goes Active. With both, Results adds them up and lets you open each one.
+          </p>
+          <AgencyCard client={c} linked={linked} onChanged={detail.refetch} />
           <Card className="max-w-2xl">
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle>The client&apos;s Meta app</CardTitle>
+                <CardTitle>The client&apos;s own ad account</CardTitle>
                 <AdAccountStatus account={live} />
               </div>
               <CardDescription>
@@ -297,5 +321,144 @@ function EditClientDialog({ open, onOpenChange, client, onSaved }: { open: boole
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SourceBadges({ agency, own }: { agency: boolean; own: boolean }) {
+  if (!agency && !own) return <Badge variant="outline" className="border-red-400/30 text-red-300">No ad source</Badge>;
+  return (
+    <>
+      {agency ? <Badge variant="outline" className="text-muted-foreground">Our account</Badge> : null}
+      {own ? <Badge variant="outline" className="text-muted-foreground">Own account</Badge> : null}
+    </>
+  );
+}
+
+/** Runs the client's ads on the company's own ad account: one category of it is linked to the client. */
+function AgencyCard({ client, linked, onChanged }: { client: Detail; linked: AgencySource | null; onChanged: () => void }) {
+  const agency = client.agency;
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>Our ad account{agency ? ` · ${accountLabel(agency.account)}` : ""}</CardTitle>
+          {linked ? <Badge variant="outline" className="border-emerald-400/30 text-emerald-300">In use</Badge>
+            : <Badge variant="outline" className="text-muted-foreground">Not used</Badge>}
+        </div>
+        <CardDescription>
+          Run this client&apos;s campaigns on {client.company_name}&apos;s own ad account. The campaigns in the client&apos;s category count as theirs;
+          their login sees only those.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!agency ? (
+          <p className="text-sm text-muted-foreground">
+            {client.company_name} has no ad account connected. Connect it on the <Link href="/ads" className="underline underline-offset-2">Ads</Link> page first.
+          </p>
+        ) : linked ? (
+          <LinkedCategory client={client} source={linked} onChanged={onChanged} />
+        ) : (
+          <CategoryLinker client={client} categories={agency.categories} onChanged={onChanged} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LinkedCategory({ client, source, onChanged }: { client: Detail; source: AgencySource; onChanged: () => void }) {
+  const [match, setMatch] = useState(source.match_text ?? "");
+  const [pending, start] = useTransition();
+  const saveMatch = () => {
+    if ((source.match_text ?? "") === match.trim()) return;
+    start(async () => {
+      const r = await saveAdCategory({ accountId: source.account.id, id: source.category_id, name: source.category_name, matchText: match });
+      if (!r.ok) { toast.error(r.error); return; }
+      toast.success("Saved; matching campaigns were filed");
+      onChanged();
+    });
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Category</span>
+        <span className="font-medium">{source.category_name}</span>
+        <span className="text-xs text-muted-foreground">· {source.campaigns ?? 0} campaigns</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input value={match} onChange={(e) => setMatch(e.target.value)} onBlur={saveMatch} disabled={pending} maxLength={60}
+          placeholder="Match text, e.g. MEHTA" className="h-8 w-56" aria-label="Match text" />
+        <AddCampaigns accountId={source.account.id} category={{ id: source.category_id, name: source.category_name }} onChanged={onChanged} />
+        <ConfirmDialog
+          trigger={<Button variant="ghost" size="sm"><Unlink /> Stop using</Button>}
+          title="Stop running this client on our ad account?"
+          description={`"${source.category_name}" stays on the ad account with its campaigns, but stops counting for ${client.name} and their login loses access to it.`}
+          confirmLabel="Stop using" destructive
+          onConfirm={async () => {
+            const r = await setAdsClientCategory({ clientId: client.id, categoryId: null });
+            if (!r.ok) { toast.error(r.error); return false; }
+            toast.success("No longer using our ad account for this client");
+            onChanged();
+          }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">New campaigns whose name contains the match text are filed here on every sync.</p>
+    </div>
+  );
+}
+
+/** Pick an existing category of the agency account, or create one named after the client. */
+function CategoryLinker({ client, categories, onChanged }: { client: Detail; categories: AgencyCategory[]; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [pending, start] = useTransition();
+  const newName = client.business ?? client.name;
+  const term = input.trim().toLowerCase();
+  const options = categories.filter((k) => !term || k.name.toLowerCase().includes(term));
+  const exists = categories.some((k) => k.name.toLowerCase() === newName.trim().toLowerCase());
+  const link = (args: { categoryId?: string; create?: boolean }) => start(async () => {
+    const r = await setAdsClientCategory({ clientId: client.id, ...args });
+    if (!r.ok) { toast.error(r.error); return; }
+    toast.success("Now running this client on our ad account");
+    setOpen(false);
+    onChanged();
+  });
+  return (
+    <div className="space-y-2">
+      <Popover open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" role="combobox" aria-expanded={open} disabled={pending} className="w-72 max-w-full justify-between font-normal">
+            {pending ? <Loader2 className="animate-spin" /> : null}
+            <span className="truncate text-muted-foreground">Choose or create the client&apos;s category</span>
+            <ChevronsUpDown className="size-4 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-0" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput placeholder="Search categories…" value={input} onValueChange={setInput} maxLength={60} />
+            <CommandList>
+              {options.length === 0 && exists ? <CommandEmpty>No categories found.</CommandEmpty> : null}
+              <CommandGroup>
+                {!exists ? (
+                  <CommandItem value="create" onSelect={() => link({ create: true })}>
+                    <Plus className="size-4" /> Create &ldquo;{newName}&rdquo;
+                  </CommandItem>
+                ) : null}
+                {options.map((k) => {
+                  const taken = Boolean(k.company_id || (k.ads_client_id && k.ads_client_id !== client.id));
+                  return (
+                    <CommandItem key={k.id} value={k.id} disabled={taken} onSelect={() => link({ categoryId: k.id })}>
+                      <Check className="size-4 opacity-0" />
+                      <span className="min-w-0 flex-1 truncate">{k.name}</span>
+                      {taken ? <span className="text-xs text-muted-foreground">{k.company_id ? "Company" : k.client_name}</span> : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      <p className="text-xs text-muted-foreground">Then file its campaigns with match text or &ldquo;Add campaigns&rdquo;.</p>
+    </div>
   );
 }
