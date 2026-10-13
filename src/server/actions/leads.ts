@@ -13,6 +13,7 @@ export async function createLead(input: unknown) {
   return runAction([...LEAD_ROLES], leadCreateSchema, input, async (d, { supabase, profile }) => {
     const { data, error } = await supabase.rpc("create_lead", {
       p_name: d.name,
+      p_company_name: d.companyName,
       p_phone: d.phone.display,
       p_phone_normalized: d.phone.e164,
       p_email: d.email,
@@ -38,6 +39,8 @@ export async function updateLead(input: unknown) {
       p_id: d.id,
       p_version: d.version,
       p_name: d.name,
+      // Always sent: an empty field clears the company.
+      p_company_name: d.companyName ?? "",
       p_phone: d.phone.display,
       p_phone_normalized: d.phone.e164,
       p_email: d.email,

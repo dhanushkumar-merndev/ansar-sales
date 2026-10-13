@@ -21,6 +21,24 @@ const AD_LEVEL_DAYS = 90;
 /** Meta revises recent days (late attribution), so each sync re-reads them. */
 const REVISE_DAYS = 3;
 
+/** Meta calls in flight at once during a sync: enough to overlap the waiting, few enough to stay clear of rate limits. */
+const FETCH_CONCURRENCY = 4;
+
+/** Runs the tasks `limit` at a time and returns their results in order; stops starting new ones after the first failure. */
+async function runLimited<T>(tasks: (() => Promise<T>)[], limit = FETCH_CONCURRENCY): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < tasks.length) {
+      const i = next++;
+      try { results[i] = await tasks[i](); } catch (e) { failed = true; throw e; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
 const errorText = (e: unknown) => (e instanceof Error ? e.message : "Unknown error").slice(0, 300);
 
 async function loadAdSecrets(id: string) {
@@ -75,9 +93,11 @@ export async function checkAdAccount(id: string): Promise<{ steps: ConnectStep[]
  * Pulls one ad account into the database: campaigns and ads, daily insights from three days before
  * the last synced day up to today (so missed runs fill themselves in), one back-fill step of older
  * history, and whole-month unique reach. Uses the admin client: it runs for the cron route or after
- * an authorized user action, never with the user's own session.
+ * an authorized user action, never with the user's own session. A user-triggered refresh passes
+ * `backfill: false`: the scheduled sync keeps filling in older history, so the click stays quick.
  */
-export async function syncAdAccount(id: string): Promise<{ ok: boolean; error?: string; rateLimited?: boolean }> {
+export async function syncAdAccount(id: string, opts: { backfill?: boolean } = {}): Promise<{ ok: boolean; error?: string; rateLimited?: boolean }> {
+  const backfill = opts.backfill ?? true;
   const admin = createAdminClient();
   const s = await loadAdSecrets(id);
   if (!s) return { ok: false, error: "Not connected" };
@@ -93,25 +113,13 @@ export async function syncAdAccount(id: string): Promise<{ ok: boolean; error?: 
     const windows = dayWindows(since < today ? since : today, today);
     const oldest = shiftDay(today, -(BACKFILL_DAYS - 1));
     let backfilledFrom = s.backfilled_from ?? since;
-    if (s.backfilled_from && backfilledFrom > oldest) {
+    if (backfill && s.backfilled_from && backfilledFrom > oldest) {
       const from = shiftDay(backfilledFrom, -BACKFILL_STEP) > oldest ? shiftDay(backfilledFrom, -BACKFILL_STEP) : oldest;
       windows.unshift({ since: from, until: shiftDay(backfilledFrom, -1) });
       backfilledFrom = from;
     }
 
     const adFloor = shiftDay(today, -(AD_LEVEL_DAYS - 1));
-    for (const w of windows) {
-      const rows = await fetchInsights(s.act_id, s.creds, "campaign", w.since, w.until);
-      const saved = await admin.rpc("upsert_ad_insights", { p_account: id, p_level: "campaign", p_rows: rows });
-      if (saved.error) throw new Error(saved.error.message);
-      const adSince = w.since > adFloor ? w.since : adFloor;
-      if (adSince <= w.until) {
-        const adRows = await fetchInsights(s.act_id, s.creds, "ad", adSince, w.until);
-        const savedAds = await admin.rpc("upsert_ad_insights", { p_account: id, p_level: "ad", p_rows: adRows });
-        if (savedAds.error) throw new Error(savedAds.error.message);
-      }
-    }
-
     // Unique reach for this month so far, and for last month while its numbers can still move.
     const monthStart = `${today.slice(0, 7)}-01`;
     const months = [{ start: monthStart, end: today }];
@@ -119,10 +127,24 @@ export async function syncAdAccount(id: string): Promise<{ ok: boolean; error?: 
       const prevEnd = shiftDay(monthStart, -1);
       months.push({ start: `${prevEnd.slice(0, 7)}-01`, end: prevEnd });
     }
-    for (const m of months) {
-      const reach = await fetchMonthlyReach(s.act_id, s.creds, m.start, m.end);
-      await admin.rpc("upsert_ad_reach", { p_account: id, p_rows: reach });
+
+    // Everything Meta has to answer is fetched a few calls at a time; the database writes follow in order.
+    const insightJobs = windows.flatMap((w) => {
+      const adSince = w.since > adFloor ? w.since : adFloor;
+      return [
+        { level: "campaign" as const, since: w.since, until: w.until },
+        ...(adSince <= w.until ? [{ level: "ad" as const, since: adSince, until: w.until }] : []),
+      ];
+    });
+    const [insights, reach] = await Promise.all([
+      runLimited(insightJobs.map((j) => () => fetchInsights(s.act_id, s.creds, j.level, j.since, j.until))),
+      runLimited(months.map((m) => () => fetchMonthlyReach(s.act_id, s.creds, m.start, m.end))),
+    ]);
+    for (const [i, job] of insightJobs.entries()) {
+      const saved = await admin.rpc("upsert_ad_insights", { p_account: id, p_level: job.level, p_rows: insights[i] });
+      if (saved.error) throw new Error(saved.error.message);
     }
+    for (const rows of reach) await admin.rpc("upsert_ad_reach", { p_account: id, p_rows: rows });
 
     await setState(id, {
       status: "connected", error: null, name: info.name, currency: info.currency, timezone: info.timezone,

@@ -28,6 +28,7 @@ import { createLead, updateLead } from "@/server/actions/leads";
 const formSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(120),
+    companyName: z.string().trim().max(120, "At most 120 characters"),
     phone: z.string().trim().min(1, "Phone is required").refine((v) => normalizePhone(v) !== null, "Enter a valid phone number (use +code for other countries)"),
     email: z.union([z.literal(""), z.email("Enter a valid email")]),
     niche: z.custom<NicheValue>((v) => v !== null && v !== undefined, "Choose or create a niche"),
@@ -43,7 +44,7 @@ const formSchema = z
 
 type FormValues = z.infer<typeof formSchema>;
 
-export type EditableLead = { id: string; version: number; name: string; phone: string; email: string | null; niche: NicheOption };
+export type EditableLead = { id: string; version: number; name: string; company_name: string | null; phone: string; email: string | null; niche: NicheOption };
 
 export function LeadFormDialog({
   open, onOpenChange, initialNiches, lead, latestVersion, onSaved,
@@ -65,6 +66,7 @@ export function LeadFormDialog({
 
   const defaults = (): FormValues => ({
     name: lead?.name ?? "",
+    companyName: lead?.company_name ?? "",
     phone: lead?.phone ?? "",
     email: lead?.email ?? "",
     niche: lead ? { id: lead.niche.id, label: lead.niche.name } : null,
@@ -129,9 +131,11 @@ export function LeadFormDialog({
     start(async () => {
       const niche = values.niche!.id ? { id: values.niche!.id } : { newName: values.niche!.newName };
       const result = isEdit
-        ? await updateLead({ id: lead!.id, version: lead!.version, name: values.name, phone: values.phone, email: values.email, niche, allowDuplicate })
+        ? await updateLead({
+            id: lead!.id, version: lead!.version, name: values.name, companyName: values.companyName, phone: values.phone, email: values.email, niche, allowDuplicate,
+          })
         : await createLead({
-            name: values.name, phone: values.phone, email: values.email, niche, stageId: values.stageId || undefined,
+            name: values.name, companyName: values.companyName, phone: values.phone, email: values.email, niche, stageId: values.stageId || undefined,
             ownerId: values.ownerId ?? undefined, note: values.note,
             followUpAt: values.scheduleFollowUp ? istToUtcIso(values.followUp.date, values.followUp.time) : undefined,
             followUpTask: values.scheduleFollowUp ? values.followUpTask : undefined,
@@ -176,10 +180,16 @@ export function LeadFormDialog({
         ) : null}
         <form id="lead-form" onSubmit={handleSubmit((v) => submit(v), toastFirstError)} noValidate>
           <FieldGroup className="gap-4">
-            <Field data-invalid={!!errors.name}>
-              <FieldLabel htmlFor="lead-name">Name</FieldLabel>
-              <Input id="lead-name" autoComplete="off" aria-invalid={!!errors.name} {...register("name")} />
-            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field data-invalid={!!errors.name}>
+                <FieldLabel htmlFor="lead-name">Name</FieldLabel>
+                <Input id="lead-name" autoComplete="off" aria-invalid={!!errors.name} {...register("name")} />
+              </Field>
+              <Field data-invalid={!!errors.companyName}>
+                <FieldLabel htmlFor="lead-company">Company name <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
+                <Input id="lead-company" autoComplete="off" maxLength={120} aria-invalid={!!errors.companyName} {...register("companyName")} />
+              </Field>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field data-invalid={!!errors.phone}>
                 <FieldLabel htmlFor="lead-phone">Phone</FieldLabel>

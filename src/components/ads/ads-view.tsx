@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import type { AdAccount, AdCampaignRow, AdCategory } from "@/lib/ads";
@@ -27,7 +28,7 @@ import { hasAnyRole } from "@/lib/permissions";
 import { cleanSearch } from "@/lib/search";
 import { addDays, istToday } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { archiveAdCategory, deleteAdAccountHistory, saveAdCategory, setCampaignCategory } from "@/server/actions/ads";
+import { archiveAdCategory, deleteAdAccountHistory, saveAdCategory, setAdCategoryDashboard, setCampaignCategory } from "@/server/actions/ads";
 
 /** Dashboard / Clients switch shown on every ads page. */
 export function AdsTabs() {
@@ -177,13 +178,27 @@ function CategoriesDialog({ open, onOpenChange, accountId, onChanged }: {
           <DialogDescription>
             Split one ad account&apos;s campaigns, for example by company. A campaign whose name contains the &quot;match&quot; text is filed automatically;
             use &quot;Add campaigns&quot; to pick several by hand. Companies sharing this account, and ads clients run from it, have fixed categories.
+            Switch a category on to count it as our company in the Ads dashboard; switched off, it&apos;s a client&apos;s and stays out of the totals.
           </DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
           {!cats.data ? <ListSkeleton rows={3} /> : cats.data.length === 0 ? <p className="text-sm text-muted-foreground">No categories yet.</p> : (
-            <ul className="divide-y rounded-lg border">
-              {cats.data.map((c) => <CategoryRow key={`${c.id}:${c.name}:${c.match_text}`} accountId={accountId} category={c} onChanged={() => { cats.refetch(); onChanged(); }} />)}
-            </ul>
+            [
+              { title: "Our company", hint: "Counted in the Ads dashboard. Uncategorised campaigns count here too.", list: cats.data.filter((c) => c.in_dashboard) },
+              { title: "Clients", hint: "Kept out of the dashboard totals. Pick them in the dashboard's category filter to see them.", list: cats.data.filter((c) => !c.in_dashboard) },
+            ].map((group) => (
+              <section key={group.title} className="space-y-2">
+                <div>
+                  <h3 className="text-sm font-semibold">{group.title} <span className="font-normal text-muted-foreground">· {group.list.length}</span></h3>
+                  <p className="text-xs text-muted-foreground">{group.hint}</p>
+                </div>
+                {group.list.length ? (
+                  <ul className="divide-y rounded-lg border">
+                    {group.list.map((c) => <CategoryRow key={`${c.id}:${c.name}:${c.match_text}`} accountId={accountId} category={c} onChanged={() => { cats.refetch(); onChanged(); }} />)}
+                  </ul>
+                ) : <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">None</p>}
+              </section>
+            ))
           )}
         </div>
         <div className="grid gap-2 border-t pt-3 sm:grid-cols-[2fr_1fr_auto]">
@@ -213,8 +228,16 @@ function CategoryRow({ accountId, category, onChanged }: { accountId: string; ca
       onChanged();
     });
   };
+  const toggle = (on: boolean) => start(async () => {
+    const r = await setAdCategoryDashboard({ id: category.id, on });
+    if (!r.ok) { toast.error(r.error); return; }
+    toast.success(on ? `${category.name} counts as our company` : `${category.name} moved to clients`);
+    onChanged();
+  });
   return (
     <li className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm sm:flex-nowrap">
+      <Switch checked={category.in_dashboard} onCheckedChange={toggle} disabled={pending} className="shrink-0"
+        aria-label={`Count ${category.name} as our company`} title={category.in_dashboard ? "Our company: counted in the dashboard" : "Client: not counted in the dashboard"} />
       {fixed ? <span className="min-w-0 flex-1 truncate font-medium">{category.name}</span> : (
         <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={save} disabled={pending} maxLength={60}
           className="h-8 min-w-48 flex-1 font-medium" aria-label={`Name of ${category.name}`} />

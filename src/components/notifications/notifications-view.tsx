@@ -2,10 +2,9 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { CheckCheck, Settings } from "lucide-react";
 import { toast } from "sonner";
-import { NotificationRow } from "@/components/app/notification-bell";
+import { NotificationRow, useOpenNotification } from "@/components/app/notification-bell";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
@@ -14,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
-import { notificationDay, showNotification, type AppNotification } from "@/lib/app-notifications";
+import { notificationDay, type AppNotification } from "@/lib/app-notifications";
 import { lastPage, parsePaging } from "@/lib/pagination";
 import { fetchMyNotifications } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -23,7 +22,7 @@ import { markNotificationsRead } from "@/server/actions/telegram";
 /** Every notification of the signed-in person, newest first, grouped by day (IST). */
 export function NotificationsView() {
   const me = useProfile();
-  const router = useRouter();
+  const open = useOpenNotification();
   const { params, set } = useUrlState();
   const unreadOnly = params.get("show") === "unread";
   const { page, pageSize } = parsePaging(params);
@@ -36,10 +35,6 @@ export function NotificationsView() {
     if (data && !q.isStale && !data.items.length && data.total > 0 && page > 1) set({ page: String(lastPage(data.total, pageSize)) }, { replace: true });
   }, [data, q.isStale, page, pageSize, set]);
 
-  const open = async (n: AppNotification) => {
-    router.push(showNotification(n).href);
-    if (!n.read_at) await markNotificationsRead({ ids: [n.id] });
-  };
   const readAll = async () => {
     const r = await markNotificationsRead({});
     if (!r.ok) return void toast.error(r.error);

@@ -5,8 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Opens a CRM path inside a given company, for the super admin's and ads managers' Telegram links
- * (`/switch?company=<id>&next=/finance`). Everyone else, or an unknown company, just goes to `next`.
+ * Opens a CRM path inside a given company, for Telegram links of people who work in more than one
+ * (`/switch?company=<id>&next=/finance`): the super admin, ads managers, and the agency's staff in a
+ * client's CRM. Everyone else, or an unknown company, just goes to `next`.
  * Switching only changes which company they are looking at, so a GET is acceptable here.
  */
 export async function GET(request: NextRequest) {
@@ -15,8 +16,8 @@ export async function GET(request: NextRequest) {
   const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)}`, request.url));
-  // The database checks the company too: any for the super admin, an assigned one for an ads manager.
-  if ((profile.isSuperAdmin || profile.role === "ads_manager") && UUID_RE.test(company) && company !== profile.company.id) {
+  // The database decides who may work where (set_active_company); a refusal changes nothing.
+  if (UUID_RE.test(company) && company !== profile.company.id) {
     const supabase = await createClient();
     await supabase.rpc("set_active_company", { p_company_id: company });
   }

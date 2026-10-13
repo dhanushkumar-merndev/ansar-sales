@@ -1,7 +1,7 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { safeEqual } from "@/lib/telegram";
 import { leadgenChanges, verifyMetaSignature } from "@/lib/meta";
-import { ingestLeadgens, loadMetaSecrets } from "@/server/meta-ingest";
+import { ingestForOtherPages, ingestLeadgens, loadMetaSecrets } from "@/server/meta-ingest";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,8 +34,12 @@ export async function POST(request: NextRequest, { params }: RouteContext<"/api/
   } catch {
     return new NextResponse(null, { status: 400 });
   }
-  // Only leads for this company's own Page.
-  const changes = leadgenChanges(payload).filter((c) => !c.pageId || c.pageId === secrets.page_id);
+  const all = leadgenChanges(payload);
+  // Leads for this company's own Page.
+  const changes = all.filter((c) => !c.pageId || c.pageId === secrets.page_id);
   if (changes.length) after(() => ingestLeadgens(companyId, secrets, changes).then(() => undefined));
+  // Another Page served by the same Meta app (the request is signed with this app's secret).
+  const others = all.filter((c) => c.pageId && c.pageId !== secrets.page_id);
+  if (others.length) after(() => ingestForOtherPages(secrets.app_id, others));
   return NextResponse.json({ ok: true });
 }

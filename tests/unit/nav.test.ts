@@ -16,4 +16,10 @@ describe("sidebar", () => {
     expect(navFor(["admin"], ["projects", "no_ads"])).not.toContain("automation");
     expect(navFor(["ads_manager"], ["no_ads"])).toEqual([]);
   });
+
+  it("shows only the leads module inside an ads client's CRM", () => {
+    const ws = ["client_workspace", "no_ads"];
+    expect(navFor(["admin"], ws)).toEqual(["dashboard", "leads", "follow-ups", "ad-results", "users"]);
+    expect(navFor(["sales"], ws)).toEqual(["dashboard", "leads", "follow-ups", "ad-results"]);
+  });
 });

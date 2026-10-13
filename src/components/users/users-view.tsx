@@ -150,6 +150,8 @@ export function UsersView() {
 
 /** Roles this company can assign: project roles only where the projects module is on. */
 function roleChoices(features: readonly string[]) {
+  // An ads client's CRM is leads only: no finance, so no Account role.
+  if (features.includes("client_workspace")) return ASSIGNABLE_ROLES.filter((r) => r === "admin" || r === "sales");
   return ASSIGNABLE_ROLES.filter((r) => !isProjectRole(r) || features.includes("projects"));
 }
 

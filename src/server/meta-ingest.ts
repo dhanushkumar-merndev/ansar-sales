@@ -43,6 +43,21 @@ async function pagesHint(token: string) {
 }
 
 /**
+ * Leads of Pages other than the receiving company's own. A Meta app has one webhook address, so when
+ * the same app also serves another company's Page (a client's CRM connected with our app), that
+ * Page's leads arrive here too: hand each to the company that connected that Page with this app.
+ */
+export async function ingestForOtherPages(appId: string, changes: { leadgenId: string; formId: string | null; pageId: string | null }[]) {
+  const admin = createAdminClient();
+  const pages = [...new Set(changes.map((c) => c.pageId).filter((p): p is string => Boolean(p)))];
+  for (const pageId of pages) {
+    const { data } = await admin.from("meta_integrations").select("company_id").eq("app_id", appId).eq("page_id", pageId).order("created_at").limit(1).maybeSingle();
+    const secrets = data ? await loadMetaSecrets(data.company_id) : null;
+    if (data && secrets) await ingestLeadgens(data.company_id, secrets, changes.filter((c) => c.pageId === pageId));
+  }
+}
+
+/**
  * Fetches each lead from Meta and turns it into a CRM lead (idempotent per leadgen id).
  * Uses the admin client: this runs for a verified webhook or a super admin's sync, not as a user.
  */
@@ -50,7 +65,8 @@ export async function ingestLeadgens(companyId: string, secrets: MetaSecrets, le
   const admin = createAdminClient();
   const forms = new Map<string, string | null>();
   let token: string | null = null;
-  const result = { created: 0, duplicate: 0, failed: 0, skipped: 0 };
+  // `routed`: new leads that went to an ads client's CRM (their campaign is in the client's category).
+  const result = { created: 0, duplicate: 0, failed: 0, skipped: 0, routed: 0 };
 
   for (const item of leads) {
     const { data: pending } = await admin.rpc("record_meta_leadgen", { p_company_id: companyId, p_leadgen_id: item.leadgenId, p_form_id: item.formId ?? undefined });
@@ -75,6 +91,8 @@ export async function ingestLeadgens(companyId: string, secrets: MetaSecrets, le
         p_ad_name: lead.ad_name,
         p_campaign_name: lead.campaign_name,
         p_answers: f.answers ?? undefined,
+        // A campaign we run for an ads client sends the lead to that client's CRM.
+        p_campaign_id: lead.campaign_id ?? undefined,
       });
       if (error) throw new Error(error.message);
       // Remembered so Lead Ads insights can show spend and cost per lead per campaign.
@@ -84,8 +102,9 @@ export async function ingestLeadgens(companyId: string, secrets: MetaSecrets, le
           p_campaign_id: lead.campaign_id ?? "", p_adset_id: lead.adset_id ?? "", p_ad_id: lead.ad_id ?? "",
         });
       }
-      const state = (data as { state: "created" | "duplicate" | "failed" }).state;
+      const { state, company_id: target } = data as { state: "created" | "duplicate" | "failed"; company_id?: string };
       result[state] += 1;
+      if (state === "created" && target && target !== companyId) result.routed += 1;
     } catch (e) {
       result.failed += 1;
       await admin.rpc("fail_meta_lead", { p_company_id: companyId, p_leadgen_id: item.leadgenId, p_error: e instanceof Error ? e.message : "Unknown error" });

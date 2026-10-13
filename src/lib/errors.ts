@@ -4,6 +4,7 @@ export type ActionResult<T = undefined> =
 
 const MESSAGES: Record<string, string> = {
   forbidden: "You don't have permission to do that.",
+  no_crm: "Create the client's CRM first (Leads tab).",
   duplicate_phone: "A lead with this phone number already exists.",
   version_conflict: "This lead was changed by someone else. Review the latest details and try again.",
   niche_archived: "That niche has been archived by an admin. Pick another niche.",
@@ -30,6 +31,7 @@ const MESSAGES: Record<string, string> = {
   not_merged: "This company already has its own books.",
   meta_secrets_required: "Enter the App secret and the system user token the first time.",
   invalid_meta_settings: "Check the App ID, Page ID, secret and token.",
+  page_already_connected: "That is our own Page, which is already connected. Its leads reach this client through their campaign category.",
   company_name_taken: "A company with that name already exists.",
   company_required: "Choose a company for this user.",
   reassign_leads_first: "Reassign this user's active leads before changing their role.",

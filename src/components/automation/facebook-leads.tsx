@@ -31,10 +31,17 @@ export type MetaOverview = {
     last_checked_at: string | null; last_event_at: string | null; last_error: string | null;
   } | null;
   routing: string[];
-  candidates: { id: string; display_name: string; role: "sales" | "admin" }[];
+  /** `ours`: someone on our team, offered inside a client's CRM alongside the client's own staff. */
+  candidates: { id: string; display_name: string; role: string; ours?: boolean }[];
   leads_7d: number; failed_7d: number;
+  /**
+   * For a client's CRM: our own Facebook connection, and the categories on our ad account that are
+   * run for this client (leads from those campaigns reach the client's CRM by themselves).
+   */
+  agency?: { app_id: string; page_id: string; page_name: string | null; status: "unverified" | "connected" | "error"; categories: string[] } | null;
 };
-type MetaEvent = { id: string; form_name: string | null; ad_name: string | null; state: string; error: string | null; lead_id: string | null; lead_name: string | null; owner: string | null; created_at: string };
+/** `crm`: the other CRM the lead went to (a client's), when it isn't this company's own. */
+type MetaEvent = { id: string; form_name: string | null; ad_name: string | null; state: string; error: string | null; lead_id: string | null; lead_name: string | null; owner: string | null; crm?: string | null; created_at: string };
 
 export async function fetchMetaOverview(signal: AbortSignal) {
   const { data, error } = await createClient().rpc("super_meta_overview").abortSignal(signal);
@@ -103,9 +110,12 @@ export function MetaStatusBadge({ status }: { status: NonNullable<MetaOverview["
 /**
  * One Facebook connection per company: the Meta app and token, plus the Page ID (lead forms)
  * and/or the ad account ID (Ads dashboard). Secrets are write-only.
+ * `leadsOnly`: a client's CRM, where only lead forms are connected (its ads are on the client's Ad accounts tab).
+ * `sharedApp`: our own Meta app can connect the client's Page, so only the Page ID is typed.
  */
-export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
-  company: MetaOverview; adAccount: AdAccount | null; onChanged: () => void; embedded?: boolean;
+export function ConnectionCard({ company, adAccount, onChanged, embedded, leadsOnly, sharedApp }: {
+  company: MetaOverview; adAccount: AdAccount | null; onChanged: () => void; embedded?: boolean; leadsOnly?: boolean;
+  sharedApp?: { appId: string; save: (pageId: string) => Promise<{ ok: true } | { ok: false; error: string }> };
 }) {
   const i = company.integration;
   const ads = adAccount && !adAccount.archived_at ? adAccount : null;
@@ -123,9 +133,13 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
   const [edited, setEdited] = useState(false);
   const dirty = !saved || edited;
   const edit = (set: (v: string) => void) => (v: string) => { set(v); setEdited(true); };
+  // Our app unless this Page was connected with another one.
+  const [ownApp, setOwnApp] = useState(Boolean(i && sharedApp && i.app_id !== sharedApp.appId));
+  const shared = sharedApp && !ownApp ? sharedApp : null;
 
   const save = () => startSave(async () => {
-    const r = await saveFacebookConnection({ companyId: company.company_id, appId, pageId, actId, appSecret, accessToken: token });
+    const r = shared ? await shared.save(pageId)
+      : await saveFacebookConnection({ companyId: company.company_id, appId, pageId, actId, appSecret, accessToken: token });
     if (!r.ok) { toast.error(r.error); return; }
     setAppSecret(""); setToken(""); setSteps(null); setEdited(false);
     toast.success("Saved. Now press Connect & test.");
@@ -151,20 +165,31 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
   return (
     <Panel
       embedded={embedded}
-      title="Meta app"
+      title={leadsOnly ? "Facebook lead forms" : "Meta app"}
       badge={<MetaStatusBadge status={i?.status ?? ads?.status ?? "none"} />}
-      description={<>
+      description={leadsOnly ? <>
+        Only when this client&apos;s lead forms are on their own Facebook Page: connect that Page, and everyone who fills one of its
+        forms lands in this client&apos;s CRM. {shared ? "The Page must be assigned to our system user in Meta Business settings." : "The Page must give the Meta app lead access (leads_retrieval)."}
+      </> : <>
         One Meta app and token for both: the Page ID brings in lead forms, the ad account ID fills the Ads dashboard. Fill in either or both.
       </>}
     >
-        <div className="grid gap-2 rounded-lg border p-3 text-sm sm:grid-cols-2">
+        <div className={cn("grid gap-2 rounded-lg border p-3 text-sm", !leadsOnly && "sm:grid-cols-2")}>
           <StatusLine label="Lead forms" status={i?.status ?? "none"}
             detail={i ? `${i.page_name ?? `Page ${i.page_id}`}${i.last_event_at ? ` · last lead ${formatDateTime(i.last_event_at)}` : ""}` : "Add a Page ID"} />
-          <StatusLine label="Ads dashboard" status={ads?.status ?? "none"}
-            detail={ads ? `${ads.name ?? `act_${ads.act_id}`}${ads.last_synced_at ? ` · synced ${formatDateTime(ads.last_synced_at)}` : ""}` : "Add an ad account ID"} />
+          {leadsOnly ? null : (
+            <StatusLine label="Ads dashboard" status={ads?.status ?? "none"}
+              detail={ads ? `${ads.name ?? `act_${ads.act_id}`}${ads.last_synced_at ? ` · synced ${formatDateTime(ads.last_synced_at)}` : ""}` : "Add an ad account ID"} />
+          )}
         </div>
+        {sharedApp ? (
+          <Label className="flex items-center gap-2 font-normal">
+            <Checkbox checked={!ownApp} onCheckedChange={(v) => { setOwnApp(v !== true); setEdited(true); }} />
+            Use our own Meta app and token (only the Page ID is needed)
+          </Label>
+        ) : null}
         <FieldGroup className="gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className={cn("grid gap-4 sm:grid-cols-2", shared && "hidden")}>
             <Field>
               <FieldLabel htmlFor="meta-app">App ID</FieldLabel>
               <Input id="meta-app" inputMode="numeric" value={appId} onChange={(e) => edit(setAppId)(e.target.value)} placeholder="e.g. 1234567890123456" />
@@ -175,25 +200,27 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
                 placeholder={saved ? "•••••••• saved (type to replace)" : "From App settings → Basic"} />
             </Field>
           </div>
-          <Field>
+          <Field className={cn(shared && "hidden")}>
             <FieldLabel htmlFor="meta-token">System user access token</FieldLabel>
             <Input id="meta-token" type="password" autoComplete="off" value={token} onChange={(e) => edit(setToken)(e.target.value)}
-              placeholder={saved ? "•••••••• saved (type to replace)" : "Never-expiring token with leads_retrieval and ads_read"} />
+              placeholder={saved ? "•••••••• saved (type to replace)" : leadsOnly ? "Never-expiring token with leads_retrieval" : "Never-expiring token with leads_retrieval and ads_read"} />
             <FieldDescription>Stored encrypted in Supabase Vault and never shown again.</FieldDescription>
           </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className={cn("grid gap-4", !leadsOnly && "sm:grid-cols-2")}>
             <Field>
               <FieldLabel htmlFor="meta-page">Page ID <span className="font-normal text-muted-foreground">(lead forms)</span></FieldLabel>
               <Input id="meta-page" inputMode="numeric" value={pageId} onChange={(e) => edit(setPageId)(e.target.value)} placeholder="e.g. 102345678901234" />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="meta-act">Ad account ID <span className="font-normal text-muted-foreground">(Ads dashboard)</span></FieldLabel>
-              <Input id="meta-act" value={actId} onChange={(e) => edit(setActId)(e.target.value)} placeholder="act_1234567890" />
-            </Field>
+            {leadsOnly ? null : (
+              <Field>
+                <FieldLabel htmlFor="meta-act">Ad account ID <span className="font-normal text-muted-foreground">(Ads dashboard)</span></FieldLabel>
+                <Input id="meta-act" value={actId} onChange={(e) => edit(setActId)(e.target.value)} placeholder="act_1234567890" />
+              </Field>
+            )}
           </div>
         </FieldGroup>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={save} disabled={saving || !appId || (!pageId && !actId)}>{saving ? <Loader2 className="animate-spin" /> : <Save />} Save</Button>
+          <Button onClick={save} disabled={saving || (shared ? !pageId : !appId || (!pageId && !actId))}>{saving ? <Loader2 className="animate-spin" /> : <Save />} Save</Button>
           {!dirty ? (
             <Button variant="outline" onClick={test} disabled={testing}>{testing ? <Loader2 className="animate-spin" /> : <PlugZap />} Connect &amp; test</Button>
           ) : null}
@@ -202,7 +229,8 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded }: {
             <ConfirmDialog
               trigger={<Button variant="ghost"><Trash2 /> Remove</Button>}
               title="Remove the Facebook connection?"
-              description="New Facebook leads stop arriving and ad numbers stop syncing. Existing leads and synced ad history stay. The saved secrets are deleted."
+              description={leadsOnly ? "New Facebook leads stop arriving. Existing leads stay. The saved secrets are deleted."
+                : "New Facebook leads stop arriving and ad numbers stop syncing. Existing leads and synced ad history stay. The saved secrets are deleted."}
               confirmLabel="Remove" destructive
               onConfirm={async () => {
                 const r = await removeFacebookConnection({ companyId: company.company_id });
@@ -296,7 +324,9 @@ function CopyRow({ label, value, onCopy }: { label: string; value: string; onCop
   );
 }
 
-export function RoutingCard({ company, onChanged, embedded }: { company: MetaOverview; onChanged: () => void; embedded?: boolean }) {
+export function RoutingCard({ company, onChanged, embedded, emptyText = "Nobody selected: leads go to the company's admin." }: {
+  company: MetaOverview; onChanged: () => void; embedded?: boolean; emptyText?: string;
+}) {
   const [picked, setPicked] = useState<string[]>(company.routing);
   const [pending, start] = useTransition();
   const dirty = picked.slice().sort().join() !== company.routing.slice().sort().join();
@@ -310,7 +340,7 @@ export function RoutingCard({ company, onChanged, embedded }: { company: MetaOve
     <Panel
       embedded={embedded}
       title="Who gets new Facebook leads"
-      description={picked.length === 0 ? "Nobody selected: leads go to the company's admin."
+      description={picked.length === 0 ? emptyText
         : picked.length === 1 ? "One person selected: every lead goes to them."
         : `${picked.length} people selected: leads are shared round-robin, one each in turn.`}
     >
@@ -322,7 +352,7 @@ export function RoutingCard({ company, onChanged, embedded }: { company: MetaOve
               <Label key={u.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 font-normal">
                 <Checkbox checked={picked.includes(u.id)} onCheckedChange={(v) => setPicked((p) => (v === true ? [...p, u.id] : p.filter((x) => x !== u.id)))} />
                 <span className="flex-1">{u.display_name}</span>
-                <span className="text-xs text-muted-foreground">{u.role === "admin" ? "Admin" : "Sales"}</span>
+                <span className="text-xs text-muted-foreground">{u.ours ? "Our team" : u.role === "admin" ? "Admin" : "Sales"}</span>
               </Label>
             ))}
           </div>
@@ -361,7 +391,7 @@ export function InboxCard({ companyId, embedded }: { companyId: string; embedded
                   <span className={cn("shrink-0 text-xs", STATE_TEXT[e.state]?.[1])}>{STATE_TEXT[e.state]?.[0] ?? e.state}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {formatDateTime(e.created_at)}{e.form_name ? ` · ${e.form_name}` : ""}{e.owner ? ` · to ${e.owner}` : ""}
+                  {formatDateTime(e.created_at)}{e.form_name ? ` · ${e.form_name}` : ""}{e.owner ? ` · to ${e.owner}` : ""}{e.crm ? ` · in ${e.crm}'s CRM` : ""}
                 </p>
                 {e.error ? <p className="text-xs text-red-300">{e.error}</p> : null}
               </li>

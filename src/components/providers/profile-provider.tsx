@@ -2,6 +2,7 @@
 
 import { createContext, use } from "react";
 import type { CompanyBrand } from "@/lib/companies";
+import type { Workspace } from "@/lib/auth";
 import type { AppRole, CompanyFeature } from "@/lib/constants";
 
 export type ClientProfile = {
@@ -18,6 +19,8 @@ export type ClientProfile = {
   companies: CompanyBrand[];
   /** Optional modules on for the current company (e.g. "projects"). */
   features: CompanyFeature[];
+  /** Set when the current company is an ads client's CRM. */
+  workspace: Workspace | null;
 };
 
 const ProfileContext = createContext<Promise<ClientProfile> | null>(null);

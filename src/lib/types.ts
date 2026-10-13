@@ -5,6 +5,7 @@ export type NicheOption = { id: string; name: string };
 export type LeadListItem = {
   id: string;
   name: string;
+  company_name: string | null;
   phone: string;
   email: string | null;
   status: LeadOutcome;

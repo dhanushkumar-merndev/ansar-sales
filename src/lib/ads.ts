@@ -37,6 +37,8 @@ export type AdCampaignRow = {
 export type AdCategory = {
   id: string; name: string; company_id: string | null; match_text: string | null; campaigns: number;
   ads_client_id?: string | null; client_name?: string | null;
+  /** On: our company, counted in the Ads dashboard by default. Off: a client's campaigns. */
+  in_dashboard: boolean;
 };
 
 /** Where an ads client's ads run: a category of the agency's own account, or the client's own account. */
@@ -64,8 +66,14 @@ export const ADS_CLIENT_STATUS_LABELS: Record<AdsClientStatus, string> = {
 };
 
 export type AdsClient = {
-  id: string; company_id: string; lead_id: string | null; name: string; phone: string | null; email: string | null; business: string | null;
+  id: string; company_id: string; lead_id: string | null; name: string; company_name: string | null; phone: string | null; email: string | null;
+  /** The lead's niche (industry), not a company name. */
+  business: string | null;
   status: AdsClientStatus; notes: string | null; started_at: string; closed_at: string | null; created_at: string;
+  /** The portal login also lists the client's leads (read-only). */
+  portal_show_leads: boolean;
+  /** The client's own CRM exists. */
+  has_crm: boolean;
 };
 
 /** Ratio or null when the denominator is zero (shown as "—", never as 0 or Infinity). */

@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { pastPresets, RangePicker } from "@/components/common/range-picker";
 import { PinButton, PinnedBadge, PinnedCount, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
 import { StaffSelect } from "@/components/leads/staff-select";
@@ -137,7 +138,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
               <Link href={`/leads/${l.id}`} className="font-medium hover:underline">{l.name}</Link>
               {l.pinned_at ? <PinnedBadge /> : null}
             </div>
-            <div className="truncate text-xs text-muted-foreground">{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
+            <div className="truncate text-xs text-muted-foreground">{[l.company_name, l.phone, l.email].filter(Boolean).join(" · ")}</div>
           </div>
         ),
       },
@@ -223,7 +224,10 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         actions={
           <>
             {isAdmin ? (
-              <Button variant="outline" asChild><Link href="/leads/niches"><Tags /> Niches</Link></Button>
+              <>
+                <LeadDownloadMenu />
+                <Button variant="outline" asChild><Link href="/leads/niches"><Tags /> Niches</Link></Button>
+              </>
             ) : null}
             <Button onClick={() => setCreateOpen(true)}><Plus /> Add lead</Button>
           </>
@@ -241,7 +245,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search name, phone or email"
+            placeholder="Search name, company, phone or email"
             className="h-9 rounded-xl border-white/[0.1] bg-card/60 pl-9"
             value={searchInput}
             maxLength={100}
@@ -314,6 +318,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium"><span className="truncate">{l.name}</span>{l.pinned_at ? <PinnedBadge /> : null}</p>
+                      {l.company_name ? <p className="truncate text-sm text-muted-foreground">{l.company_name}</p> : null}
                       <p className="flex items-center gap-1 text-sm text-muted-foreground"><Phone className="size-3" />{l.phone}</p>
                     </div>
                     <StatusBadge stageId={l.stage_id} status={l.status} />

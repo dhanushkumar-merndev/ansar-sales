@@ -52,6 +52,7 @@ export function AdsClientsView() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [input, setInput] = useState("");
+  const router = useRouter();
   const search = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
   const [status, setStatus] = useState<string>("open");
   const [adding, setAdding] = useState(false);
@@ -81,7 +82,7 @@ export function AdsClientsView() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search name, business, phone" className="w-64 pl-8" aria-label="Search clients" />
+          <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search company, name, phone" className="w-64 pl-8" aria-label="Search clients" />
         </div>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-40" aria-label="Status"><SelectValue /></SelectTrigger>
@@ -100,13 +101,15 @@ export function AdsClientsView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-56">Client</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Ad source</TableHead>
-                  <TableHead className="text-right">Spent (30 days)</TableHead>
-                  <TableHead className="text-right">Results</TableHead>
-                  <TableHead className="text-right">Cost / result</TableHead>
-                  <TableHead>Since</TableHead>
+                  {/* Fixed shares of the width: text columns left, figures and the date right. */}
+                  <TableHead className="w-[20%] min-w-44 pl-4">Business</TableHead>
+                  <TableHead className="w-[16%] min-w-36">Client</TableHead>
+                  <TableHead className="w-[11%]">Status</TableHead>
+                  <TableHead className="w-[13%]">Ad source</TableHead>
+                  <TableHead className="w-[12%] text-right">Spent (30 days)</TableHead>
+                  <TableHead className="w-[8%] text-right">Results</TableHead>
+                  <TableHead className="w-[10%] text-right">Cost / result</TableHead>
+                  <TableHead className="w-[10%] pr-4 text-right">Since</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -117,11 +120,19 @@ export function AdsClientsView() {
                   const single = totals.length === 1 ? totals[0] : null;
                   const k = single ? adKpis({ ...single, conversions: 0, conversion_value: 0 }) : null;
                   const leads = totals.reduce((n, t) => n + Number(t.leads), 0);
+                  // Company name; older clients may only have it in the industry field.
+                  const businessName = c.company_name ?? c.business;
                   return (
-                    <TableRow key={c.id}>
+                    // Top-aligned so every column's first line (name, badges, figures) shares one baseline.
+                    <TableRow key={c.id} className="cursor-pointer [&>td]:py-3 [&>td]:align-top"
+                      onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/ads/clients/${c.id}`); }}>
+                      <TableCell className="pl-4">
+                        <Link href={`/ads/clients/${c.id}`} className="font-medium hover:underline">{businessName ?? "—"}</Link>
+                        {c.company_name && c.business ? <div className="text-xs text-muted-foreground">{c.business}</div> : null}
+                      </TableCell>
                       <TableCell>
-                        <Link href={`/ads/clients/${c.id}`} className="font-medium hover:underline">{c.name}</Link>
-                        <div className="text-xs text-muted-foreground">{[c.business, c.phone].filter(Boolean).join(" · ") || "—"}</div>
+                        <Link href={`/ads/clients/${c.id}`} className="hover:underline">{c.name}</Link>
+                        <div className="text-xs text-muted-foreground">{c.phone ?? "—"}</div>
                       </TableCell>
                       <TableCell><Badge variant="outline" className={cn(clientStatusTone(c.status))}>{ADS_CLIENT_STATUS_LABELS[c.status]}</Badge></TableCell>
                       <TableCell>
@@ -136,7 +147,7 @@ export function AdsClientsView() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{totals.length ? formatCount(leads) : "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{single && k?.cpl != null ? moneyFormat(single.currency)(k.cpl) : "—"}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{formatDate(c.started_at)}</TableCell>
+                      <TableCell className="pr-4 text-right text-sm whitespace-nowrap text-muted-foreground">{formatDate(c.started_at)}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -155,7 +166,7 @@ export function AdsClientsView() {
 
 function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", business: "", phone: "", email: "", notes: "" });
+  const [form, setForm] = useState({ companyName: "", name: "", business: "", phone: "", email: "", notes: "" });
   const [pending, start] = useTransition();
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,8 +187,11 @@ function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
             <DialogDescription>For a client who didn&apos;t come through the Leads pipeline.</DialogDescription>
           </DialogHeader>
           <FieldGroup className="gap-4">
-            <Field><FieldLabel htmlFor="ac-name">Name</FieldLabel><Input id="ac-name" value={form.name} onChange={set("name")} required maxLength={120} /></Field>
-            <Field><FieldLabel htmlFor="ac-business">Business</FieldLabel><Input id="ac-business" value={form.business} onChange={set("business")} maxLength={120} /></Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field><FieldLabel htmlFor="ac-company">Company name</FieldLabel><Input id="ac-company" value={form.companyName} onChange={set("companyName")} maxLength={120} /></Field>
+              <Field><FieldLabel htmlFor="ac-name">Contact name</FieldLabel><Input id="ac-name" value={form.name} onChange={set("name")} required maxLength={120} /></Field>
+            </div>
+            <Field><FieldLabel htmlFor="ac-business">Industry</FieldLabel><Input id="ac-business" value={form.business} onChange={set("business")} maxLength={120} placeholder="e.g. Real estate" /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field><FieldLabel htmlFor="ac-phone">Phone</FieldLabel><Input id="ac-phone" value={form.phone} onChange={set("phone")} maxLength={32} /></Field>
               <Field><FieldLabel htmlFor="ac-email">Email</FieldLabel><Input id="ac-email" type="email" value={form.email} onChange={set("email")} maxLength={254} /></Field>

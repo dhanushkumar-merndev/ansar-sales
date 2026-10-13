@@ -127,6 +127,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <StatusBadge stageId={l.stage_id} status={l.status} />
             {l.source === "facebook" ? <SourceBadge meta={l.source_meta} /> : null}
+            {l.company_name ? <><span className="text-foreground">{l.company_name}</span><span aria-hidden>·</span></> : null}
             <span>{l.niche.name}</span>
             <span aria-hidden>·</span>
             <span>Owner: <span className="text-foreground">{l.owner.display_name}</span></span>
@@ -294,7 +295,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         open={editOpen}
         onOpenChange={setEditOpen}
         initialNiches={initialNiches}
-        lead={editOpen && editSnapshot ? { id: l.id, version: editSnapshot.version, name: l.name, phone: l.phone, email: l.email, niche: l.niche } : undefined}
+        lead={editOpen && editSnapshot ? { id: l.id, version: editSnapshot.version, name: l.name, company_name: l.company_name, phone: l.phone, email: l.email, niche: l.niche } : undefined}
         latestVersion={l.version}
         onSaved={refreshAll}
       />

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState, useTransition } from "react";
-import { ExternalLink, ImageOff, Loader2, RefreshCw, Search } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronDown, ExternalLink, ImageOff, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { DataPagination } from "@/components/common/data-pagination";
 import { pastPresets, RangePicker, type DayRange } from "@/components/common/range-picker";
@@ -10,7 +11,10 @@ import { Bars, ChartCard, Donut, StatCard, TrendLine } from "@/components/dashbo
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,8 +34,19 @@ import { refreshAdAccount, setCampaignCategory } from "@/server/actions/ads";
 
 const TOP_CAMPAIGNS = 6;
 
-const ALL = "all";
+/** Uncategorised campaigns in a category selection. */
 const NONE = "none";
+
+/** Which campaigns the dashboard counts: our company (default), the whole account, or picked categories. */
+type CategoryView = { kind: "ours" } | { kind: "all" } | { kind: "pick"; ids: string[] };
+type AdsFilter = { p_category?: string; p_ours?: boolean; p_categories?: string[]; p_with_uncategorised?: boolean };
+
+function viewFilter(view: CategoryView, fixedCategory?: string): AdsFilter {
+  if (fixedCategory) return { p_category: fixedCategory };
+  if (view.kind === "ours") return { p_ours: true };
+  if (view.kind === "all") return {};
+  return { p_categories: view.ids.filter((id) => id !== NONE), p_with_uncategorised: view.ids.includes(NONE) };
+}
 
 /**
  * KPIs, charts and the campaign table of one ad account. Used for a company's ads, an ads client's
@@ -40,17 +55,19 @@ const NONE = "none";
  * A given `range` is owned by the parent (which shows the picker); `fixedCategory` shows only that
  * category (an ads client's slice of the agency account) without the category picker.
  */
-export function AdsDashboard({ accountId, canManage, version = 0, range: sharedRange, fixedCategory }: {
+export function AdsDashboard({ accountId, canManage, version = 0, range: sharedRange, fixedCategory, syncSlot }: {
   accountId: string; canManage: boolean; version?: number; range?: DayRange; fixedCategory?: string;
+  /** Where the page wants the synced time and Refresh button (rendered there instead of in this toolbar); `null` while that spot mounts. */
+  syncSlot?: HTMLElement | null;
 }) {
   const [ownRange, setRange] = useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
   const range = sharedRange ?? ownRange;
-  const [picked, setCategory] = useState<string>(ALL);
-  const category = fixedCategory ?? picked;
-  const filter = { p_category: category !== ALL && category !== NONE ? category : undefined, p_uncategorised: category === NONE };
+  const [view, setView] = useState<CategoryView>({ kind: "ours" });
+  const filter = useMemo(() => viewFilter(view, fixedCategory), [view, fixedCategory]);
+  const filterKey = JSON.stringify(filter);
 
   const overview = useLiveQuery({
-    queryKey: `ads-overview:${accountId}:${range.from}:${range.to}:${category}:${version}`,
+    queryKey: `ads-overview:${accountId}:${range.from}:${range.to}:${filterKey}:${version}`,
     fetcher: async (signal) => {
       const { data, error } = await createClient()
         .rpc("ads_overview", { p_account: accountId, p_from: range.from, p_to: range.to, ...filter }).abortSignal(signal);
@@ -89,25 +106,23 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
 
   if (overview.error && !o) return <ErrorState message={overview.error} onRetry={overview.refetch} />;
 
+  const syncControls = (
+    <>
+      {o ? <SyncStatus account={o.account} /> : null}
+      {canManage && o && !o.account.archived_at ? <RefreshButton accountId={accountId} onDone={overview.refetch} /> : null}
+    </>
+  );
+
   return (
     <div className="space-y-5">
+      {syncSlot ? createPortal(syncControls, syncSlot) : null}
       <div className="flex flex-wrap items-center gap-2">
         {sharedRange ? null : <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="start" />}
         {scope === "all" && !fixedCategory && (categories.data?.length ?? 0) > 0 ? (
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-52" aria-label="Category"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All categories</SelectItem>
-              {categories.data?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              <SelectItem value={NONE}>Uncategorised</SelectItem>
-            </SelectContent>
-          </Select>
+          <CategoryFilter categories={categories.data ?? []} value={view} onChange={setView} />
         ) : null}
         <FetchingIndicator show={overview.isFetching && !overview.isInitialLoading} />
-        <div className="ml-auto flex items-center gap-2">
-          {o ? <SyncStatus account={o.account} /> : null}
-          {canManage && o && !o.account.archived_at ? <RefreshButton accountId={accountId} onDone={overview.refetch} /> : null}
-        </div>
+        {syncSlot === undefined ? <div className="ml-auto flex items-center gap-2">{syncControls}</div> : null}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -116,7 +131,9 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
         <StatCard label="Impressions" value={t ? formatCount(t.impressions) : null} hint={`CPM: ${k?.cpm != null ? money(k.cpm) : "—"}`} />
         <StatCard label={o?.reach_month != null ? "Reach (month, unique)" : "Reach (daily, summed)"}
           value={t ? formatCount(o?.reach_month ?? t.reach_daily_sum) : null}
-          hint={o?.reach_month != null ? `Frequency: ${formatRatio(k?.frequency ?? null)}` : "Pick a whole calendar month for unique reach"} />
+          hint={o?.reach_month != null ? `Frequency: ${formatRatio(k?.frequency ?? null)}`
+            : view.kind === "pick" || (view.kind === "ours" && categories.data?.some((c) => !c.in_dashboard))
+              ? "Unique reach covers the whole account: pick Everything and a whole month" : "Pick a whole calendar month for unique reach"} />
         <StatCard label="Clicks" value={t ? formatCount(t.clicks) : null} hint={`CTR: ${formatPercent(k?.ctr ?? null)}`} />
         <StatCard label="Cost per click" value={k ? (k.cpc != null ? money(k.cpc) : "—") : null} hint={`Link clicks: ${t ? formatCount(t.link_clicks) : "…"}`} />
         <StatCard label="Conversions" value={t ? formatCount(t.conversions) : null} hint={`Cost each: ${k?.costPerConversion != null ? money(k.costPerConversion) : "—"}`} />
@@ -159,6 +176,61 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
   );
 }
 
+/**
+ * Multi-select of categories for the dashboard. The ticks always show what is counted: "Our company"
+ * ticks every category switched on plus uncategorised; unticking or ticking one starts a custom pick.
+ */
+function CategoryFilter({ categories, value, onChange }: { categories: AdCategory[]; value: CategoryView; onChange: (v: CategoryView) => void }) {
+  const ours = [...categories.filter((c) => c.in_dashboard).map((c) => c.id), NONE];
+  const everything = [...categories.map((c) => c.id), NONE];
+  const ticked = new Set(value.kind === "ours" ? ours : value.kind === "all" ? everything : value.ids);
+  const same = (ids: string[], set: Set<string>) => ids.length === set.size && ids.every((id) => set.has(id));
+  const toggle = (id: string) => {
+    const next = new Set(ticked);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.size === 0 || same(ours, next)) onChange({ kind: "ours" });
+    else if (same(everything, next)) onChange({ kind: "all" });
+    else onChange({ kind: "pick", ids: [...next] });
+  };
+  const label = value.kind === "ours" ? "Our company" : value.kind === "all" ? "Everything"
+    : value.ids.length === 1 ? (value.ids[0] === NONE ? "Uncategorised" : categories.find((c) => c.id === value.ids[0])?.name ?? "1 category")
+    : `${value.ids.length} categories`;
+  const row = (id: string, name: string) => (
+    <Label key={id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 font-normal hover:bg-muted">
+      <Checkbox checked={ticked.has(id)} onCheckedChange={() => toggle(id)} />
+      <span className="min-w-0 truncate">{name}</span>
+    </Label>
+  );
+  const groups = [
+    { title: "Our company", list: categories.filter((c) => c.in_dashboard) },
+    { title: "Clients", list: categories.filter((c) => !c.in_dashboard) },
+  ];
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-56 justify-between font-normal" aria-label="Categories shown">
+          <span className="truncate">{label}</span><ChevronDown className="opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-1">
+        <div className="grid grid-cols-2 gap-1 p-1">
+          <Button size="sm" variant={value.kind === "ours" ? "secondary" : "ghost"} onClick={() => onChange({ kind: "ours" })}>Our company</Button>
+          <Button size="sm" variant={value.kind === "all" ? "secondary" : "ghost"} onClick={() => onChange({ kind: "all" })}>Everything</Button>
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          {groups.map((g) => g.list.length ? (
+            <div key={g.title} className="border-t pt-1">
+              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">{g.title}</p>
+              {g.list.map((c) => row(c.id, c.name))}
+            </div>
+          ) : null)}
+          <div className="border-t pt-1">{row(NONE, "Uncategorised")}</div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function SyncStatus({ account }: { account: AdsOverview["account"] }) {
   if (account.archived_at) return <Badge variant="outline" className="text-muted-foreground">Disconnected · history only</Badge>;
   if (account.sync_paused) return <Badge variant="outline" className="text-muted-foreground">Sync paused</Badge>;
@@ -194,7 +266,7 @@ function statusTone(status: string | null) {
 }
 
 function CampaignTable({ accountId, range, filter, money, version, categories, onCategoryChanged }: {
-  accountId: string; range: DayRange; filter: { p_category?: string; p_uncategorised: boolean }; version: number;
+  accountId: string; range: DayRange; filter: AdsFilter; version: number;
   money: (v: number | string | null | undefined) => string; categories: AdCategory[] | null; onCategoryChanged: () => void;
 }) {
   const [page, setPage] = useState(1);
@@ -204,7 +276,7 @@ function CampaignTable({ accountId, range, filter, money, version, categories, o
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
   const [sort, setSort] = useState<Sort>("spend");
   const [openId, setOpenId] = useState<string | null>(null);
-  const key = `${accountId}:${range.from}:${range.to}:${filter.p_category ?? ""}:${filter.p_uncategorised}:${search}:${status}:${sort}`;
+  const key = `${accountId}:${range.from}:${range.to}:${JSON.stringify(filter)}:${search}:${status}:${sort}`;
   const [pageKey, setPageKey] = useState(key);
   // Any change of filters starts again from page 1.
   if (pageKey !== key) { setPageKey(key); setPage(1); }

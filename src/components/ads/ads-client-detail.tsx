@@ -2,14 +2,17 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronsUpDown, KeyRound, Loader2, Pencil, Plus, Unlink, UserCheck, UserX } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronsUpDown, Info, KeyRound, Loader2, Pencil, Plus, RefreshCw, Unlink, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { AdAccountForm, AdAccountStatus } from "@/components/ads/ad-account-form";
 import { clientStatusTone } from "@/components/ads/ads-clients-view";
-import { ClientResults, type ResultSource } from "@/components/ads/client-results";
+import { ClientResults, defaultRange, type ResultSource } from "@/components/ads/client-results";
+import { pastPresets, RangePicker, type DayRange } from "@/components/common/range-picker";
 import { AddCampaigns } from "@/components/ads/ads-view";
+import { ConnectionCard, InboxCard, type MetaOverview, RoutingCard } from "@/components/automation/facebook-leads";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
+import { StatCard } from "@/components/dashboard/widgets";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,25 +25,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { type AdAccount, type AdsClient, ADS_CLIENT_STATUS_LABELS, type AdsClientStatus, type AgencySource } from "@/lib/ads";
 import { createClient } from "@/lib/supabase/client";
+import { formatCount } from "@/lib/format";
 import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
-  createClientLogin, resetClientPassword, saveAdCategory, setAdsClientCategory, setAdsClientStatus, setClientLoginActive, updateAdsClient,
+  createClientLogin, openAdsClientCrm, resetClientPassword, saveAdCategory, setAdsClientCategory, setAdsClientStatus, setClientLoginActive, setClientPortalLeads,
+  updateAdsClient,
 } from "@/server/actions/ads";
+import { connectClientPage, syncClientLeads } from "@/server/actions/meta";
 
 type Login = { id: string; username: string; display_name: string; is_active: boolean; created_at: string };
 type AgencyCategory = { id: string; name: string; company_id: string | null; ads_client_id: string | null; client_name: string | null };
 type Detail = AdsClient & {
-  company_name: string; accounts: AdAccount[]; logins: Login[];
+  /** Our own company (the agency running this client's ads). */
+  agency_name: string; accounts: AdAccount[]; logins: Login[];
   /** The company's own live ad account, with its categories for linking (null when not connected). */
   agency: { account: AdAccount; categories: AgencyCategory[] } | null;
   /** Categories of company ad accounts run for this client (disconnected accounts included, for history). */
   agency_sources: AgencySource[];
+};
+
+/** Counts from the client's own CRM (null until it is created). */
+type CrmSummary = {
+  company_id: string; name: string; archived: boolean;
+  active_leads: number; new_today: number; won_this_month: number; due_today: number; overdue: number; users: number;
 };
 
 const accountLabel = (a: AdAccount) => a.name ?? `act_${a.act_id}`;
@@ -71,12 +85,16 @@ export function AdsClientDetail({ id }: { id: string }) {
     pollMs: 5 * 60_000,
   });
   const [editing, setEditing] = useState(false);
+  const [syncSlot, setSyncSlot] = useState<HTMLElement | null>(null);
+  const [tab, setTab] = useState<string | null>(null);
+  const [range, setRange] = useState<DayRange>(defaultRange);
   const c = detail.data;
   if (detail.error && !c) return <ErrorState message={detail.error} onRetry={detail.refetch} />;
   if (!c) return <ListSkeleton rows={8} />;
   const live = c.accounts.find((a) => !a.archived_at) ?? null;
   const linked = (c.agency_sources ?? []).find((s) => !s.account.archived_at) ?? null;
   const sources = resultSources(c);
+  const activeTab = tab ?? (sources.length ? "results" : "accounts");
 
   return (
     <div className="space-y-5">
@@ -84,12 +102,12 @@ export function AdsClientDetail({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight md:text-2xl">
-            {c.name}
+            {c.company_name ?? c.name}
             <Badge variant="outline" className={cn(clientStatusTone(c.status))}>{ADS_CLIENT_STATUS_LABELS[c.status]}</Badge>
             <SourceBadges agency={Boolean(linked)} own={Boolean(live)} />
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {[c.business, c.phone, c.email].filter(Boolean).join(" · ") || "No contact details"} · client since {formatDate(c.started_at)}
+            {[c.company_name ? c.name : null, c.business, c.phone, c.email].filter(Boolean).join(" · ") || "No contact details"} · client since {formatDate(c.started_at)}
             {c.closed_at ? ` · closed ${formatDate(c.closed_at)}` : ""}
             {c.lead_id && profile.role === "admin" ? <> · <Link href={`/leads/${c.lead_id}`} className="underline underline-offset-2">original lead</Link></> : null}
           </p>
@@ -97,16 +115,23 @@ export function AdsClientDetail({ id }: { id: string }) {
         <div className="flex flex-wrap gap-2">
           <StatusSelect client={c} onChanged={detail.refetch} />
           <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit</Button>
+          <div ref={setSyncSlot} className="flex items-center gap-2" />
         </div>
       </div>
       {c.notes ? <p className="max-w-3xl text-sm whitespace-pre-wrap text-muted-foreground">{c.notes}</p> : null}
 
-      <Tabs defaultValue={sources.length ? "results" : "accounts"}>
-        <TabsList>
-          <TabsTrigger value="results">Results</TabsTrigger>
-          <TabsTrigger value="accounts">Ad accounts</TabsTrigger>
-          <TabsTrigger value="login">Client login</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setTab}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList>
+            <TabsTrigger value="results">Results</TabsTrigger>
+            <TabsTrigger value="accounts">Ad accounts</TabsTrigger>
+            <TabsTrigger value="leads">Leads</TabsTrigger>
+            <TabsTrigger value="login">Client login</TabsTrigger>
+          </TabsList>
+          {activeTab === "results" && sources.length ? (
+            <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="end" />
+          ) : null}
+        </div>
         <TabsContent value="results" className="pt-3">
           {!sources.length ? (
             <EmptyState title="No ad source yet"
@@ -114,7 +139,7 @@ export function AdsClientDetail({ id }: { id: string }) {
           ) : (
             <div className="space-y-4">
               {c.status === "closed" ? <p className="text-sm text-muted-foreground">This client is closed: syncing stopped, and everything synced until then is kept below.</p> : null}
-              <ClientResults clientId={c.id} sources={sources} canManage />
+              <ClientResults clientId={c.id} sources={sources} canManage range={range} syncSlot={syncSlot} />
             </div>
           )}
         </TabsContent>
@@ -139,11 +164,144 @@ export function AdsClientDetail({ id }: { id: string }) {
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="login" className="pt-3">
+        <TabsContent value="leads" className="pt-3">
+          <ClientCrmCard client={c} />
+        </TabsContent>
+        <TabsContent value="login" className="space-y-4 pt-3">
           <LoginsCard client={c} onChanged={detail.refetch} />
+          <p className="max-w-4xl text-sm text-muted-foreground">
+            These logins only show ad results. CRM users for the client&apos;s staff are added inside their CRM → Users (open it from the Leads tab).
+          </p>
         </TabsContent>
       </Tabs>
       <EditClientDialog open={editing} onOpenChange={setEditing} client={c} onSaved={detail.refetch} />
+    </div>
+  );
+}
+
+/** The client's own leads CRM: created on first use, then opened by switching into it. */
+function ClientCrmCard({ client }: { client: Detail }) {
+  const [pending, start] = useTransition();
+  const summary = useLiveQuery({
+    queryKey: `ads-client-crm:${client.id}`,
+    fetcher: async (signal) => {
+      const { data, error } = await createClient().rpc("ads_client_crm_summary", { p_client: client.id }).abortSignal(signal);
+      if (error) throw error;
+      return data as unknown as CrmSummary | null;
+    },
+  });
+  const open = () => start(async () => {
+    const r = await openAdsClientCrm({ clientId: client.id });
+    if (!r.ok) { toast.error(r.error); return; }
+    // A full load: every list, cache and Realtime channel then belongs to the client's CRM.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/leads");
+  });
+  const s = summary.data;
+  const name = client.company_name ?? client.name;
+  if (summary.error && s === undefined) return <ErrorState message={summary.error} onRetry={summary.refetch} />;
+  if (s === undefined) return <ListSkeleton rows={3} />;
+  if (!s) {
+    return (
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>A leads CRM for {name}</CardTitle>
+          <CardDescription>
+            Gives this client their own leads, follow-ups, timeline and Telegram reminders, kept apart from ours.
+            Our admins and ads managers work in it as Admin; the client&apos;s staff get their own users inside it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={open} disabled={pending}>{pending ? <Loader2 className="animate-spin" /> : <Plus />} Create &amp; open CRM</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{s.name}</span> · {formatCount(s.users)} {s.users === 1 ? "user" : "users"} of their own
+          {s.archived ? " · archived" : ""}
+        </p>
+        <Button onClick={open} disabled={pending || s.archived}>Open CRM {pending ? <Loader2 className="animate-spin" /> : <ArrowRight />}</Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <StatCard label="Active leads" value={formatCount(s.active_leads)} />
+        <StatCard label="New today" value={formatCount(s.new_today)} />
+        <StatCard label="Due today" value={formatCount(s.due_today)} hint="Follow-ups still to do today" />
+        <StatCard label="Overdue" value={formatCount(s.overdue)} tone={s.overdue ? "danger" : undefined} hint="Follow-ups past their time" />
+        <StatCard label="Won this month" value={formatCount(s.won_this_month)} tone={s.won_this_month ? "success" : undefined} />
+      </div>
+      {s.archived ? null : <ClientFacebookLeads clientId={client.id} onChanged={summary.refetch} />}
+    </div>
+  );
+}
+
+/** The client's Facebook Page connected to their CRM, who gets its leads, and the latest ones. */
+function ClientFacebookLeads({ clientId, onChanged }: { clientId: string; onChanged: () => void }) {
+  const [syncing, startSync] = useTransition();
+  const meta = useLiveQuery({
+    queryKey: `ads-client-crm-meta:${clientId}`,
+    fetcher: async (signal) => {
+      const { data, error } = await createClient().rpc("ads_client_crm_meta", { p_client: clientId }).abortSignal(signal);
+      if (error) throw error;
+      return data as unknown as MetaOverview | null;
+    },
+    tables: ["profiles"],
+    pollMs: 0,
+  });
+  const m = meta.data;
+  if (meta.error && !m) return <ErrorState message={meta.error} onRetry={meta.refetch} />;
+  if (m === undefined) return <ListSkeleton rows={4} />;
+  if (!m) return null;
+  const changed = () => { meta.refetch(); onChanged(); };
+  const ours = m.agency ?? null;
+  const sync = () => startSync(async () => {
+    const r = await syncClientLeads({ clientId });
+    if (!r.ok) { toast.error(r.error); return; }
+    toast.success(r.data.routed
+      ? `${r.data.routed} new ${r.data.routed === 1 ? "lead" : "leads"} added to this CRM`
+      : `Checked ${r.data.found} leads from the last 7 days: nothing new for this client`);
+    changed();
+  });
+  const ourPage = ours ? (ours.page_name ?? `Page ${ours.page_id}`) : "";
+  return (
+    <div className="space-y-4 pt-2">
+      {!ours ? null : ours.status === "connected" && ours.categories.length ? (
+        <p className="flex items-start gap-2 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-3 text-sm">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+          <span className="flex-1">
+            <span className="font-medium">Automatic.</span> Leads from the campaigns in {ours.categories.map((n) => `“${n}”`).join(", ")} on our ad account
+            arrive in this CRM through our own Facebook connection ({ourPage}). Nothing to connect for those.
+            <span className="block text-xs text-muted-foreground">
+              A new campaign counts once it is in the client&apos;s category, which happens at the next hourly ad sync. Sync now picks up the
+              last 7 days of leads (for example ones Facebook couldn&apos;t deliver); a lead that already landed in our own Leads stays there.
+            </span>
+          </span>
+          <Button size="sm" variant="outline" className="shrink-0" onClick={sync} disabled={syncing}>
+            {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />} Sync now
+          </Button>
+        </p>
+      ) : (
+        <p className="flex items-start gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
+          <Info className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {ours.status !== "connected"
+              ? <>Our own Facebook connection ({ourPage}) isn&apos;t working, so campaign leads can&apos;t arrive by themselves. Fix it under Automation.</>
+              : <>To get this client&apos;s leads by themselves, run their campaigns in a category on our ad account (Ad accounts tab). Leads from those campaigns then arrive here through our own Facebook connection ({ourPage}).</>}
+          </span>
+        </p>
+      )}
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <ConnectionCard key={`c-${m.integration?.page_id ?? "new"}`} company={m} adAccount={null} onChanged={changed} leadsOnly
+          sharedApp={ours ? { appId: ours.app_id, save: (pageId) => connectClientPage({ clientId, pageId }) } : undefined} />
+        <div className="space-y-6">
+          <RoutingCard key={`r-${m.routing.join(",")}`} company={m} onChanged={meta.refetch}
+            emptyText="Nobody selected: leads go to the client's admin, or to whoever on our team created this CRM." />
+          <InboxCard companyId={m.company_id} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -167,7 +325,7 @@ function StatusSelect({ client, onChanged }: { client: Detail; onChanged: () => 
       <Dialog open={closing} onOpenChange={setClosing}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Close {client.name}?</DialogTitle>
+            <DialogTitle>Close {client.company_name ?? client.name}?</DialogTitle>
             <DialogDescription>Syncing stops. Every number synced so far stays in the CRM. You can reopen the client later.</DialogDescription>
           </DialogHeader>
           {client.logins.some((l) => l.is_active) ? (
@@ -204,14 +362,32 @@ function LoginsCard({ client, onChanged }: { client: Detail; onChanged: () => vo
     if (!r.ok) { toast.error(r.error); return; }
     onChanged();
   });
+  const showLeads = (on: boolean) => start(async () => {
+    const r = await setClientPortalLeads({ clientId: client.id, on });
+    if (!r.ok) { toast.error(r.error); return; }
+    toast.success(on ? "The portal now lists their leads too." : "The portal shows ad results only.");
+    onChanged();
+  });
   return (
     <div className="grid max-w-4xl gap-5 lg:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Client portal logins</CardTitle>
-          <CardDescription>The client signs in on the same login page and sees only their own ad results, read-only.</CardDescription>
+          <CardDescription>The client signs in on the same login page and sees their own ad results, and their leads if switched on below. All read-only.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg border px-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="portal-leads" className="text-sm font-medium">Also show their leads (view only)</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {client.has_crm
+                  ? "The leads in their CRM: name, contact, stage and date. No notes, owners or follow-ups."
+                  : "Create the client's CRM first (Leads tab)."}
+              </p>
+            </div>
+            <Switch id="portal-leads" checked={client.portal_show_leads} onCheckedChange={showLeads}
+              disabled={pending || (!client.has_crm && !client.portal_show_leads)} />
+          </div>
           {client.logins.length === 0 ? <p className="text-sm text-muted-foreground">No login yet.</p> : (
             <ul className="divide-y rounded-lg border">
               {client.logins.map((l) => (
@@ -292,7 +468,7 @@ function ResetPasswordDialog({ login, onClose }: { login: Login | null; onClose:
 }
 
 function EditClientDialog({ open, onOpenChange, client, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; client: Detail; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: client.name, business: client.business ?? "", phone: client.phone ?? "", email: client.email ?? "", notes: client.notes ?? "" });
+  const [form, setForm] = useState({ companyName: client.company_name ?? "", name: client.name, business: client.business ?? "", phone: client.phone ?? "", email: client.email ?? "", notes: client.notes ?? "" });
   const [pending, start] = useTransition();
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value });
   return (
@@ -309,8 +485,11 @@ function EditClientDialog({ open, onOpenChange, client, onSaved }: { open: boole
         }}>
           <DialogHeader><DialogTitle>Edit client</DialogTitle><DialogDescription>Contact details and notes for the ads team.</DialogDescription></DialogHeader>
           <FieldGroup className="gap-4">
-            <Field><FieldLabel htmlFor="ec-name">Name</FieldLabel><Input id="ec-name" value={form.name} onChange={set("name")} required maxLength={120} /></Field>
-            <Field><FieldLabel htmlFor="ec-business">Business</FieldLabel><Input id="ec-business" value={form.business} onChange={set("business")} maxLength={120} /></Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field><FieldLabel htmlFor="ec-company">Company name</FieldLabel><Input id="ec-company" value={form.companyName} onChange={set("companyName")} maxLength={120} /></Field>
+              <Field><FieldLabel htmlFor="ec-name">Contact name</FieldLabel><Input id="ec-name" value={form.name} onChange={set("name")} required maxLength={120} /></Field>
+            </div>
+            <Field><FieldLabel htmlFor="ec-business">Industry</FieldLabel><Input id="ec-business" value={form.business} onChange={set("business")} maxLength={120} placeholder="e.g. Real estate" /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field><FieldLabel htmlFor="ec-phone">Phone</FieldLabel><Input id="ec-phone" value={form.phone} onChange={set("phone")} maxLength={32} /></Field>
               <Field><FieldLabel htmlFor="ec-email">Email</FieldLabel><Input id="ec-email" type="email" value={form.email} onChange={set("email")} maxLength={254} /></Field>
@@ -346,14 +525,14 @@ function AgencyCard({ client, linked, onChanged }: { client: Detail; linked: Age
             : <Badge variant="outline" className="text-muted-foreground">Not used</Badge>}
         </div>
         <CardDescription>
-          Run this client&apos;s campaigns on {client.company_name}&apos;s own ad account. The campaigns in the client&apos;s category count as theirs;
+          Run this client&apos;s campaigns on {client.agency_name}&apos;s own ad account. The campaigns in the client&apos;s category count as theirs;
           their login sees only those.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {!agency ? (
           <p className="text-sm text-muted-foreground">
-            {client.company_name} has no ad account connected. Connect it on the <Link href="/ads" className="underline underline-offset-2">Ads</Link> page first.
+            {client.agency_name} has no ad account connected. Connect it on the <Link href="/ads" className="underline underline-offset-2">Ads</Link> page first.
           </p>
         ) : linked ? (
           <LinkedCategory client={client} source={linked} onChanged={onChanged} />
@@ -391,7 +570,7 @@ function LinkedCategory({ client, source, onChanged }: { client: Detail; source:
         <ConfirmDialog
           trigger={<Button variant="ghost" size="sm"><Unlink /> Stop using</Button>}
           title="Stop running this client on our ad account?"
-          description={`"${source.category_name}" stays on the ad account with its campaigns, but stops counting for ${client.name} and their login loses access to it.`}
+          description={`"${source.category_name}" stays on the ad account with its campaigns, but stops counting for ${client.company_name ?? client.name} and their login loses access to it.`}
           confirmLabel="Stop using" destructive
           onConfirm={async () => {
             const r = await setAdsClientCategory({ clientId: client.id, categoryId: null });
@@ -411,7 +590,7 @@ function CategoryLinker({ client, categories, onChanged }: { client: Detail; cat
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [pending, start] = useTransition();
-  const newName = client.business ?? client.name;
+  const newName = client.company_name ?? client.business ?? client.name;
   const term = input.trim().toLowerCase();
   const options = categories.filter((k) => !term || k.name.toLowerCase().includes(term));
   const exists = categories.some((k) => k.name.toLowerCase() === newName.trim().toLowerCase());

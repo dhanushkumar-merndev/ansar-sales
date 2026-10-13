@@ -477,6 +477,7 @@ export type Database = {
           company_id: string | null
           created_at: string
           id: string
+          in_dashboard: boolean
           match_text: string | null
           name: string
           normalized_name: string | null
@@ -488,6 +489,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
+          in_dashboard?: boolean
           match_text?: string | null
           name: string
           normalized_name?: never
@@ -499,6 +501,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
+          in_dashboard?: boolean
           match_text?: string | null
           name?: string
           normalized_name?: never
@@ -509,6 +512,13 @@ export type Database = {
             columns: ["ad_account_id"]
             isOneToOne: false
             referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_categories_ads_client_id_fkey"
+            columns: ["ads_client_id"]
+            isOneToOne: false
+            referencedRelation: "ads_clients"
             referencedColumns: ["id"]
           },
           {
@@ -603,6 +613,7 @@ export type Database = {
           business: string | null
           closed_at: string | null
           company_id: string
+          company_name: string | null
           created_at: string
           created_by: string | null
           email: string | null
@@ -611,14 +622,17 @@ export type Database = {
           name: string
           notes: string | null
           phone: string | null
+          portal_show_leads: boolean
           started_at: string
           status: string
           updated_at: string
+          workspace_company_id: string | null
         }
         Insert: {
           business?: string | null
           closed_at?: string | null
           company_id: string
+          company_name?: string | null
           created_at?: string
           created_by?: string | null
           email?: string | null
@@ -627,14 +641,17 @@ export type Database = {
           name: string
           notes?: string | null
           phone?: string | null
+          portal_show_leads?: boolean
           started_at?: string
           status?: string
           updated_at?: string
+          workspace_company_id?: string | null
         }
         Update: {
           business?: string | null
           closed_at?: string | null
           company_id?: string
+          company_name?: string | null
           created_at?: string
           created_by?: string | null
           email?: string | null
@@ -643,9 +660,11 @@ export type Database = {
           name?: string
           notes?: string | null
           phone?: string | null
+          portal_show_leads?: boolean
           started_at?: string
           status?: string
           updated_at?: string
+          workspace_company_id?: string | null
         }
         Relationships: [
           {
@@ -667,6 +686,13 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: true
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_clients_workspace_company_id_fkey"
+            columns: ["workspace_company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -838,6 +864,7 @@ export type Database = {
           logo_path: string | null
           name: string
           normalized_name: string | null
+          parent_company_id: string | null
           updated_at: string
           won_to_ads_client: boolean
         }
@@ -853,6 +880,7 @@ export type Database = {
           logo_path?: string | null
           name: string
           normalized_name?: never
+          parent_company_id?: string | null
           updated_at?: string
           won_to_ads_client?: boolean
         }
@@ -868,6 +896,7 @@ export type Database = {
           logo_path?: string | null
           name?: string
           normalized_name?: never
+          parent_company_id?: string | null
           updated_at?: string
           won_to_ads_client?: boolean
         }
@@ -884,6 +913,13 @@ export type Database = {
             columns: ["finance_group_id"]
             isOneToOne: false
             referencedRelation: "finance_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "companies_parent_company_id_fkey"
+            columns: ["parent_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -1385,6 +1421,39 @@ export type Database = {
           },
         ]
       }
+      lead_exports: {
+        Row: {
+          exported_at: string
+          lead_id: string
+          user_id: string
+        }
+        Insert: {
+          exported_at?: string
+          lead_id: string
+          user_id: string
+        }
+        Update: {
+          exported_at?: string
+          lead_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_exports_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_exports_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_share_files: {
         Row: {
           added_at: string
@@ -1545,6 +1614,7 @@ export type Database = {
           archived_at: string | null
           archived_by: string | null
           company_id: string
+          company_name: string | null
           created_at: string
           created_by: string
           email: string | null
@@ -1568,6 +1638,7 @@ export type Database = {
           archived_at?: string | null
           archived_by?: string | null
           company_id?: string
+          company_name?: string | null
           created_at?: string
           created_by: string
           email?: string | null
@@ -1591,6 +1662,7 @@ export type Database = {
           archived_at?: string | null
           archived_by?: string | null
           company_id?: string
+          company_name?: string | null
           created_at?: string
           created_by?: string
           email?: string | null
@@ -3971,17 +4043,21 @@ export type Database = {
         Args: never
         Returns: Json
       }
-      ads_client_detail: {
+      ads_client_crm_meta: {
         Args: {
-          p_id: string
+          p_client: string
         }
         Returns: Json
       }
-      ads_client_summary: {
+      ads_client_crm_summary: {
         Args: {
           p_client: string
-          p_from: string
-          p_to: string
+        }
+        Returns: Json
+      }
+      ads_client_detail: {
+        Args: {
+          p_id: string
         }
         Returns: Json
       }
@@ -3991,6 +4067,14 @@ export type Database = {
         }
         Returns: string
       }
+      ads_client_summary: {
+        Args: {
+          p_client: string
+          p_from: string
+          p_to: string
+        }
+        Returns: Json
+      }
       ads_overview: {
         Args: {
           p_account: string
@@ -3998,6 +4082,9 @@ export type Database = {
           p_to: string
           p_category?: string
           p_uncategorised?: boolean
+          p_ours?: boolean
+          p_categories?: string[]
+          p_with_uncategorised?: boolean
         }
         Returns: Json
       }
@@ -4073,6 +4160,13 @@ export type Database = {
         }
         Returns: string
       }
+      connect_client_page: {
+        Args: {
+          p_client: string
+          p_page_id: string
+        }
+        Returns: undefined
+      }
       consume_telegram_link_token: {
         Args: {
           p_token: string
@@ -4102,6 +4196,7 @@ export type Database = {
           p_email?: string
           p_business?: string
           p_notes?: string
+          p_company_name?: string
         }
         Returns: string
       }
@@ -4126,6 +4221,7 @@ export type Database = {
           p_follow_up_at?: string
           p_follow_up_task?: string
           p_allow_duplicate?: boolean
+          p_company_name?: string
         }
         Returns: string
       }
@@ -4197,6 +4293,15 @@ export type Database = {
       disconnect_telegram: {
         Args: never
         Returns: undefined
+      }
+      export_leads: {
+        Args: {
+          p_only_new?: boolean
+          p_after_created?: string
+          p_after_id?: string
+          p_limit?: number
+        }
+        Returns: Json
       }
       fail_meta_lead: {
         Args: {
@@ -4271,8 +4376,19 @@ export type Database = {
           p_ad_name?: string
           p_campaign_name?: string
           p_answers?: string
+          p_campaign_id?: string
         }
         Returns: Json
+      }
+      lead_company: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: Json
+      }
+      lead_export_pending: {
+        Args: never
+        Returns: number
       }
       lead_share_summary: {
         Args: {
@@ -4303,6 +4419,9 @@ export type Database = {
           p_dir?: string
           p_limit?: number
           p_offset?: number
+          p_ours?: boolean
+          p_categories?: string[]
+          p_with_uncategorised?: boolean
         }
         Returns: Json
       }
@@ -4449,6 +4568,12 @@ export type Database = {
         }
         Returns: string
       }
+      mark_leads_exported: {
+        Args: {
+          p_ids: string[]
+        }
+        Returns: number
+      }
       mark_notifications_read: {
         Args: {
           p_ids?: string[]
@@ -4475,6 +4600,12 @@ export type Database = {
           p_target_id: string
         }
         Returns: number
+      }
+      meta_can_manage: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: boolean
       }
       meta_integration_secrets: {
         Args: {
@@ -4510,6 +4641,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      my_context: {
+        Args: never
+        Returns: Json
+      }
       my_notifications: {
         Args: {
           p_unread_only?: boolean
@@ -4529,6 +4664,12 @@ export type Database = {
       my_work: {
         Args: never
         Returns: Json
+      }
+      open_ads_client_crm: {
+        Args: {
+          p_client: string
+        }
+        Returns: string
       }
       open_lead_share: {
         Args: {
@@ -4572,6 +4713,14 @@ export type Database = {
           p_comment?: string
         }
         Returns: undefined
+      }
+      portal_leads: {
+        Args: {
+          p_search?: string
+          p_limit?: number
+          p_offset?: number
+        }
+        Returns: Json
       }
       project_boq: {
         Args: {
@@ -4809,6 +4958,13 @@ export type Database = {
         }
         Returns: number
       }
+      set_ad_category_dashboard: {
+        Args: {
+          p_id: string
+          p_on: boolean
+        }
+        Returns: undefined
+      }
       set_ads_client_category: {
         Args: {
           p_client: string
@@ -4845,6 +5001,13 @@ export type Database = {
           p_user_id: string
           p_is_active?: boolean
           p_password_reset?: boolean
+        }
+        Returns: undefined
+      }
+      set_client_portal_leads: {
+        Args: {
+          p_client: string
+          p_on: boolean
         }
         Returns: undefined
       }
@@ -5123,6 +5286,7 @@ export type Database = {
           p_email?: string
           p_business?: string
           p_notes?: string
+          p_company_name?: string
         }
         Returns: undefined
       }
@@ -5155,6 +5319,7 @@ export type Database = {
           p_niche_id?: string
           p_new_niche?: string
           p_allow_duplicate?: boolean
+          p_company_name?: string
         }
         Returns: number
       }

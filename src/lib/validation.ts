@@ -35,6 +35,7 @@ export const nicheChoiceSchema = z
 
 export const leadCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
+  companyName: optionalText(120),
   phone: phoneSchema,
   email: z.union([z.literal(""), z.email("Enter a valid email").max(254)]).optional().transform((v) => v || undefined),
   niche: nicheChoiceSchema,
@@ -51,6 +52,7 @@ export const leadUpdateSchema = z.object({
   id: z.uuid(),
   version: z.number().int().positive(),
   name: z.string().trim().min(1, "Name is required").max(120),
+  companyName: optionalText(120),
   phone: phoneSchema,
   email: z.union([z.literal(""), z.email("Enter a valid email").max(254)]).optional().transform((v) => v || undefined),
   niche: nicheChoiceSchema,

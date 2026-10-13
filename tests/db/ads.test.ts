@@ -267,6 +267,32 @@ describe("ads clients", () => {
   });
 });
 
+describe("ads client company names", () => {
+  it("carries a won lead's company over, and the ads team can set, edit and search it", async () => {
+    const phone = "+919845000077";
+    const lead = await asUser(db, salesHub, async (tx) => (await one<{ id: string }>(tx,
+      `select public.create_lead(p_name => 'Anil Kumar', p_phone => $1, p_phone_normalized => $1, p_new_niche => 'Real estate',
+         p_company_name => 'Kumar Estates') as id`, [phone])).id);
+    await moveTo(salesHub, lead, await stageId(db, "Won"));
+    const won = await one<{ id: string; name: string; company_name: string; business: string }>(db,
+      "select id, name, company_name, business from public.ads_clients where lead_id = $1", [lead]);
+    expect(won).toMatchObject({ name: "Anil Kumar", company_name: "Kumar Estates", business: "Real estate" });
+    const note = await one<{ payload: Record<string, unknown> }>(db,
+      "select payload from public.telegram_notifications where kind = 'ads_client_new' and payload ->> 'ads_client_id' = $1 limit 1", [won.id]);
+    expect(note.payload).toMatchObject({ client: "Anil Kumar", client_company: "Kumar Estates" });
+
+    await switchTo(adsMgr, hub);
+    const id = await asUser(db, adsMgr, async (tx) => (await one<{ id: string }>(tx,
+      "select public.create_ads_client('Priya', p_company_name => 'Priya Salons') as id")).id);
+    await asUser(db, adsMgr, (tx) => tx.query("select public.update_ads_client($1, p_company_name => 'Priya Beauty Studio')", [id]));
+    // Other fields left out (null) are kept.
+    expect(await one(db, "select name, company_name from public.ads_clients where id = $1", [id])).toEqual({ name: "Priya", company_name: "Priya Beauty Studio" });
+    const list = await asUser(db, adsMgr, async (tx) => (await one<{ r: { items: { id: string; company_name: string }[] } }>(tx,
+      "select public.list_ads_clients(p_search => 'beauty') as r")).r);
+    expect(list.items).toEqual([expect.objectContaining({ id, company_name: "Priya Beauty Studio" })]);
+  });
+});
+
 describe("ads clients on the agency's own ad account", () => {
   type Summary = { sources: { source: string; currency: string; spend: number }[]; totals: { currency: string; spend: number; leads: number }[] };
   let mehta: string, other: string, mehtaUser: string, otherUser: string, category: string;
@@ -316,6 +342,37 @@ describe("ads clients on the agency's own ad account", () => {
     await expect(summary(otherUser, mehta)).rejects.toThrow(/forbidden/);
   });
 
+  it("leaves client categories out of 'our company' and lets the team pick categories", async () => {
+    const spend = async (user: string, args: string, params: unknown[] = []) => {
+      const o = await asUser(db, user, async (tx) =>
+        (await one<{ r: Overview }>(tx, `select public.ads_overview($1, '2026-09-01', '2026-09-30', ${args}) as r`, [account, ...params])).r);
+      return { spend: Number(o.totals.spend), reach: o.reach_month };
+    };
+    const names = async (args: string) => (await asUser(db, adminHub, async (tx) =>
+      (await one<{ r: Page }>(tx, `select public.list_ad_campaigns($1, '2026-09-01', '2026-09-30', ${args}) as r`, [account])).r)).items.map((c) => c.name).sort();
+    const sphCategory = (await one<{ id: string }>(db, "select id from public.ad_categories where ad_account_id = $1 and company_id = $2", [account, sph])).id;
+    const cats = await asUser(db, adminHub, async (tx) => (await one<{ r: { id: string; in_dashboard: boolean }[] }>(tx, "select public.ad_categories_list($1) as r", [account])).r);
+    expect(cats.find((k) => k.id === category)?.in_dashboard).toBe(false);
+    expect(cats.find((k) => k.id === sphCategory)?.in_dashboard).toBe(true);
+
+    // Everything: 2000 uncategorised + 300 SPH + 200 Mehta. Our company leaves Mehta's 200 out.
+    expect((await spend(adminHub, "p_ours => false")).spend).toBe(2500);
+    expect(await spend(adminHub, "p_ours => true")).toEqual({ spend: 2300, reach: null });
+    expect(await names("p_ours => true")).toEqual(["SGH leads October", "SPH reel promo"]);
+    // Several categories, with or without the uncategorised campaigns.
+    expect((await spend(adminHub, "p_categories => $2::uuid[]", [[sphCategory, category]])).spend).toBe(500);
+    expect((await spend(adminHub, "p_categories => '{}'::uuid[], p_with_uncategorised => true")).spend).toBe(2000);
+    expect(await names(`p_categories => '{${category}}'::uuid[], p_with_uncategorised => true`)).toEqual(["Brand awareness", "SGH leads October"]);
+    // The client's own view ignores "our company".
+    expect((await spend(mehtaUser, "p_ours => true")).spend).toBe(200);
+
+    // Switching a category back to our company counts it again; only the ads team can switch.
+    await asUser(db, adsMgr, (tx) => tx.query("select public.set_ad_category_dashboard($1, true)", [category]));
+    expect((await spend(adminHub, "p_ours => true")).spend).toBe(2500);
+    await expect(asUser(db, salesHub, (tx) => tx.query("select public.set_ad_category_dashboard($1, false)", [category]))).rejects.toThrow(/forbidden/);
+    await asUser(db, adsMgr, (tx) => tx.query("select public.set_ad_category_dashboard($1, false)", [category]));
+  });
+
   it("keeps a linked category fixed and refuses taken ones", async () => {
     await asUser(db, adsMgr, (tx) => tx.query("select public.save_ad_category($1, $2, 'Renamed', 'MH')", [account, category]));
     expect(await one(db, "select name, match_text from public.ad_categories where id = $1", [category])).toEqual({ name: "Mehta Homes", match_text: "MH" });
@@ -342,7 +399,8 @@ describe("ads clients on the agency's own ad account", () => {
 
   it("unlinking keeps the campaigns in the category but ends the client's access", async () => {
     expect(await link(adsMgr, mehta, "p_category => null")).toBeNull();
-    expect(await one(db, "select ads_client_id from public.ad_categories where id = $1", [category])).toEqual({ ads_client_id: null });
+    // Unlinked, it counts as our company again.
+    expect(await one(db, "select ads_client_id, in_dashboard from public.ad_categories where id = $1", [category])).toEqual({ ads_client_id: null, in_dashboard: true });
     expect(await rows(db, "select id from public.ad_campaigns where category_id = $1", [category])).toHaveLength(1);
     await expect(overview(mehtaUser)).rejects.toThrow(/forbidden/);
   });

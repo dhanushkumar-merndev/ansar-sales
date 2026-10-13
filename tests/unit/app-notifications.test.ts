@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { notificationDay, showNotification } from "@/lib/app-notifications";
+import { notificationDay, notificationTarget, showNotification } from "@/lib/app-notifications";
 import { NOTIFICATION_KINDS } from "@/lib/notifications";
 
 // The bell shows the same words as Telegram (the worker's describeNotification), as icon + title + details + link.
@@ -29,6 +29,14 @@ describe("bell items", () => {
     expect([s.icon, s.title, s.company]).toEqual(["📤", "Phase sent for review", "Star Gardens"]);
     expect(s.details[0]).toBe("Project: Hari Residence (SG-2026-001) · Hari");
     expect(s.href).toBe(`/switch?company=c1&next=${encodeURIComponent("/projects/p1?tab=timeline")}`);
+  });
+
+  it("switches company only for a link into another one", () => {
+    const href = `/switch?company=c1&next=${encodeURIComponent("/projects/p1?tab=timeline")}`;
+    expect(notificationTarget(href, "c2")).toEqual({ path: "/projects/p1?tab=timeline", switchTo: "c1" });
+    expect(notificationTarget(href, "c1")).toEqual({ path: "/projects/p1?tab=timeline", switchTo: null });
+    expect(notificationTarget("/leads/l1", "c1")).toEqual({ path: "/leads/l1", switchTo: null });
+    expect(notificationTarget("/switch?company=c1&next=//evil.example", "c2").path).toBe("/dashboard");
   });
 
   it("copes with a kind it doesn't know (a newer database)", () => {

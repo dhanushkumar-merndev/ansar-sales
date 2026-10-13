@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { AppSidebar, AppSidebarSkeleton } from "@/components/app/app-sidebar";
 import { SiteHeader } from "@/components/app/site-header";
+import { WorkspaceBar } from "@/components/app/workspace-bar";
 import { type ClientProfile, ProfileProvider } from "@/components/providers/profile-provider";
 import { RealtimeProvider } from "@/components/providers/realtime-provider";
 import { StagesProvider } from "@/components/providers/stages-provider";
@@ -19,6 +20,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Suspense>
             <SidebarInset>
               <SiteHeader />
+              <Suspense fallback={null}>
+                <WorkspaceBar />
+              </Suspense>
               <div className="w-full flex-1 px-4 pt-4 pb-12 sm:px-6 lg:px-8">{children}</div>
             </SidebarInset>
           </SidebarProvider>
@@ -29,6 +33,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 async function getClientProfile(): Promise<ClientProfile> {
-  const { id, username, display_name, role, roles, isSuperAdmin, company, companies, features } = await requireProfile();
-  return { id, username, display_name, role, roles, isSuperAdmin, company, companies, features };
+  const { id, username, display_name, role, roles, isSuperAdmin, company, companies, features, workspace } = await requireProfile();
+  return { id, username, display_name, role, roles, isSuperAdmin, company, companies, features, workspace };
 }

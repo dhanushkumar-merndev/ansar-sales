@@ -20,6 +20,18 @@ export function showNotification(n: Pick<AppNotification, "kind" | "payload">, n
   return { icon: m?.[1] ?? "🔔", title: m ? first.slice(m[0].length) : first, company, details, href: d.path || "/dashboard" };
 }
 
+/**
+ * Where a link leads from inside the app: the page itself, and the company to switch to first when it
+ * belongs to another one (the super admin's and ads managers' `/switch?company=…&next=…` links).
+ */
+export function notificationTarget(href: string, currentCompanyId: string): { path: string; switchTo: string | null } {
+  const url = new URL(href, "http://crm.local");
+  if (url.pathname !== "/switch") return { path: href, switchTo: null };
+  const next = url.searchParams.get("next") ?? "";
+  const company = url.searchParams.get("company");
+  return { path: next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard", switchTo: company && company !== currentCompanyId ? company : null };
+}
+
 /** "Today", "Yesterday" or a date, in IST, for grouping the full list. */
 export function notificationDay(iso: string, now = new Date()) {
   const ist = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);

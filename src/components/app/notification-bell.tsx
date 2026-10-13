@@ -10,7 +10,7 @@ import { useProfile } from "@/components/providers/profile-provider";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { showNotification, type AppNotification } from "@/lib/app-notifications";
+import { notificationTarget, showNotification, type AppNotification } from "@/lib/app-notifications";
 import { fetchMyNotifications } from "@/lib/queries";
 import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -18,18 +18,34 @@ import { markNotificationsRead } from "@/server/actions/telegram";
 
 const TABLES = ["app_notifications"];
 
+/**
+ * Opens a notification's page and marks it read. One from another company switches to that company
+ * first, with a full load like the company switcher, so the sidebar and every list belong to it.
+ */
+export function useOpenNotification() {
+  const me = useProfile();
+  const router = useRouter();
+  return async (n: AppNotification) => {
+    const { href } = showNotification(n);
+    const { path, switchTo } = notificationTarget(href, me.company.id);
+    if (!switchTo) router.push(path);
+    if (!n.read_at) await markNotificationsRead({ ids: [n.id] });
+    if (switchTo) window.location.assign(href);
+  };
+}
+
 /** The bell: unread count, the latest 20, and a toast when something new arrives while the app is open. */
 export function NotificationBell() {
   const me = useProfile();
-  const router = useRouter();
+  const openNotification = useOpenNotification();
   const [open, setOpen] = useState(false);
   const q = useLiveQuery({ queryKey: `bell:${me.id}`, fetcher: (s) => fetchMyNotifications({ unread: false, page: 1, pageSize: 20 }, s), tables: TABLES });
   const unread = q.data?.unread ?? 0;
 
   const go = async (n: AppNotification) => {
     setOpen(false);
-    router.push(showNotification(n).href);
-    if (!n.read_at) { await markNotificationsRead({ ids: [n.id] }); q.refetch(); }
+    await openNotification(n);
+    if (!n.read_at) q.refetch();
   };
   // Toast only what arrives after the first load (not the backlog), once each.
   const seen = useRef<Set<string> | null>(null);

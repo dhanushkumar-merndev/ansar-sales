@@ -80,7 +80,7 @@ export async function fetchLead(id: string, signal: AbortSignal) {
   const { data, error } = await sb()
     .from("leads")
     .select(
-      "id, name, phone, phone_normalized, email, status, stage_id, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
+      "id, name, company_name, phone, phone_normalized, email, status, stage_id, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
         "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
         "stars:lead_stars(pinned_at), handoff_at, handoff_note, projects(id, code)", // RLS: only the user's own star; projects they may see
     )
@@ -92,7 +92,7 @@ export async function fetchLead(id: string, signal: AbortSignal) {
 }
 
 export type LeadDetail = {
-  id: string; name: string; phone: string; phone_normalized: string; email: string | null; status: LeadOutcome; stage_id: string;
+  id: string; name: string; company_name: string | null; phone: string; phone_normalized: string; email: string | null; status: LeadOutcome; stage_id: string;
   source: "manual" | "facebook"; source_meta: { form_name?: string; ad_name?: string; campaign_name?: string };
   version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
   niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
@@ -148,7 +148,8 @@ export async function fetchStaff(signal: AbortSignal): Promise<StaffOption[]> {
     .from("profiles")
     .select("id, display_name, role")
     .eq("is_active", true)
-    .in("role", ["sales", "admin"])
+    // Ads managers are only visible (RLS) inside the client CRMs they work in.
+    .in("role", ["sales", "admin", "ads_manager"])
     .order("display_name")
     .order("id")
     .limit(100)

@@ -32,11 +32,11 @@ export const can = {
 
 export type NavKey =
   | "dashboard" | "my-work" | "team" | "leads" | "follow-ups" | "projects" | "site-visits" | "payments" | "library" | "finance"
-  | "reports" | "ads" | "automation" | "users";
+  | "reports" | "ads" | "ad-results" | "automation" | "users";
 
 const NAV_ORDER: NavKey[] = [
   "dashboard", "my-work", "team", "leads", "follow-ups", "projects", "site-visits", "payments", "library", "finance",
-  "reports", "ads", "automation", "users",
+  "reports", "ads", "ad-results", "automation", "users",
 ];
 
 export function navFor(roles: Roles, features: readonly string[] = []): NavKey[] {
@@ -44,6 +44,11 @@ export function navFor(roles: Roles, features: readonly string[] = []): NavKey[]
   if (list.includes("client")) return [];
   const ads = !features.includes("no_ads");
   if (list.length === 1 && list[0] === "ads_manager") return ads ? ["ads"] : [];
+  // An ads client's CRM is the leads module only.
+  if (features.includes("client_workspace")) {
+    const crm: NavKey[] = can.useLeads(list) ? ["dashboard", "leads", "follow-ups", "ad-results"] : [];
+    return can.manageUsers(list) ? [...crm, "users"] : crm;
+  }
   const projects = features.includes("projects");
   const items = new Set<NavKey>();
   if (can.useLeads(list) || can.useFinance(list)) items.add("dashboard");

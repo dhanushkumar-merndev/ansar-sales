@@ -51,6 +51,28 @@ describe("transaction integrity", () => {
     } });
   });
 
+  it("keeps an optional company name: created, edited with history, searchable", async () => {
+    const phone = nextPhone();
+    const id = await asUser(db, salesA, async (tx) => (await one<{ id: string }>(tx,
+      `select public.create_lead(p_name => 'Ravi', p_phone => $1, p_phone_normalized => $1, p_new_niche => 'Retail',
+         p_company_name => '  Ravi   Traders ') as id`, [phone])).id);
+    expect(await one(db, "select company_name from public.leads where id = $1", [id])).toEqual({ company_name: "Ravi Traders" });
+
+    const v = (await one<{ version: number }>(db, "select version from public.leads where id = $1", [id])).version;
+    await asUser(db, salesA, (tx) => tx.query(
+      "select public.update_lead($1, $2, 'Ravi', $3, $3, null, null, 'Retail', p_company_name => 'Ravi Exports')", [id, v, phone]));
+    const act = await one<{ meta: { changes: Record<string, unknown> } }>(db,
+      "select meta from public.lead_activities where lead_id = $1 and type = 'lead_updated' order by created_at desc limit 1", [id]);
+    expect(act.meta.changes).toEqual({ Company: { from: "Ravi Traders", to: "Ravi Exports" } });
+
+    const found = await asUser(db, salesA, async (tx) => (await one<{ r: { items: { id: string; company_name: string }[] } }>(tx,
+      "select public.list_leads(p_search => 'exports') as r")).r);
+    expect(found.items).toEqual([expect.objectContaining({ id, company_name: "Ravi Exports" })]);
+    // Sales B can't find it by company either (RLS).
+    const other = await asUser(db, salesB, async (tx) => (await one<{ r: { items: unknown[] } }>(tx, "select public.list_leads(p_search => 'exports') as r")).r);
+    expect(other.items).toEqual([]);
+  });
+
   it("flags edit conflicts instead of overwriting", async () => {
     const id = await createLead(db, salesA, { name: "Delta" });
     const interested = await stageId(db, "Interested");

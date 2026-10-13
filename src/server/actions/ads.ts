@@ -65,7 +65,7 @@ export async function refreshAdAccount(input: unknown) {
     if (detail.last_synced_at && Date.now() - new Date(detail.last_synced_at).getTime() < 5 * 60_000) {
       return { ok: false, error: "Synced less than 5 minutes ago. Try again in a few minutes." };
     }
-    const r = await syncAdAccount(d.accountId);
+    const r = await syncAdAccount(d.accountId, { backfill: false });
     return r.ok ? { ok: true, data: undefined } : { ok: false, error: `Meta: ${r.error}` };
   });
 }
@@ -119,6 +119,15 @@ export async function setAdsClientCategory(input: unknown) {
     });
     if (error) return dbError(error);
     return { ok: true, data: { categoryId: (data as string | null) ?? null } };
+  });
+}
+
+/** Moves a category between "Our company" (counted in the Ads dashboard) and "Clients". */
+export async function setAdCategoryDashboard(input: unknown) {
+  return runAction([...ADS_ROLES], z.object({ id: z.uuid(), on: z.boolean() }), input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_ad_category_dashboard", { p_id: d.id, p_on: d.on });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
   });
 }
 
@@ -197,6 +206,7 @@ export async function resetAdsManagerPassword(input: unknown) {
 // ---------------------------------------------------------------------------
 const clientFields = {
   name: z.string().trim().min(1, "Enter the client's name").max(120),
+  companyName: optional(120),
   phone: optional(32), email: z.union([z.literal(""), z.email("Enter a valid email")]).optional(), business: optional(120), notes: optional(2000),
 };
 
@@ -204,6 +214,7 @@ export async function createAdsClient(input: unknown) {
   return runAction([...ADS_ROLES], z.object(clientFields), input, async (d, { supabase }) => {
     const { data, error } = await supabase.rpc("create_ads_client", {
       p_name: d.name, p_phone: d.phone || undefined, p_email: d.email || undefined, p_business: d.business || undefined, p_notes: d.notes || undefined,
+      p_company_name: d.companyName || undefined,
     });
     if (error) return dbError(error);
     return { ok: true, data: { id: data as string } };
@@ -214,9 +225,24 @@ export async function updateAdsClient(input: unknown) {
   return runAction([...ADS_ROLES], z.object({ id: z.uuid(), ...clientFields }), input, async (d, { supabase }) => {
     const { error } = await supabase.rpc("update_ads_client", {
       p_id: d.id, p_name: d.name, p_phone: d.phone ?? "", p_email: d.email ?? "", p_business: d.business ?? "", p_notes: d.notes ?? "",
+      p_company_name: d.companyName ?? "",
     });
     if (error) return dbError(error);
     return { ok: true, data: undefined };
+  });
+}
+
+/**
+ * Opens the client's own CRM (created on first use) and switches this user into it; the caller then
+ * does a full page load. The database decides who may: the agency's admins, its ads managers, the super admin.
+ */
+export async function openAdsClientCrm(input: unknown) {
+  return runAction([...ADS_ROLES], z.object({ clientId: z.uuid() }), input, async (d, { supabase }) => {
+    const { data: companyId, error } = await supabase.rpc("open_ads_client_crm", { p_client: d.clientId });
+    if (error) return dbError(error);
+    const { error: switchError } = await supabase.rpc("set_active_company", { p_company_id: companyId });
+    if (switchError) return dbError(switchError);
+    return { ok: true, data: { companyId } };
   });
 }
 
@@ -252,6 +278,15 @@ export async function setClientLoginActive(input: unknown) {
     const { error } = await supabase.rpc("set_client_login", { p_user_id: d.id, p_is_active: d.isActive });
     if (error) return dbError(error);
     if (!(await setAuthBan(d.id, d.isActive))) return { ok: false, error: "Saved, but the sign-in block could not be changed. Retry to sync it." };
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Shows or hides the client's leads (list only, read-only) in its portal. Needs the client's CRM. */
+export async function setClientPortalLeads(input: unknown) {
+  return runAction([...ADS_ROLES], z.object({ clientId: z.uuid(), on: z.boolean() }), input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_client_portal_leads", { p_client: d.clientId, p_on: d.on });
+    if (error) return dbError(error);
     return { ok: true, data: undefined };
   });
 }

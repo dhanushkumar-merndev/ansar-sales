@@ -36,6 +36,7 @@ const ITEMS: Record<NavKey, { label: string; href: string; icon: React.Component
   finance: { label: "Finance", href: "/finance", icon: Wallet },
   reports: { label: "Reports", href: "/reports", icon: ChartColumn },
   ads: { label: "Ads", href: "/ads", icon: Megaphone },
+  "ad-results": { label: "Ad results", href: "/ad-results", icon: Megaphone },
   automation: { label: "Automation", href: "/automation", icon: Workflow },
   users: { label: "Users", href: "/users", icon: Users },
 };

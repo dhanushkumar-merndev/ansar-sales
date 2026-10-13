@@ -11,6 +11,7 @@ import { adKpis, type AdsClientSummary, moneyFormat } from "@/lib/ads";
 import { formatCount } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { addDays, formatCalendarDate, istToday } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
 /** One place an ads client's results come from: a category of the agency account, or the client's own account. */
 export type ResultSource = { accountId: string; categoryId: string | null; label: string };
@@ -22,25 +23,29 @@ const sourceKey = (s: { accountId: string; categoryId: string | null }) => `${s.
  * currency only) and each source's share; below, the full dashboard of the chosen source.
  * Used on the client's page (ads team) and in the client's own portal.
  */
-export function ClientResults({ clientId, sources, canManage }: { clientId: string; sources: ResultSource[]; canManage: boolean }) {
-  const [range, setRange] = useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
+export const defaultRange = (): DayRange => ({ from: addDays(istToday(), -29), to: istToday() });
+
+/** Pass `range` when the page shows the date picker itself (see `AdsClientDetail`); otherwise it sits above the results. */
+export function ClientResults({ clientId, sources, canManage, range: outerRange, syncSlot }: { clientId: string; sources: ResultSource[]; canManage: boolean; range?: DayRange; syncSlot?: HTMLElement | null }) {
+  const [ownRange, setRange] = useState<DayRange>(defaultRange);
+  const range = outerRange ?? ownRange;
   const [picked, setPicked] = useState<string | null>(null);
   const shown = sources.find((s) => sourceKey(s) === picked) ?? sources[0];
   const several = sources.length > 1;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="start" />
+      <div className={cn("flex flex-wrap items-center justify-end gap-2", outerRange && !several && "hidden")}>
         {several ? (
           <Select value={sourceKey(shown)} onValueChange={setPicked}>
-            <SelectTrigger className="w-80 max-w-full" aria-label="Ad source"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="mr-auto w-80 max-w-full" aria-label="Ad source"><SelectValue /></SelectTrigger>
             <SelectContent>{sources.map((s) => <SelectItem key={sourceKey(s)} value={sourceKey(s)}>{s.label}</SelectItem>)}</SelectContent>
           </Select>
         ) : null}
+        {outerRange ? null : <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="end" />}
       </div>
       {several ? <CombinedSummary clientId={clientId} range={range} sources={sources} /> : null}
-      <AdsDashboard key={sourceKey(shown)} accountId={shown.accountId} canManage={canManage} range={range} fixedCategory={shown.categoryId ?? undefined} />
+      <AdsDashboard key={sourceKey(shown)} accountId={shown.accountId} canManage={canManage} range={range} fixedCategory={shown.categoryId ?? undefined} syncSlot={syncSlot} />
     </div>
   );
 }

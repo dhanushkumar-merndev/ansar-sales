@@ -212,10 +212,11 @@ export function describeNotification(kind: NotificationKind, payload: Record<str
     case "ads_client_new":
       return fin([
         "🤝 New ads client",
+        ...(s(p.client_company) ? [`Company: ${p.client_company}`] : []),
         `Client: ${p.client}`,
-        ...(s(p.business) ? [`Business: ${p.business}`] : []),
+        ...(s(p.business) ? [`Industry: ${p.business}`] : []),
         ...(s(p.won_by) ? [`Won by: ${p.won_by}`] : []),
-        "Next: connect their Meta app and ad account.",
+        "Next: set up an ad source (our ad account or theirs).",
       ], `/ads/clients/${s(p.ads_client_id) ?? ""}`, [], "Open client");
     case "ad_account_problem":
       return fin([
