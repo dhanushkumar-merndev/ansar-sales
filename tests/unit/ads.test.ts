@@ -1,7 +1,8 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildNotification, type ClaimedNotification } from "../../supabase/functions/reminder-worker/logic";
-import { adKpis, campaignStatusLabel, moneyFormat, objectiveLabel } from "../../src/lib/ads";
+import { adKpis, campaignStatusLabel, matchCategories, moneyFormat, objectiveLabel, topWithOther } from "../../src/lib/ads";
+import { sliceGroups } from "../../src/hooks/use-show-more";
 import { appSecretProof, budgetToMajor, dayWindows, mapActions, shiftDay, todayIn } from "../../src/lib/meta-ads";
 
 describe("Meta actions", () => {
@@ -89,5 +90,32 @@ describe("ads notifications", () => {
     const m = buildNotification(note("ad_account_problem", { account_name: "Main", error: "Session expired" }), "https://crm.example.com");
     expect(m.text).toContain("Meta said: Session expired");
     expect((m.buttons[0][0] as { url: string }).url).toBe("https://crm.example.com/ads");
+  });
+});
+
+describe("many categories", () => {
+  it("finds categories by their own or their client's name", () => {
+    const list = [{ name: "Star Gardens" }, { name: "Kumar", client_name: "Kumar Estates" }, { name: "Mehta Homes" }];
+    expect(matchCategories(list, "  ESTATES ").map((c) => c.name)).toEqual(["Kumar"]);
+    expect(matchCategories(list, "")).toHaveLength(3);
+  });
+
+  it("keeps the 7 biggest donut slices and adds up the rest as Other", () => {
+    const items = Array.from({ length: 1000 }, (_, i) => ({ name: `Client ${i}`, value: i }));
+    const out = topWithOther(items);
+    expect(out).toHaveLength(8);
+    expect(out[0]).toEqual({ name: "Client 999", value: 999 });
+    expect(out[7]).toEqual({ name: "Other (993)", value: items.slice(0, 993).reduce((s, x) => s + x.value, 0) });
+    // A few slices are kept as they are.
+    expect(topWithOther(items.slice(0, 8))).toHaveLength(8);
+  });
+});
+
+describe("long dropdowns", () => {
+  it("draws the first rows across groups in order", () => {
+    const ours = ["A", "B"], clients = Array.from({ length: 1000 }, (_, i) => `C${i}`);
+    expect(sliceGroups([ours, clients], 20).map((g) => g.length)).toEqual([2, 18]);
+    expect(sliceGroups([ours, clients], 40)[1].at(-1)).toBe("C37");
+    expect(sliceGroups([ours, clients], 1)).toEqual([["A"], []]);
   });
 });

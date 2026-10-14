@@ -11,7 +11,7 @@ export function ScrollBox({ label, className, children }: { label: string; class
       aria-label={label}
       tabIndex={0}
       className={cn(
-        "-mr-2 overflow-y-auto overscroll-contain rounded-md pr-2 [scrollbar-width:thin] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        "-mr-2 overflow-y-auto rounded-md pr-2 [scrollbar-width:thin] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         className,
       )}
     >

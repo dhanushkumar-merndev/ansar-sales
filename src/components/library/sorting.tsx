@@ -43,6 +43,7 @@ import { reorderLibraryItems } from "@/server/actions/library";
 
 const SORT_KEY = "library:sort";
 const FIRST_KEY = "library:folders-first";
+const VIEW_KEY = "library:view";
 const CHANGE = "library-sort-change";
 
 function read(key: string) {
@@ -82,6 +83,15 @@ export function useLibrarySort() {
     setSort: (s: LibrarySort) => write(SORT_KEY, s),
     setFoldersFirst: (on: boolean) => write(FIRST_KEY, on ? "1" : "0"),
   };
+}
+
+export type LibraryViewMode = "grid" | "list";
+
+/** Grid or list, remembered in this browser so it survives opening folders and files. */
+export function useLibraryViewMode() {
+  const raw = useSyncExternalStore(subscribe, () => read(VIEW_KEY), () => null);
+  const viewMode: LibraryViewMode = raw === "list" ? "list" : "grid";
+  return [viewMode, (v: LibraryViewMode) => write(VIEW_KEY, v)] as const;
 }
 
 export function LibrarySortMenu({

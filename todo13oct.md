@@ -35,9 +35,66 @@ The full plan is in `~/.claude/plans/splendid-singing-sprout.md`.
 - [x] Fix: the client page title showed our company name instead of the client's (`ads_client_detail` → `agency_name`).
 - [ ] Apply 2800 (`supabase db push`), then deploy the app. The live webhook runs on the deployed app, so routing starts only after the deploy.
 
+### Deleting an ads client (super admin) — built, migration 3100 not applied
+- [x] Migration `supabase/migrations/20261008003100_ads_client_delete.sql` (already live; the other 3100 file moved to 3250).
+- [x] Client page → **Delete** (super admin): hidden everywhere, closed, sync stopped, logins off, client CRM archived, pending reminders skipped. Restorable.
+- [x] Ads → Clients → **Deleted** (super admin): Restore, **Download Excel** (9 sheets: client, logins, CRM leads, timeline, follow-ups, Facebook leads, ad accounts, campaigns, daily results), then **Delete for good**, which is only allowed after a download made since the deletion.
+- [x] Delete for good removes the client, its own ad accounts and history, its logins (Auth users too) and its client CRM. A category on our own ad account stays, unlinked.
+- [x] Tests: `tests/db/ads-client-delete.test.ts`, `tests/unit/ads-client-export.test.ts`.
+- [ ] Later (agreed): the same flow for leads.
+
+### Bulk lead import from Excel — built, migration 3300 not applied
+- [x] Leads → **Add lead ▾** → One lead / **Import from Excel**: template download, .xlsx pick or drop, every row checked in the browser, at most 500 leads per file.
+- [x] Phones already in the CRM are skipped unless "import anyway" is ticked; rows with problems can be downloaded with the reason.
+- [x] Migration `20261008003300_lead_import.sql`: `import_leads`, `lead_phones_in_crm`; one summary alert per person instead of one per lead.
+- [x] Tests: `tests/db/lead-import.test.ts`, `tests/unit/lead-import.test.ts`.
+- [ ] Apply 3300 and redeploy `reminder-worker` (it words the summary alert).
+- Later: a follow-up date column.
+
+### Campaigns that ran recently — built, migration 3400 not applied
+- [x] Ads → Campaigns table: "Running now / Ran in the last 7, 14, 28 days / Not running / Any status". "Ran" = spent money on one of those days, paused since included.
+- [x] Migration `20261008003400_campaigns_ran_recently.sql` (same `list_ad_campaigns` signature, new `p_status` values). Test in `tests/db/ads.test.ts`.
+
+### Facebook niches without form numbers and dates — built, migration 3500 not applied
+- [x] `20261008003500_form_niche_names.sql`: a Facebook lead's niche is the form name without "FORM 2 -", dates, times or "copy" ("FORM 2 - PROSPECTING CRM - JULY 22" → "PROSPECTING CRM"), so forms for the same product share one niche.
+- [x] On apply, existing niches holding Facebook leads are renamed the same way; two that end up equal are merged (leads move, a "Niche" change shows on their timeline, the old niche is archived). Typed niches are not touched.
+- [x] Tests: `tests/db/form-niche-names.test.ts`.
+
+### Lead download for chosen dates — built, migration 3600 not applied
+- [x] Leads → Download → **Choose dates…**: a dialog with the date-range picker (presets + calendar, IST days); downloads the active leads added on those days. They count as downloaded for "New since my last download".
+- [x] `20261008003600_lead_export_dates.sql`: `export_leads` gains `p_created_from` / `p_created_before`. Until it is applied, only "Choose dates" fails; All and New keep working.
+- [x] Test in `tests/db/lead-exports.test.ts`.
+
+### "Add as client" on a lead — built, migration 3700 not applied
+- [x] Lead page → **Add as client** (admins, ads managers, super admin; companies with ads, not inside a client's CRM): creates the ads client from the lead's details and tells the ads team, without marking the lead Won. Then the button becomes **Ads client** and opens it.
+- [x] One client per lead: marking it Won later doesn't add a second. A deleted client must be restored from Ads → Clients → Deleted.
+- [x] `20261008003700_lead_to_ads_client.sql`; tests `tests/db/lead-to-ads-client.test.ts`.
+
+### Ad categories per company, set from Facebook leads — built, migration 3900 not applied
+- [x] Super settings → Facebook leads → pick a company → **Leads from ad categories**: tick the categories of Star Growth Hub's ad account that are this company's. New Facebook leads from their campaigns go to its CRM; it sees those campaigns on its Ads page. Several categories per company; a company not yet sharing the account joins it on save.
+- [x] Star Growth Hub (the account's owner) shows which categories went to whom. The Ads tab uses the same picker.
+- [x] `20261008003900_company_ad_categories.sql` (needs 3250 first); tests `tests/db/company-ad-categories.test.ts`.
+- Old leads are not moved (not agreed yet).
+
+### Sync leads by period (super admin) — built, no migration
+- [x] Ads → Our company → **Sync leads ▾**: Last 7 days / Last 30 days / All (90 days, what Meta keeps). Super admin only on that page; 30/90 days refused for others on the server. Reads every form of the Page; up to 3,000 leads per run; page `maxDuration` 300 s.
+- Found on live (13 Oct): no category is linked to any company yet, and all 64 Facebook leads (58 from LEADS_LANDSCAPE ARCHITECT_OCT 10, Star Gardens' category) came in before routing existed, so they sit in Star Growth Hub. Moving them needs `company_guard` to allow a lead's company change: not built, waiting for the user's OK.
+
+### Fresh start of Facebook leads (done on live, 13 Oct, user approved)
+- Deleted Star Growth Hub's 322 leads (all Facebook) with their timeline, follow-ups, shared link, and its 336 Facebook lead records, so a sync re-imports and routes them by category. Star Gardens' 2 hand-typed leads kept. Categories Star Gardens / Star Tech India / Star Production House were already linked to their companies.
+
+### Bulk Facebook sync — built, migration 4000 not applied
+- [x] Sync leads saves 100 leads per database call (`ingest_meta_leads`), and each owner gets one "N leads imported to you" alert instead of one per lead (`notify_meta_leads_synced`). Form names come with the form list. The webhook still saves and alerts one lead at a time (real time).
+- [x] Safe fallback: a batch the database can't take (e.g. 4000 not pushed yet) is saved one lead at a time as before.
+- [x] Tests: `tests/db/meta-bulk-sync.test.ts`.
+
+### Bell notifications of deleted leads — cleaned on live, migration 4100 not applied
+- Done on live (13 Oct): removed the 322 "Lead assigned to you" bell notifications left by the fresh start (they keep the lead id only in their payload).
+- [x] `20261008004100_lead_delete_notifications.sql`: deleting leads now also deletes their bell notifications (statement trigger). Test: `tests/db/lead-delete-notifications.test.ts`.
+
 ### Checks (13 Oct)
 - `pnpm typecheck`, `pnpm lint`, `pnpm build`: clean.
-- `pnpm test`: 366 pass. The only failures are the 5 old Star Gardens seed ones.
+- `pnpm test`: 409 pass. The only failures are the 5 old Star Gardens seed ones.
 
 ### Still to do
 - [ ] Apply 2600 and 2700 to the live DB, then click through it in the browser. This has not been done: the feature was only tested at the database level.

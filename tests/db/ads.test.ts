@@ -430,3 +430,29 @@ describe("Facebook Lead Ads insights", () => {
     await expect(asUser(db, salesHub, (tx) => tx.query("select public.meta_lead_insights($1, '2026-09-01', '2026-09-30')", [hub]))).rejects.toThrow(/forbidden/);
   });
 });
+
+describe("campaigns that ran recently", () => {
+  it("lists the campaigns with spend in the last 7, 14 or 28 days, paused ones included", async () => {
+    const ranCo = await createCompany(db, "Ran Recently Co");
+    const ranAdmin = await createUser(db, "admin_ran", "admin", "Admin Ran", ranCo);
+    const acc = await asUser(db, ranAdmin, async (tx) =>
+      (await one<{ id: string }>(tx, "select public.save_ad_account('company', $1, 'act_7777777', '777777', 's', 't') as id", [ranCo])).id);
+    await asService(db, (tx) => tx.query("select public.upsert_ad_entities($1, $2, '[]')", [acc, JSON.stringify([
+      { meta_id: "r1", name: "Spent 2 days ago (paused)", effective_status: "PAUSED" },
+      { meta_id: "r2", name: "Spent 10 days ago", effective_status: "PAUSED" },
+      { meta_id: "r3", name: "Spent 20 days ago", effective_status: "ACTIVE" },
+      { meta_id: "r4", name: "Only impressions", effective_status: "PAUSED" },
+    ])]));
+    await db.query(`insert into public.ad_campaign_daily (ad_account_id, campaign_id, date, spend, impressions)
+      select $1, c.id, (now() at time zone 'Asia/Kolkata')::date - v.ago, v.spend, 100
+      from (values ('r1', 2, 50), ('r2', 10, 70), ('r3', 20, 90), ('r4', 1, 0)) v(meta, ago, spend)
+      join public.ad_campaigns c on c.meta_id = v.meta and c.ad_account_id = $1`, [acc]);
+    const names = async (status: string) => (await asUser(db, ranAdmin, async (tx) => (await one<{ r: Page }>(tx,
+      "select public.list_ad_campaigns($1, current_date - 60, current_date, p_status => $2) as r", [acc, status])).r)).items.map((c) => c.name).sort();
+    expect(await names("ran_7")).toEqual(["Spent 2 days ago (paused)"]);
+    expect(await names("ran_14")).toEqual(["Spent 10 days ago", "Spent 2 days ago (paused)"]);
+    expect(await names("ran_28")).toEqual(["Spent 10 days ago", "Spent 2 days ago (paused)", "Spent 20 days ago"]);
+    expect(await names("active")).toEqual(["Spent 20 days ago"]);
+    await expect(names("ran_99")).rejects.toThrow(/invalid_sort/);
+  });
+});

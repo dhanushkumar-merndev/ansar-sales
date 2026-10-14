@@ -75,3 +75,18 @@ describe("leads download", () => {
     expect(await pending(admin)).toBe(0);
   });
 });
+
+describe("leads download for chosen dates", () => {
+  const between = (from: string | null, before: string | null) =>
+    asUser(db, admin, async (tx) => (await one<{ r: Row[] }>(tx,
+      "select public.export_leads(p_created_from => $1, p_created_before => $2) as r", [from, before])).r);
+  const hour = 3_600_000;
+  const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+
+  it("only has the leads added in the range, still only this company's", async () => {
+    const inRange = await between(at(-hour), at(hour));
+    expect(inRange.map((l) => l.name).sort()).toEqual(["One", "Three", "Two"]);
+    expect(await between(at(hour), null)).toEqual([]);
+    expect(await between(null, at(-hour))).toEqual([]);
+  });
+});

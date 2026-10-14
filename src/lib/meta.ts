@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readableAnswer, readableQuestion } from "@/lib/form-answers";
 import { normalizePhone } from "@/lib/phone";
 
 /** Graph API version used for every call. Meta supports each version for about two years. */
@@ -71,7 +72,7 @@ export function mapLeadFields(lead: MetaLead) {
   const used = new Set([...NAME_FIELDS, ...PHONE_FIELDS, ...EMAIL_FIELDS, "first_name", "last_name"]);
   const answers = [...fields.entries()]
     .filter(([k, v]) => !used.has(k) && v)
-    .map(([k, v]) => `${k.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())}: ${v}`)
+    .map(([k, v]) => `${readableQuestion(k)}: ${readableAnswer(v)}`)
     .join("\n");
   return { name, phone, rawPhone, email, answers: answers || null };
 }

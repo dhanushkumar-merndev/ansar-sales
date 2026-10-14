@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNotification, buildNotificationMessage, buildReminderMessage, classifyTelegramResult, constantTimeEqual, formatAgo, replyMarkup, sanitizeError, type ClaimedNotification } from "../../supabase/functions/reminder-worker/logic";
+import { buildNotification, buildNotificationMessage, buildReminderMessage, classifyTelegramResult, describeNotification, constantTimeEqual, formatAgo, replyMarkup, sanitizeError, type ClaimedNotification } from "../../supabase/functions/reminder-worker/logic";
 import { parseSilenceCallback, withoutCallbackButtons } from "../../src/lib/telegram";
 
 const item = {
@@ -138,5 +138,12 @@ describe("Silence callback parsing", () => {
     expect(parseSilenceCallback(update(`x:${FU}`))).toBeNull();
     expect(parseSilenceCallback(update(`s:${FU}`, "group"))).toBeNull();
     expect(parseSilenceCallback({ message: { text: "/start" } })).toBeNull();
+  });
+});
+
+describe("lead import summaries", () => {
+  it("says how many leads were imported instead of naming one", () => {
+    expect(describeNotification("lead_assigned", { imported: 12, actor: "Diny" }).lines).toEqual(["📥 12 leads imported to you", "By: Diny"]);
+    expect(describeNotification("lead_created", { imported: 1, actor: "Diny" })).toMatchObject({ lines: ["📥 1 lead imported", "By: Diny"], path: "/leads" });
   });
 });

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, FolderKanban, Hand, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
+import { parseFormAnswers } from "@/lib/form-answers";
 import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
 import type { Activity } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
@@ -42,8 +43,26 @@ function describe(a: Activity): { title: string; detail?: React.ReactNode } {
         return { title: `came in from a Facebook lead form${m.form ? ` (${m.form})` : ""}`, detail: [m.owner && `Assigned to ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
       }
       return { title: "created the lead", detail: [m.niche && `Niche: ${m.niche}`, m.owner && `Owner: ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
-    case "note":
+    case "note": {
+      // The answers a Facebook lead gave on the form, written by the system when the lead came in.
+      const answers = a.actor ? null : parseFormAnswers(a.body);
+      if (answers) {
+        return {
+          title: a.edited_at ? "saved the form answers (edited)" : "saved the form answers",
+          detail: (
+            <dl className="space-y-2">
+              {answers.map((x, i) => (
+                <div key={i}>
+                  {x.question ? <dt className="text-xs text-muted-foreground">{x.question}</dt> : null}
+                  <dd className="whitespace-pre-wrap text-foreground">{x.answer}</dd>
+                </div>
+              ))}
+            </dl>
+          ),
+        };
+      }
       return { title: a.edited_at ? "added a note (edited)" : "added a note", detail: <p className="whitespace-pre-wrap text-foreground">{a.body}</p> };
+    }
     case "note_corrected":
       return { title: "corrected a note", detail: <p className="whitespace-pre-wrap line-through decoration-muted-foreground/60">{String(m.previous_body ?? "")}</p> };
     case "status_changed":

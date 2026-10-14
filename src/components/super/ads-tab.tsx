@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AdAccountStatus } from "@/components/ads/ad-account-form";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ErrorState, ListSkeleton } from "@/components/common/states";
+import { type CompanyAds, CompanyCategoriesCard } from "@/components/super/company-categories-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,13 +16,11 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import type { AdAccount } from "@/lib/ads";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/time";
 import { createAdsManager, mergeAdAccount, resetAdsManagerPassword, setAdsManagerCompanies, updateAdsManager } from "@/server/actions/ads";
 
 type AdsManager = { id: string; username: string; display_name: string; is_active: boolean; created_at: string; company_ids: string[] };
-type CompanyAds = { company_id: string; company_name: string; won_to_ads_client: boolean; account: AdAccount | null; members: string[]; member_of: string | null };
 
 /** Super admin: ads managers and the companies each handles, and sharing one company's ad account. */
 export function AdsTab() {
@@ -73,8 +72,9 @@ export function AdsTab() {
         <CardHeader>
           <CardTitle>Shared ad accounts</CardTitle>
           <CardDescription>
-            When one company&apos;s ad account runs campaigns for others, merge them here. Each merged company gets a fixed category;
-            its admin and its ads managers then see only that category&apos;s campaigns. The owner company sees everything.
+            When one company&apos;s ad account runs campaigns for others, merge them here and pick each company&apos;s category. Its admin
+            and its ads managers then see only that category&apos;s campaigns, and new Facebook leads from those campaigns land in
+            its CRM. The owner company sees everything.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -178,6 +178,16 @@ function MergeRow({ owner, companies, onChanged }: { owner: CompanyAds; companie
         </>
       )}
       {dirty ? <Button size="sm" onClick={save} disabled={pending}>{pending ? <Loader2 className="animate-spin" /> : <Save />} Save sharing</Button> : null}
+      {owner.account && owner.members.length ? (
+        <div className="space-y-2 border-t pt-3">
+          {owner.members.map((id) => (
+            <div key={id} className="space-y-2">
+              <p className="text-sm font-medium">{companies.find((c) => c.company_id === id)?.company_name ?? "Archived company"}: its categories</p>
+              <CompanyCategoriesCard companyId={id} companies={companies} onChanged={onChanged} embedded />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

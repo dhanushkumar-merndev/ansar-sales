@@ -6,6 +6,7 @@ import { CheckCircle2, Copy, ExternalLink, Loader2, PlugZap, RefreshCw, Save, Tr
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
+import { type CompanyAds, CompanyCategoriesCard } from "@/components/super/company-categories-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,7 +60,7 @@ export function MetaLeadsTab() {
     fetcher: async (signal) => {
       const { data, error } = await createClient().rpc("super_ads_overview").abortSignal(signal);
       if (error) throw error;
-      return (data ?? []) as unknown as { company_id: string; account: AdAccount | null }[];
+      return (data ?? []) as unknown as CompanyAds[];
     },
     pollMs: 0,
   });
@@ -90,6 +91,9 @@ export function MetaLeadsTab() {
           onChanged={() => { overview.refetch(); adAccounts.refetch(); }} />
         <div className="space-y-6">
           <RoutingCard key={`r-${current.company_id}:${current.routing.join(",")}`} company={current} onChanged={overview.refetch} />
+          {adAccounts.data ? (
+            <CompanyCategoriesCard key={`k-${current.company_id}`} companyId={current.company_id} companies={adAccounts.data} onChanged={adAccounts.refetch} />
+          ) : null}
           <InboxCard companyId={current.company_id} />
         </div>
       </div>

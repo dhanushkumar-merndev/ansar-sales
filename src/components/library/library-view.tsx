@@ -38,6 +38,7 @@ import {
   useLibraryArrange,
   useLibrarySelection,
   useLibrarySort,
+  useLibraryViewMode,
   type LibraryDndMode,
 } from "@/components/library/sorting";
 import { uploadLibraryFiles, useFileDrop } from "@/components/library/upload";
@@ -89,7 +90,7 @@ export function LibraryView() {
     [q, archived, sort, paging.page, paging.pageSize],
   );
 
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useLibraryViewMode();
   const [isWindowDragging, setIsWindowDragging] = useState(false);
 
   // Detect when files are dragged into the window to give visual feedback to the user

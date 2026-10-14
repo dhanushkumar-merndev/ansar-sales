@@ -10,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { createClient } from "@/lib/supabase/server";
 import { runAction } from "@/server/action-utils";
 import { checkAdAccount, syncAdAccount } from "@/server/ads-sync";
-import { ingestLeadgens, loadMetaSecrets, pageToken } from "@/server/meta-ingest";
+import { ingestLeadgensBulk, loadMetaSecrets, pageToken } from "@/server/meta-ingest";
 
 const metaId = z.string().trim().regex(/^\d{5,25}$/, "Digits only, as shown in Meta");
 const FORBIDDEN = { ok: false as const, error: "You don't have permission to do that.", code: "forbidden" as const };
@@ -136,10 +136,16 @@ export async function connectMeta(input: unknown) {
 }
 
 /** Pulls the last 7 days of leads from every form of the Page (recovers missed webhooks; never duplicates). */
+/** How far back a sync looks: a week, a month, or everything Meta keeps (90 days). */
+export type SyncDays = 7 | 30 | 90;
+
 export async function syncMetaLeads(input: unknown) {
-  return runAction(META_ROLES, z.object({ companyId: z.uuid() }), input, async (d, { supabase }) => {
+  const schema = z.object({ companyId: z.uuid(), days: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(7) });
+  return runAction(META_ROLES, schema, input, async (d, { supabase, profile }) => {
     if (!(await canManage(supabase, d.companyId))) return FORBIDDEN;
-    return pullRecentLeads(d.companyId);
+    // Longer periods (up to everything Meta keeps) are the super admin's.
+    if (d.days !== 7 && !profile.isSuperAdmin) return FORBIDDEN;
+    return pullRecentLeads(d.companyId, d.days);
   });
 }
 
@@ -160,26 +166,55 @@ export async function syncClientLeads(input: unknown) {
   });
 }
 
-async function pullRecentLeads(companyId: string): Promise<ActionResult<{ found: number; created: number; duplicate: number; failed: number; skipped: number; routed: number }>> {
+type PullResult = {
+  found: number; created: number; duplicate: number; failed: number; skipped: number; routed: number;
+  /** New leads per company they went to, most first. */
+  companies: { id: string; name: string; created: number }[];
+};
+
+async function pullRecentLeads(companyId: string, days: SyncDays = 7): Promise<ActionResult<PullResult>> {
   const secrets = await loadMetaSecrets(companyId);
   if (!secrets) return { ok: false, error: "Save the connection details first." };
+  // Leads already in the CRM are skipped with one cheap check, so a long sync mostly costs the new ones.
+  const maxLeads = days === 7 ? 500 : 3000;
   try {
     const { token } = await pageToken(secrets);
-    const since = Math.floor(Date.now() / 1000) - 7 * 24 * 3600;
-    const forms = await graph<{ data: { id: string }[] }>(`${secrets.page_id}/leadgen_forms`, token, { params: { fields: "id", limit: "50" } });
-    const items: { leadgenId: string; formId: string; lead: MetaLead }[] = [];
-    for (const form of forms.data ?? []) {
-      const leads = await graph<{ data: MetaLead[] }>(`${form.id}/leads`, token, {
-        params: {
-          fields: "id,created_time,form_id,ad_id,ad_name,adset_id,campaign_id,campaign_name,field_data", limit: "100",
-          filtering: JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: since }]),
-        },
+    const since = Math.floor(Date.now() / 1000) - days * 24 * 3600;
+    // Every form of the Page (older ones too: their leads may still be within the period).
+    const forms: { id: string; name?: string }[] = [];
+    let formsAfter: string | undefined;
+    do {
+      const page = await graph<{ data: { id: string; name?: string }[]; paging?: { cursors?: { after?: string }; next?: string } }>(`${secrets.page_id}/leadgen_forms`, token, {
+        params: { fields: "id,name", limit: "100", ...(formsAfter ? { after: formsAfter } : {}) },
       });
-      for (const lead of leads.data ?? []) items.push({ leadgenId: lead.id, formId: form.id, lead: { ...lead, form_id: lead.form_id ?? form.id } });
-      if (items.length >= 500) break;
+      forms.push(...(page.data ?? []));
+      formsAfter = page.paging?.next && forms.length < 500 ? page.paging.cursors?.after : undefined;
+    } while (formsAfter);
+    const items: { leadgenId: string; formId: string; lead: MetaLead }[] = [];
+    // Each form's leads come 100 per request with their answers; follow the pages up to maxLeads in all.
+    forms: for (const form of forms) {
+      let after: string | undefined;
+      do {
+        const page = await graph<{ data: MetaLead[]; paging?: { cursors?: { after?: string }; next?: string } }>(`${form.id}/leads`, token, {
+          params: {
+            fields: "id,created_time,form_id,ad_id,ad_name,adset_id,campaign_id,campaign_name,field_data", limit: "100",
+            filtering: JSON.stringify([{ field: "time_created", operator: "GREATER_THAN", value: since }]),
+            ...(after ? { after } : {}),
+          },
+        });
+        for (const lead of page.data ?? []) items.push({ leadgenId: lead.id, formId: form.id, lead: { ...lead, form_id: lead.form_id ?? form.id } });
+        if (items.length >= maxLeads) break forms;
+        after = page.paging?.next ? page.paging.cursors?.after : undefined;
+      } while (after);
     }
-    const result = await ingestLeadgens(companyId, secrets, items);
-    return { ok: true, data: { found: items.length, ...result } };
+    // Saved 100 per database call; each owner gets one alert for the lot.
+    const formNames = new Map(forms.filter((f) => f.name).map((f) => [f.id, f.name!]));
+    const { byCompany, ...result } = await ingestLeadgensBulk(companyId, secrets, items, formNames);
+    const ids = Object.keys(byCompany);
+    const { data: names } = ids.length ? await createAdminClient().from("companies").select("id, name").in("id", ids) : { data: [] };
+    const companies = ids.map((id) => ({ id, name: names?.find((n) => n.id === id)?.name ?? "Another CRM", created: byCompany[id] }))
+      .sort((a, b) => b.created - a.created || a.name.localeCompare(b.name));
+    return { ok: true, data: { found: items.length, ...result, companies } };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Couldn't reach Meta.";
     // A dead token: show it on the connection too, instead of the last successful test.

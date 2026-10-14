@@ -5,7 +5,7 @@ import { z } from "zod";
 import { dbError } from "@/lib/errors";
 import { nichesTag } from "@/lib/niches-cache";
 import { runAction } from "@/server/action-utils";
-import { leadCreateSchema, leadUpdateSchema, noteCorrectionSchema, noteSchema } from "@/lib/validation";
+import { importLeadsSchema, leadCreateSchema, leadUpdateSchema, noteCorrectionSchema, noteSchema } from "@/lib/validation";
 
 const LEAD_ROLES = ["admin", "sales"] as const satisfies ("admin" | "sales")[];
 
@@ -30,6 +30,28 @@ export async function createLead(input: unknown) {
     if (error) return dbError(error);
     if (!d.niche.id) updateTag(nichesTag(profile.company.id));
     return { ok: true, data: { id: data } };
+  });
+}
+
+/**
+ * Excel import: creates up to 500 leads in one call. Each row gets the same rules, timeline and
+ * permissions as adding one lead; a bad row is reported and the rest still go in. The database
+ * sends one summary alert per person instead of one per lead.
+ */
+export async function importLeads(input: unknown) {
+  return runAction([...LEAD_ROLES], importLeadsSchema, input, async (d, { supabase, profile }) => {
+    const { data, error } = await supabase.rpc("import_leads", {
+      p_rows: d.rows.map((r) => ({
+        name: r.name, phone: r.phone.display, phone_normalized: r.phone.e164, email: r.email, company_name: r.companyName,
+        niche_id: r.niche.id, new_niche: r.niche.id ? undefined : r.niche.newName, stage_id: r.stageId,
+        // Ignored by the database for Sales, as when adding one lead.
+        owner_id: profile.role === "admin" ? r.ownerId : undefined, note: r.note,
+      })),
+      p_allow_duplicates: d.allowDuplicates,
+    });
+    if (error) return dbError(error);
+    if (d.rows.some((r) => !r.niche.id)) updateTag(nichesTag(profile.company.id));
+    return { ok: true, data: data as unknown as { index: number; id?: string; error?: string }[] };
   });
 }
 

@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, Phone, Plus, Search, SlidersHorizontal, Tags, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, FileSpreadsheet, Phone, Plus, Search, SlidersHorizontal, Tags, UserPlus, X } from "lucide-react";
 import { DueBadge, StatusBadge } from "@/components/common/badges";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { pastPresets, RangePicker } from "@/components/common/range-picker";
 import { PinButton, PinnedBadge, PinnedCount, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
@@ -20,6 +21,7 @@ import { useStages } from "@/components/providers/stages-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -49,6 +51,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   const router = useRouter();
   const { params, set } = useUrlState();
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Parse and sanitize URL state (the database validates again).
   const query: LeadQuery = useMemo(() => {
@@ -229,7 +232,15 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                 <Button variant="outline" asChild><Link href="/leads/niches"><Tags /> Niches</Link></Button>
               </>
             ) : null}
-            <Button onClick={() => setCreateOpen(true)}><Plus /> Add lead</Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button><Plus /> Add lead <ChevronDown className="opacity-70" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onSelect={() => setCreateOpen(true)}><UserPlus /> One lead</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setImportOpen(true)}><FileSpreadsheet /> Import from Excel</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
       />
@@ -355,6 +366,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
       )}
 
       <LeadFormDialog open={createOpen} onOpenChange={setCreateOpen} initialNiches={initialNiches} onSaved={() => refetch()} />
+      <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} initialNiches={initialNiches} onImported={() => refetch()} />
     </>
   );
 }

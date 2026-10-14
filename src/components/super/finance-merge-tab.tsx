@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { BookOpen, Loader2, Merge, Split } from "lucide-react";
+import { BookOpen, ChevronDown, Loader2, Merge, Plus, Split } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ErrorState, ListSkeleton } from "@/components/common/states";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { createClient } from "@/lib/supabase/client";
@@ -28,14 +29,16 @@ export function FinanceMergeTab() {
   if (groups.error && !groups.data) return <ErrorState message={groups.error} onRetry={groups.refetch} />;
   if (!groups.data) return <ListSkeleton rows={4} />;
   const merged = groups.data.filter((g) => g.companies.length > 1);
-  const all = groups.data.flatMap((g) => g.companies);
+  // Companies with books of their own: the only ones left to merge or add to shared books.
+  const single = groups.data.filter((g) => g.companies.length === 1).flatMap((g) => g.companies);
+  const canMerge = single.length >= 2;
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-2">
-      <MergeCard companies={all} onDone={groups.refetch} />
+    <div className={canMerge ? "grid items-start gap-6 lg:grid-cols-2" : "max-w-3xl"}>
+      {canMerge ? <MergeCard companies={single} onDone={groups.refetch} /> : null}
       <div className="space-y-4">
         {merged.length === 0 ? (
           <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Every company has its own books.</CardContent></Card>
-        ) : merged.map((g) => <GroupCard key={g.id} group={g} onDone={groups.refetch} />)}
+        ) : merged.map((g) => <GroupCard key={g.id} group={g} addable={single} onDone={groups.refetch} />)}
       </div>
     </div>
   );
@@ -87,8 +90,18 @@ function MergeCard({ companies, onDone }: { companies: BooksGroup["companies"]; 
   );
 }
 
-function GroupCard({ group, onDone }: { group: BooksGroup; onDone: () => void }) {
+function GroupCard({ group, addable, onDone }: { group: BooksGroup; addable: BooksGroup["companies"]; onDone: () => void }) {
   const [pending, start] = useTransition();
+  // Joins as view only; tick "can edit" afterwards if needed.
+  const add = (c: BooksGroup["companies"][number]) => start(async () => {
+    const r = await mergeBooks({
+      companyIds: [...group.companies.map((x) => x.id), c.id],
+      editorIds: group.companies.filter((x) => x.can_edit).map((x) => x.id),
+    });
+    if (!r.ok) { toast.error(r.error); return; }
+    toast.success(`${c.name} now shares these books`);
+    onDone();
+  });
   const setEditor = (id: string, on: boolean) => start(async () => {
     const next = group.companies.filter((c) => (c.id === id ? on : c.can_edit)).map((c) => c.id);
     if (next.length === 0) { toast.error("Keep at least one company that can edit."); return; }
@@ -98,9 +111,23 @@ function GroupCard({ group, onDone }: { group: BooksGroup; onDone: () => void })
   });
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Shared books</CardTitle>
-        <CardDescription>{group.companies.map((c) => c.name).join(" · ")}</CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5">
+          <CardTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Shared books</CardTitle>
+          <CardDescription>{group.companies.length} companies share one finance account.</CardDescription>
+        </div>
+        {addable.length ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" disabled={pending}>
+                {pending ? <Loader2 className="animate-spin" /> : <Plus />} Add a company <ChevronDown className="opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {addable.map((c) => <DropdownMenuItem key={c.id} onSelect={() => add(c)}>{c.name}</DropdownMenuItem>)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
       </CardHeader>
       <CardContent>
         <div className="divide-y rounded-lg border">

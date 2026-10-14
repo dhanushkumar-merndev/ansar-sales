@@ -3,12 +3,13 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, ListPlus, Loader2, Plug, Plus, Tags, Trash2 } from "lucide-react";
+import { Check, ListPlus, Loader2, Plug, Plus, Search, Tags, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdAccountForm } from "@/components/ads/ad-account-form";
 import { AdsDashboard } from "@/components/ads/ads-dashboard";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { PageHeader } from "@/components/common/page-header";
+import type { DayRange } from "@/components/common/range-picker";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +22,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import type { AdAccount, AdCampaignRow, AdCategory } from "@/lib/ads";
+import { sliceGroups, useShowMore } from "@/hooks/use-show-more";
+import { type AdAccount, type AdCampaignRow, type AdCategory, matchCategories } from "@/lib/ads";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
+import { formatCount } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import { hasAnyRole } from "@/lib/permissions";
 import { cleanSearch } from "@/lib/search";
@@ -30,10 +33,10 @@ import { addDays, istToday } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { archiveAdCategory, deleteAdAccountHistory, saveAdCategory, setAdCategoryDashboard, setCampaignCategory } from "@/server/actions/ads";
 
-/** Dashboard / Clients switch shown on every ads page. */
+/** Dashboard / Our company / Clients switch shown on every ads page. */
 export function AdsTabs() {
   const pathname = usePathname();
-  const tabs = [{ href: "/ads", label: "Ad account" }, { href: "/ads/clients", label: "Clients" }];
+  const tabs = [{ href: "/ads", label: "Ad account" }, { href: "/ads/companies", label: "Our company" }, { href: "/ads/clients", label: "Clients" }];
   return (
     <nav className="mb-5 inline-flex rounded-lg border p-0.5 text-sm" aria-label="Ads sections">
       {tabs.map((t) => {
@@ -55,11 +58,14 @@ async function fetchAccounts(signal: AbortSignal) {
   return (data ?? []) as unknown as AdAccount[];
 }
 
+/** Where the dashboard opens: an account, one category ("none" = uncategorised) and days, from the Our company tab. */
+export type AdsViewStart = { account?: string; category?: string; range?: DayRange };
+
 /** The current company's ad account (or the merged account it shares), for admins and ads managers. */
-export function AdsView() {
+export function AdsView({ start = {} }: { start?: AdsViewStart }) {
   const profile = useProfile();
   const accounts = useLiveQuery({ queryKey: `ads-accounts:${profile.company.id}`, fetcher: fetchAccounts, pollMs: 5 * 60_000 });
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(start.account ?? null);
   const [connecting, setConnecting] = useState(false);
   const [editingCategories, setEditingCategories] = useState(false);
   const [categoryVersion, setCategoryVersion] = useState(0);
@@ -128,7 +134,8 @@ export function AdsView() {
                 This ad account belongs to <span className="text-foreground">{current.company_name}</span>. You see only the campaigns in {profile.company.name}&apos;s category.
               </p>
             ) : null}
-            <AdsDashboard key={current.id} accountId={current.id} canManage={current.scope === "all"} version={categoryVersion} />
+            <AdsDashboard key={current.id} accountId={current.id} canManage={current.scope === "all"} version={categoryVersion}
+              initial={current.id === start.account ? { category: start.category, range: start.range } : undefined} />
           </div>
         )}
       <Dialog open={connecting} onOpenChange={setConnecting}>
@@ -160,6 +167,14 @@ function CategoriesDialog({ open, onOpenChange, accountId, onChanged }: {
   });
   const [name, setName] = useState("");
   const [match, setMatch] = useState("");
+  const [search, setSearch] = useState("");
+  const groups = [
+    { title: "Our company", hint: "Counted in the Ads dashboard. Uncategorised campaigns count here too.", list: (cats.data ?? []).filter((c) => c.in_dashboard) },
+    { title: "Clients", hint: "Kept out of the dashboard totals. Pick them in the dashboard's category filter to see them.", list: (cats.data ?? []).filter((c) => !c.in_dashboard) },
+  ].map((g) => ({ ...g, matches: matchCategories(g.list, search) }));
+  // 20 rows at first, 20 more each time the list is scrolled near its end.
+  const paging = useShowMore(groups[0].matches.length + groups[1].matches.length, search);
+  const shown = sliceGroups(groups.map((g) => g.matches), paging.count);
   const newNameRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
   const add = () => start(async () => {
@@ -181,25 +196,31 @@ function CategoriesDialog({ open, onOpenChange, accountId, onChanged }: {
             Switch a category on to count it as our company in the Ads dashboard; switched off, it&apos;s a client&apos;s and stays out of the totals.
           </DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+        {(cats.data?.length ?? 0) > 8 ? (
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search categories or clients" className="pl-8" aria-label="Search categories" />
+          </div>
+        ) : null}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto" onScroll={paging.onScroll}>
           {!cats.data ? <ListSkeleton rows={3} /> : cats.data.length === 0 ? <p className="text-sm text-muted-foreground">No categories yet.</p> : (
-            [
-              { title: "Our company", hint: "Counted in the Ads dashboard. Uncategorised campaigns count here too.", list: cats.data.filter((c) => c.in_dashboard) },
-              { title: "Clients", hint: "Kept out of the dashboard totals. Pick them in the dashboard's category filter to see them.", list: cats.data.filter((c) => !c.in_dashboard) },
-            ].map((group) => (
+            groups.map((group, i) => (
               <section key={group.title} className="space-y-2">
                 <div>
-                  <h3 className="text-sm font-semibold">{group.title} <span className="font-normal text-muted-foreground">· {group.list.length}</span></h3>
+                  <h3 className="text-sm font-semibold">
+                    {group.title} <span className="font-normal text-muted-foreground">· {search.trim() ? `${formatCount(group.matches.length)} of ${formatCount(group.list.length)}` : formatCount(group.list.length)}</span>
+                  </h3>
                   <p className="text-xs text-muted-foreground">{group.hint}</p>
                 </div>
-                {group.list.length ? (
+                {shown[i].length ? (
                   <ul className="divide-y rounded-lg border">
-                    {group.list.map((c) => <CategoryRow key={`${c.id}:${c.name}:${c.match_text}`} accountId={accountId} category={c} onChanged={() => { cats.refetch(); onChanged(); }} />)}
+                    {shown[i].map((c) => <CategoryRow key={`${c.id}:${c.name}:${c.match_text}`} accountId={accountId} category={c} onChanged={() => { cats.refetch(); onChanged(); }} />)}
                   </ul>
-                ) : <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">None</p>}
+                ) : group.matches.length ? null : <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">{search.trim() ? "No match" : "None"}</p>}
               </section>
             ))
           )}
+          {paging.more ? <p className="text-center text-xs text-muted-foreground">Scroll for {formatCount(paging.more)} more</p> : null}
         </div>
         <div className="grid gap-2 border-t pt-3 sm:grid-cols-[2fr_1fr_auto]">
           <Input ref={newNameRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="New category, e.g. Star Tech India" aria-label="Category name" />

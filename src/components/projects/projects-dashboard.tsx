@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AlertTriangle, FolderKanban, Hand, IndianRupee } from "lucide-react";
+import { PageHeader } from "@/components/common/page-header";
 import { ErrorState, ListSkeleton } from "@/components/common/states";
 import { Bars, ChartCard, Donut, StatCard } from "@/components/dashboard/widgets";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -24,10 +25,11 @@ export function ProjectsDashboard() {
   const { cards: c, timeliness: t, by_stage, team } = q.data;
   return (
     <section className="space-y-4" aria-label="Projects">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Projects</h2>
-        <Link href="/projects" className="text-sm text-muted-foreground hover:text-foreground">All projects →</Link>
-      </div>
+      <PageHeader
+        title="Projects"
+        description="Late phases, payments and who is working on what."
+        actions={<Link href="/projects" className="text-sm text-muted-foreground hover:text-foreground">All projects →</Link>}
+      />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Active projects" value={formatCount(c.active_projects)} hint={c.on_hold ? `${c.on_hold} on hold` : "None on hold"} icon={<FolderKanban className="size-4" />} />
         <StatCard label="Late phases" value={formatCount(c.late_phases)} hint={c.late_phases ? `in ${c.late_projects} project${c.late_projects === 1 ? "" : "s"} · ${c.due_this_week} due this week` : `${c.due_this_week} due this week`}

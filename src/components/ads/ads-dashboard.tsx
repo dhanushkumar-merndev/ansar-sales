@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { type ReactNode, useCallback, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ExternalLink, ImageOff, Loader2, RefreshCw, Search } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, ImageOff, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { DataPagination } from "@/components/common/data-pagination";
 import { pastPresets, RangePicker, type DayRange } from "@/components/common/range-picker";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,9 +21,10 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
+import { sliceGroups, useShowMore } from "@/hooks/use-show-more";
 import {
   adKpis, type AdCampaignDetail, type AdCampaignRow, type AdCategory, type AdsOverview, campaignStatusLabel, formatPercent,
-  formatRatio, moneyFormat, objectiveLabel,
+  formatRatio, matchCategories, moneyFormat, objectiveLabel, topWithOther,
 } from "@/lib/ads";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
 import { formatCount } from "@/lib/format";
@@ -33,6 +35,18 @@ import { cn } from "@/lib/utils";
 import { refreshAdAccount, setCampaignCategory } from "@/server/actions/ads";
 
 const TOP_CAMPAIGNS = 6;
+
+/** Which campaigns the table lists. "Ran in…": spent money on at least one of those days, paused since or not. */
+const CAMPAIGN_STATUS_FILTERS = {
+  active: "Running now",
+  ran_7: "Ran in the last 7 days",
+  ran_14: "Ran in the last 14 days",
+  ran_28: "Ran in the last 28 days",
+  inactive: "Not running",
+  all: "Any status",
+} as const;
+type CampaignStatusFilter = keyof typeof CAMPAIGN_STATUS_FILTERS;
+const CATEGORY_COLORS = ["#10a37f", "#38bdf8", "#a855f7", "#f59e0b", "#f43f5e", "#eab308", "#14b8a6"];
 
 /** Uncategorised campaigns in a category selection. */
 const NONE = "none";
@@ -55,15 +69,22 @@ function viewFilter(view: CategoryView, fixedCategory?: string): AdsFilter {
  * A given `range` is owned by the parent (which shows the picker); `fixedCategory` shows only that
  * category (an ads client's slice of the agency account) without the category picker.
  */
-export function AdsDashboard({ accountId, canManage, version = 0, range: sharedRange, fixedCategory, syncSlot }: {
+export function AdsDashboard({ accountId, canManage, version = 0, range: sharedRange, fixedCategory, syncSlot, initial }: {
   accountId: string; canManage: boolean; version?: number; range?: DayRange; fixedCategory?: string;
+  /** Opens on one category ("none" = uncategorised) and these days instead of our company over 30 days. */
+  initial?: { category?: string; range?: DayRange };
   /** Where the page wants the synced time and Refresh button (rendered there instead of in this toolbar); `null` while that spot mounts. */
   syncSlot?: HTMLElement | null;
 }) {
-  const [ownRange, setRange] = useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
+  const [ownRange, setRange] = useState<DayRange>(() => initial?.range ?? { from: addDays(istToday(), -29), to: istToday() });
   const range = sharedRange ?? ownRange;
-  const [view, setView] = useState<CategoryView>({ kind: "ours" });
+  const [view, setView] = useState<CategoryView>(() => (initial?.category ? { kind: "pick", ids: [initial.category] } : { kind: "ours" }));
   const filter = useMemo(() => viewFilter(view, fixedCategory), [view, fixedCategory]);
+  // The campaign table's own categories: the same as the top filter until changed in the table.
+  // Changing the top filter brings the table back in line with it.
+  const [tableView, setTableView] = useState<CategoryView | null>(null);
+  const tableFilter = useMemo(() => viewFilter(tableView ?? view, fixedCategory), [tableView, view, fixedCategory]);
+  const changeView = (v: CategoryView) => { setView(v); setTableView(null); };
   const filterKey = JSON.stringify(filter);
 
   const overview = useLiveQuery({
@@ -104,6 +125,8 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
   const k = t ? adKpis(t, o?.reach_month) : null;
   const rangeText = o ? `${formatCalendarDate(o.range.from)} – ${formatCalendarDate(o.range.to)}${o.account.timezone ? ` (${o.account.timezone})` : ""}` : "";
 
+  const showCategories = scope === "all" && !fixedCategory && (categories.data?.length ?? 0) > 0;
+
   if (overview.error && !o) return <ErrorState message={overview.error} onRetry={overview.refetch} />;
 
   const syncControls = (
@@ -118,9 +141,7 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
       {syncSlot ? createPortal(syncControls, syncSlot) : null}
       <div className="flex flex-wrap items-center gap-2">
         {sharedRange ? null : <RangePicker value={range} onChange={(r) => r && setRange(r)} presets={pastPresets()} ariaLabel="Ads date range" align="start" />}
-        {scope === "all" && !fixedCategory && (categories.data?.length ?? 0) > 0 ? (
-          <CategoryFilter categories={categories.data ?? []} value={view} onChange={setView} />
-        ) : null}
+        {showCategories ? <CategoryFilter categories={categories.data ?? []} value={view} onChange={changeView} /> : null}
         <FetchingIndicator show={overview.isFetching && !overview.isInitialLoading} />
         {syncSlot === undefined ? <div className="ml-auto flex items-center gap-2">{syncControls}</div> : null}
       </div>
@@ -155,7 +176,9 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
         {o?.categories ? (
           <ChartCard title="Spend by category" description="Which company or category the money went to">
             {o.categories.length
-              ? <Donut items={o.categories.map((c, idx) => ({ name: c.name, value: Number(c.spend), color: ["#10a37f", "#38bdf8", "#a855f7", "#f59e0b", "#f43f5e", "#64748b"][idx % 6] }))} format={moneyCompact} totalLabel="spent" />
+              ? <Donut items={topWithOther(o.categories.map((c) => ({ name: c.name, value: Number(c.spend) })))
+                  .map((c, idx, all) => ({ ...c, color: idx === all.length - 1 && c.name.startsWith("Other (") ? "#64748b" : CATEGORY_COLORS[idx % CATEGORY_COLORS.length] }))}
+                  format={moneyCompact} totalLabel="spent" />
               : <p className="py-10 text-center text-sm text-muted-foreground">No spend in this range.</p>}
           </ChartCard>
         ) : (
@@ -168,7 +191,11 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
       </div>
 
       <CampaignTable
-        accountId={accountId} range={range} filter={filter} money={money} version={version}
+        accountId={accountId} range={range} filter={tableFilter} money={money} version={version}
+        categoryFilter={showCategories ? (
+          <CategoryFilter categories={categories.data ?? []} value={tableView ?? view} onChange={setTableView}
+            className="h-8 w-48" ariaLabel="Categories in the campaign table" />
+        ) : null}
         categories={scope === "all" && canManage ? (categories.data ?? []) : null}
         onCategoryChanged={() => { overview.refetch(); categories.refetch(); }}
       />
@@ -180,7 +207,9 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
  * Multi-select of categories for the dashboard. The ticks always show what is counted: "Our company"
  * ticks every category switched on plus uncategorised; unticking or ticking one starts a custom pick.
  */
-function CategoryFilter({ categories, value, onChange }: { categories: AdCategory[]; value: CategoryView; onChange: (v: CategoryView) => void }) {
+function CategoryFilter({ categories, value, onChange, className, ariaLabel = "Categories shown" }: {
+  categories: AdCategory[]; value: CategoryView; onChange: (v: CategoryView) => void; className?: string; ariaLabel?: string;
+}) {
   const ours = [...categories.filter((c) => c.in_dashboard).map((c) => c.id), NONE];
   const everything = [...categories.map((c) => c.id), NONE];
   const ticked = new Set(value.kind === "ours" ? ours : value.kind === "all" ? everything : value.ids);
@@ -192,39 +221,59 @@ function CategoryFilter({ categories, value, onChange }: { categories: AdCategor
     else if (same(everything, next)) onChange({ kind: "all" });
     else onChange({ kind: "pick", ids: [...next] });
   };
+  const [search, setSearch] = useState("");
   const label = value.kind === "ours" ? "Our company" : value.kind === "all" ? "Everything"
     : value.ids.length === 1 ? (value.ids[0] === NONE ? "Uncategorised" : categories.find((c) => c.id === value.ids[0])?.name ?? "1 category")
     : `${value.ids.length} categories`;
   const row = (id: string, name: string) => (
-    <Label key={id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 font-normal hover:bg-muted">
-      <Checkbox checked={ticked.has(id)} onCheckedChange={() => toggle(id)} />
-      <span className="min-w-0 truncate">{name}</span>
-    </Label>
+    <div key={id} className="group flex items-center rounded-md hover:bg-muted">
+      <Label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-2 py-1.5 font-normal">
+        <Checkbox checked={ticked.has(id)} onCheckedChange={() => toggle(id)} />
+        <span className="min-w-0 truncate">{name}</span>
+      </Label>
+      {/* Just this one, without unticking the rest by hand. */}
+      <button type="button" onClick={() => onChange({ kind: "pick", ids: [id] })}
+        className="mr-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100">
+        Only
+      </button>
+    </div>
   );
   const groups = [
-    { title: "Our company", list: categories.filter((c) => c.in_dashboard) },
-    { title: "Clients", list: categories.filter((c) => !c.in_dashboard) },
+    { title: "Our company", list: matchCategories(categories.filter((c) => c.in_dashboard), search) },
+    { title: "Clients", list: matchCategories(categories.filter((c) => !c.in_dashboard), search) },
   ];
+  // 20 rows at first, 20 more each time the list is scrolled near its end.
+  const paging = useShowMore(groups[0].list.length + groups[1].list.length, search);
+  const shown = sliceGroups(groups.map((g) => g.list), paging.count);
+  const showNone = !search.trim() || "uncategorised".includes(search.trim().toLowerCase());
   return (
-    <Popover>
+    <Popover onOpenChange={(o) => !o && setSearch("")}>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-56 justify-between font-normal" aria-label="Categories shown">
+        <Button variant="outline" className={cn("w-56 justify-between font-normal", className)} aria-label={ariaLabel}>
           <span className="truncate">{label}</span><ChevronDown className="opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-1">
+      <PopoverContent align="start" className="w-80 p-1">
+        {/* Same look as the campaign category picker's search. */}
+        <div className="relative p-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 opacity-50" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search categories" maxLength={60}
+            className="h-8 rounded-lg border-input/30 bg-input/30 pl-8 shadow-none" aria-label="Search categories" />
+        </div>
         <div className="grid grid-cols-2 gap-1 p-1">
           <Button size="sm" variant={value.kind === "ours" ? "secondary" : "ghost"} onClick={() => onChange({ kind: "ours" })}>Our company</Button>
           <Button size="sm" variant={value.kind === "all" ? "secondary" : "ghost"} onClick={() => onChange({ kind: "all" })}>Everything</Button>
         </div>
-        <div className="max-h-80 overflow-y-auto">
-          {groups.map((g) => g.list.length ? (
+        <div className="max-h-80 overflow-y-auto" onScroll={paging.onScroll}>
+          {groups.map((g, i) => shown[i].length ? (
             <div key={g.title} className="border-t pt-1">
-              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">{g.title}</p>
-              {g.list.map((c) => row(c.id, c.name))}
+              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">{g.title} · {formatCount(g.list.length)}</p>
+              {shown[i].map((c) => row(c.id, c.name))}
             </div>
           ) : null)}
-          <div className="border-t pt-1">{row(NONE, "Uncategorised")}</div>
+          {paging.more ? <p className="px-2 py-1.5 text-xs text-muted-foreground">Scroll for {formatCount(paging.more)} more</p> : null}
+          {!groups.some((g) => g.list.length) && !showNone ? <p className="px-2 py-3 text-center text-sm text-muted-foreground">No category matches.</p> : null}
+          {showNone ? <div className="border-t pt-1">{row(NONE, "Uncategorised")}</div> : null}
         </div>
       </PopoverContent>
     </Popover>
@@ -265,15 +314,17 @@ function statusTone(status: string | null) {
   return "text-muted-foreground";
 }
 
-function CampaignTable({ accountId, range, filter, money, version, categories, onCategoryChanged }: {
+function CampaignTable({ accountId, range, filter, money, version, categories, categoryFilter, onCategoryChanged }: {
   accountId: string; range: DayRange; filter: AdsFilter; version: number;
+  /** The table's own category filter, shown in its toolbar. */
+  categoryFilter: ReactNode;
   money: (v: number | string | null | undefined) => string; categories: AdCategory[] | null; onCategoryChanged: () => void;
 }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [input, setInput] = useState("");
   const search = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
-  const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
+  const [status, setStatus] = useState<CampaignStatusFilter>("active");
   const [sort, setSort] = useState<Sort>("spend");
   const [openId, setOpenId] = useState<string | null>(null);
   const key = `${accountId}:${range.from}:${range.to}:${JSON.stringify(filter)}:${search}:${status}:${sort}`;
@@ -300,16 +351,15 @@ function CampaignTable({ accountId, range, filter, money, version, categories, o
     <Card className="gap-0 p-0">
       <div className="flex flex-wrap items-center gap-2 border-b p-3">
         <h2 className="mr-auto text-sm font-semibold">Campaigns</h2>
+        {categoryFilter}
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search campaigns" className="h-8 w-52 pl-8" aria-label="Search campaigns" />
         </div>
-        <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
-          <SelectTrigger size="sm" className="w-32" aria-label="Status"><SelectValue /></SelectTrigger>
+        <Select value={status} onValueChange={(v) => setStatus(v as CampaignStatusFilter)}>
+          <SelectTrigger size="sm" className="w-48" aria-label="Which campaigns"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Any status</SelectItem>
-            <SelectItem value="active">Running</SelectItem>
-            <SelectItem value="inactive">Not running</SelectItem>
+            {Object.entries(CAMPAIGN_STATUS_FILTERS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
@@ -319,7 +369,14 @@ function CampaignTable({ accountId, range, filter, money, version, categories, o
       </div>
       {list.error && !list.data ? <div className="p-4"><ErrorState message={list.error} onRetry={list.refetch} /></div>
         : !list.data ? <div className="p-4"><ListSkeleton rows={5} /></div>
-        : list.data.items.length === 0 ? <div className="p-4"><EmptyState title="No campaigns" description="Nothing matches, or the first sync hasn't finished yet." /></div>
+        : list.data.items.length === 0 ? <div className="p-4">{status !== "all" && status !== "inactive" && !search
+          ? <EmptyState
+              title={status === "active" ? "No running campaigns" : "No campaigns ran in that time"}
+              description={status === "active" ? "None of the campaigns is running right now." : `No campaign spent money in the ${CAMPAIGN_STATUS_FILTERS[status].toLowerCase().replace("ran in the ", "")}.`}
+              action={<Button size="sm" variant="outline" onClick={() => setStatus(status === "active" ? "ran_7" : "all")}>
+                {status === "active" ? "Show the ones that ran in the last 7 days" : "Show all campaigns"}
+              </Button>} />
+          : <EmptyState title="No campaigns" description="Nothing matches, or the first sync hasn't finished yet." />}</div>
         : (
           <div className="overflow-x-auto">
             <Table>
@@ -378,20 +435,51 @@ function CampaignTable({ accountId, range, filter, money, version, categories, o
   );
 }
 
+/** Searchable, so it stays usable with hundreds of client categories (at most 50 drawn at once). */
 function CategoryPicker({ campaign, categories, onChanged }: { campaign: AdCampaignRow; categories: AdCategory[]; onChanged: () => void }) {
   const [pending, start] = useTransition();
-  return (
-    <Select value={campaign.category?.id ?? NONE} disabled={pending} onValueChange={(v) => start(async () => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const current = campaign.category?.id ?? NONE;
+  const matches = matchCategories(categories, search);
+  const paging = useShowMore(matches.length, search);
+  const pick = (v: string) => {
+    setOpen(false);
+    if (v === current) return;
+    start(async () => {
       const r = await setCampaignCategory({ campaignIds: [campaign.id], categoryId: v === NONE ? null : v });
       if (!r.ok) { toast.error(r.error); return; }
       onChanged();
-    })}>
-      <SelectTrigger size="sm" className="w-44" aria-label={`Category of ${campaign.name}`}><SelectValue /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NONE}>Uncategorised</SelectItem>
-        {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-      </SelectContent>
-    </Select>
+    });
+  };
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSearch(""); }}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" role="combobox" aria-expanded={open} disabled={pending} className="w-44 justify-between font-normal"
+          aria-label={`Category of ${campaign.name}`}>
+          <span className="truncate">{campaign.category?.name ?? "Uncategorised"}</span>
+          {pending ? <Loader2 className="animate-spin" /> : <ChevronDown className="opacity-50" />}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-0">
+        <Command shouldFilter={false}>
+          <CommandInput value={search} onValueChange={setSearch} placeholder="Search categories" />
+          <CommandList onScroll={paging.onScroll}>
+            <CommandEmpty>No category matches.</CommandEmpty>
+            <CommandGroup>
+              {!search.trim() || "uncategorised".includes(search.trim().toLowerCase())
+                ? <CommandItem value={NONE} onSelect={pick}><Check className={cn(current !== NONE && "invisible")} /> Uncategorised</CommandItem> : null}
+              {matches.slice(0, paging.count).map((c) => (
+                <CommandItem key={c.id} value={c.id} onSelect={pick}>
+                  <Check className={cn(current !== c.id && "invisible")} /> <span className="truncate">{c.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            {paging.more ? <p className="px-3 py-2 text-xs text-muted-foreground">Scroll for {formatCount(paging.more)} more</p> : null}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -29,10 +29,8 @@ beforeAll(async () => {
     await tx.query("select public.set_ads_manager_companies($1, $2::uuid[])", [adsMgr, [hub]]);
     await tx.query("select public.set_ads_manager_companies($1, $2::uuid[])", [adsMgrOther, [other]]);
   });
-  const hubName = (await one<{ name: string }>(db, "select name from public.companies where id = $1", [hub])).name;
-  // A client whose company has the agency's own name: the CRM gets a unique one.
   client = await asUser(db, adminHub, async (tx) => (await one<{ id: string }>(tx,
-    "select public.create_ads_client('Ashok', p_company_name => $1) as id", [hubName])).id);
+    "select public.create_ads_client('Ashok', p_company_name => 'Ashok Estates') as id")).id);
   portalUser = await createUser(db, "ashok_portal", "client", "Ashok", hub, client);
   await createLead(db, salesHub, { name: "Agency lead" });
 });
@@ -45,7 +43,7 @@ describe("opening a client's CRM", () => {
     expect(await asUser(db, adsMgr, async (tx) => (await one<{ id: string }>(tx, "select public.open_ads_client_crm($1) as id", [client])).id)).toBe(ws);
     const c = await one<{ name: string; parent_company_id: string; features: string[] }>(db, "select name, parent_company_id, features from public.companies where id = $1", [ws]);
     expect(c).toMatchObject({ parent_company_id: hub, features: ["client_workspace", "no_ads"] });
-    expect(c.name).toMatch(/\(client\)$/);
+    expect(c.name).toBe("Ashok Estates");
     expect((await rows(db, "select id from public.pipeline_stages where company_id = $1", [ws])).length).toBeGreaterThan(0);
   });
 
@@ -211,7 +209,7 @@ describe("leads from campaigns we run for the client on our own ad account", () 
     const inbox = (company: string) => asUser(db, adminHub, async (tx) =>
       (await one<{ r: { lead_id: string; crm: string | null }[] }>(tx, "select public.super_meta_events($1) as r", [company])).r);
     expect((await inbox(ws)).find((e) => e.lead_id === theirs.lead_id)).toMatchObject({ crm: null });
-    expect((await inbox(hub)).find((e) => e.lead_id === theirs.lead_id)?.crm).toMatch(/\(client\)$/);
+    expect((await inbox(hub)).find((e) => e.lead_id === theirs.lead_id)?.crm).toBe("Ashok Estates");
   });
 
   it("connects the client's own Page with our Meta app: only the Page ID is typed", async () => {
@@ -232,8 +230,35 @@ describe("leads from campaigns we run for the client on our own ad account", () 
   it("the client's page shows the client's own company name, not ours", async () => {
     const d = await asUser(db, adminHub, async (tx) => (await one<{ r: { company_name: string | null; agency_name: string } }>(tx, "select public.ads_client_detail($1) as r", [client])).r);
     const hubName = (await one<{ name: string }>(db, "select name from public.companies where id = $1", [hub])).name;
-    expect(d.agency_name).toBe(hubName);
-    // This test client's company happens to share our name (see the top of the file); the key is the client's own field.
-    expect(d.company_name).toBe((await one<{ company_name: string }>(db, "select company_name from public.ads_clients where id = $1", [client])).company_name);
+    expect(d).toMatchObject({ agency_name: hubName, company_name: "Ashok Estates" });
+  });
+});
+
+describe("our own companies are never ads clients", () => {
+  const create = (args: string, params: unknown[] = []) => asUser(db, adminHub, (tx) => tx.query(`select public.create_ads_client(${args})`, params));
+
+  it("refuses our company names, in any case or spacing, as the client or its company", async () => {
+    const hubName = (await one<{ name: string }>(db, "select name from public.companies where id = $1", [hub])).name;
+    await expect(create("$1", [hubName])).rejects.toThrow(/client_is_our_company/);
+    await expect(create("'Someone', p_company_name => $1", [`  ${hubName.toUpperCase()} `])).rejects.toThrow(/client_is_our_company/);
+    await expect(create("'Someone', p_company_name => 'Other Co'")).rejects.toThrow(/client_is_our_company/);
+    await expect(asUser(db, adminHub, (tx) => tx.query("select public.update_ads_client($1, p_name => 'Ashok', p_company_name => $2)", [client, hubName])))
+      .rejects.toThrow(/client_is_our_company/);
+  });
+
+  it("allows a client CRM's name, and skips the handoff of a won lead from our own company", async () => {
+    const wsName = (await one<{ name: string }>(db, "select name from public.companies where id = $1", [ws])).name;
+    // A second client of the same company: its CRM gets a unique name.
+    const second = await asUser(db, adminHub, async (tx) => (await one<{ id: string }>(tx, "select public.create_ads_client('Second Ashok', p_company_name => $1) as id", [wsName])).id);
+    const secondWs = await asUser(db, adminHub, async (tx) => (await one<{ id: string }>(tx, "select public.open_ads_client_crm($1) as id", [second])).id);
+    expect((await one<{ name: string }>(db, "select name from public.companies where id = $1", [secondWs])).name).toBe(`${wsName} (client)`);
+    await switchTo(adminHub, hub);
+    await db.query("update public.companies set won_to_ads_client = true where id = $1", [hub]);
+    const lead = await asUser(db, adminHub, async (tx) => (await one<{ id: string }>(tx,
+      "select public.create_lead(p_name => 'Inside job', p_phone => $1, p_phone_normalized => $1, p_new_niche => 'Ads', p_company_name => 'Other Co') as id", [nextPhone()])).id);
+    const won = (await one<{ id: string }>(db, "select id from public.pipeline_stages where company_id = $1 and kind = 'won' limit 1", [hub])).id;
+    await asUser(db, adminHub, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [lead, won]));
+    expect((await one<{ status: string }>(db, "select status from public.leads where id = $1", [lead])).status).toBe("won");
+    expect(await rows(db, "select id from public.ads_clients where lead_id = $1", [lead])).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Archive, ArchiveRestore, ArrowDownUp, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, UserRoundCog, X } from "lucide-react";
 import { toast } from "sonner";
+import { LeadAdsClientButton } from "@/components/ads/lead-ads-client-button";
 import { DueBadge, ReminderBadge, StatusBadge } from "@/components/common/badges";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { PinButton, StarButton } from "@/components/common/star-pin-buttons";
@@ -135,6 +136,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <LeadProjectActions lead={l} onChanged={refreshAll} />
+          {canEdit ? <LeadAdsClientButton leadId={l.id} leadName={l.name} onChanged={timeline.refetch} /> : null}
           {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} /> : null}
           {canEdit ? <Button variant="outline" onClick={() => setShareOpen(true)}><Send /> Share files</Button> : null}
           {canEdit ? <StatusSelect leadId={l.id} stageId={l.stage_id} onChanged={refreshAll} /> : null}
@@ -168,43 +170,46 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
               ) : !followUps.data?.length ? (
                 <p className="text-sm text-muted-foreground">No pending follow-ups.</p>
               ) : (
-                <ul className="space-y-3">
-                  {followUps.data.map((f, i) => {
-                    const overdue = new Date(f.due_at) < new Date();
-                    const reminder = f.reminder_deliveries.find((d) => d.revision === f.revision) ?? null;
-                    return (
-                      <li key={f.id} className={cn("rounded-md border p-3", i === 0 && "bg-accent/40", overdue && "border-red-200 bg-red-50/50")}>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium">{f.task}</p>
-                          <DueBadge overdue={overdue} />
-                        </div>
-                        <p className={cn("mt-0.5 text-sm", overdue ? "text-red-700" : "text-muted-foreground")}>
-                          {formatDateTime(f.due_at)} · {formatRelative(f.due_at)}
-                        </p>
-                        <ReminderBadge reminder={reminder} />
-                        {canEdit ? (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <Button size="xs" onClick={() => setCompleting(f)}><Check /> Complete</Button>
-                            <Button size="xs" variant="outline" onClick={() => setReschedule(f)}>Reschedule</Button>
-                            <ConfirmDialog
-                              trigger={<Button size="xs" variant="ghost"><X /> Cancel</Button>}
-                              title="Cancel this follow-up?"
-                              description="The reminder will not be sent. This is recorded in the timeline."
-                              confirmLabel="Cancel follow-up"
-                              destructive
-                              onConfirm={async () => {
-                                const r = await cancelFollowUp({ id: f.id });
-                                if (!r.ok) { toast.error(r.error); return false; }
-                                toast.success("Follow-up cancelled");
-                                refreshAll();
-                              }}
-                            />
+                // Three follow-ups show; more scroll inside the card.
+                <ScrollBox label="Upcoming follow-ups" className={cn(followUps.data.length > 3 && "max-h-[356px]")}>
+                  <ul className="space-y-3">
+                    {followUps.data.map((f, i) => {
+                      const overdue = new Date(f.due_at) < new Date();
+                      const reminder = f.reminder_deliveries.find((d) => d.revision === f.revision) ?? null;
+                      return (
+                        <li key={f.id} className={cn("rounded-md border p-3", i === 0 && "bg-accent/40", overdue && "border-red-200 bg-red-50/50")}>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium">{f.task}</p>
+                            <DueBadge overdue={overdue} />
                           </div>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
+                          <p className={cn("mt-0.5 text-sm", overdue ? "text-red-700" : "text-muted-foreground")}>
+                            {formatDateTime(f.due_at)} · {formatRelative(f.due_at)}
+                          </p>
+                          <ReminderBadge reminder={reminder} />
+                          {canEdit ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              <Button size="xs" onClick={() => setCompleting(f)}><Check /> Complete</Button>
+                              <Button size="xs" variant="outline" onClick={() => setReschedule(f)}>Reschedule</Button>
+                              <ConfirmDialog
+                                trigger={<Button size="xs" variant="ghost"><X /> Cancel</Button>}
+                                title="Cancel this follow-up?"
+                                description="The reminder will not be sent. This is recorded in the timeline."
+                                confirmLabel="Cancel follow-up"
+                                destructive
+                                onConfirm={async () => {
+                                  const r = await cancelFollowUp({ id: f.id });
+                                  if (!r.ok) { toast.error(r.error); return false; }
+                                  toast.success("Follow-up cancelled");
+                                  refreshAll();
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </ScrollBox>
               )}
             </CardContent>
           </Card>
@@ -232,9 +237,10 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           <SharedLinksCard leadId={l.id} leadName={l.name} phone={l.phone_normalized} profileId={profile.id} canEdit={canEdit} onShare={() => setShareOpen(true)} />
         </div>
 
-        <div className="space-y-5">
+        {/* On wide screens Activity fills the column, so it ends level with the left cards. */}
+        <div className="flex flex-col gap-5">
           {canEdit ? <NoteComposer leadId={l.id} onAdded={timeline.refetch} /> : null}
-          <Card>
+          <Card className="lg:min-h-0 lg:flex-1">
             <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
               <CardTitle className="text-base">Activity</CardTitle>
               <div className="flex items-center gap-1.5">
@@ -262,13 +268,13 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
               {timeline.isInitialLoading ? (
                 <ListSkeleton rows={4} />
               ) : timeline.error && !timeline.data ? (
                 <ErrorState message={timeline.error} onRetry={timeline.refetch} />
               ) : (
-                <ScrollBox label="Activity history" className="h-[380px] sm:h-[420px]">
+                <ScrollBox label="Activity history" className="h-[380px] sm:h-[420px] lg:h-0 lg:min-h-[420px] lg:flex-1">
                   {displayedTimeline.length === 0 ? (
                     <p className="py-16 text-center text-xs text-muted-foreground">
                       No matching activity found.

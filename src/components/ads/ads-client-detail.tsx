@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronsUpDown, Info, KeyRound, Loader2, Pencil, Plus, RefreshCw, Unlink, UserCheck, UserX } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronsUpDown, Info, KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2, Unlink, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { AdAccountForm, AdAccountStatus } from "@/components/ads/ad-account-form";
 import { clientStatusTone } from "@/components/ads/ads-clients-view";
@@ -29,13 +30,14 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveQuery } from "@/hooks/use-live-query";
+import { useShowMore } from "@/hooks/use-show-more";
 import { type AdAccount, type AdsClient, ADS_CLIENT_STATUS_LABELS, type AdsClientStatus, type AgencySource } from "@/lib/ads";
 import { createClient } from "@/lib/supabase/client";
 import { formatCount } from "@/lib/format";
 import { formatDate } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import {
-  createClientLogin, openAdsClientCrm, resetClientPassword, saveAdCategory, setAdsClientCategory, setAdsClientStatus, setClientLoginActive, setClientPortalLeads,
+  createClientLogin, deleteAdsClient, openAdsClientCrm, resetClientPassword, saveAdCategory, setAdsClientCategory, setAdsClientStatus, setClientLoginActive, setClientPortalLeads,
   updateAdsClient,
 } from "@/server/actions/ads";
 import { connectClientPage, syncClientLeads } from "@/server/actions/meta";
@@ -115,6 +117,7 @@ export function AdsClientDetail({ id }: { id: string }) {
         <div className="flex flex-wrap gap-2">
           <StatusSelect client={c} onChanged={detail.refetch} />
           <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit</Button>
+          {profile.isSuperAdmin ? <DeleteClientButton client={c} /> : null}
           <div ref={setSyncSlot} className="flex items-center gap-2" />
         </div>
       </div>
@@ -303,6 +306,30 @@ function ClientFacebookLeads({ clientId, onChanged }: { clientId: string; onChan
         </div>
       </div>
     </div>
+  );
+}
+
+/** Super admin: soft delete. The client moves to Ads → Clients → Deleted, where it can be restored or exported and removed for good. */
+function DeleteClientButton({ client }: { client: Detail }) {
+  const router = useRouter();
+  const name = client.company_name ?? client.name;
+  return (
+    <ConfirmDialog
+      trigger={<Button variant="outline" className="text-destructive"><Trash2 /> Delete</Button>}
+      title={`Delete ${name}?`}
+      description={<>
+        The client disappears from the Ads pages. It is closed, its ad syncing stops, its logins are turned off and its client CRM is closed.
+        Nothing is erased yet: under Clients → <b>Deleted</b> you can restore it, or download everything as Excel and then delete it for good.
+      </>}
+      confirmLabel="Delete client"
+      destructive
+      onConfirm={async () => {
+        const r = await deleteAdsClient({ id: client.id });
+        if (!r.ok) { toast.error(r.error); return false; }
+        toast.success(`${name} deleted. Restore or remove it for good under Clients → Deleted.`);
+        router.push("/ads/clients");
+      }}
+    />
   );
 }
 
@@ -592,7 +619,11 @@ function CategoryLinker({ client, categories, onChanged }: { client: Detail; cat
   const [pending, start] = useTransition();
   const newName = client.company_name ?? client.business ?? client.name;
   const term = input.trim().toLowerCase();
-  const options = categories.filter((k) => !term || k.name.toLowerCase().includes(term));
+  const isTaken = (k: AgencyCategory) => Boolean(k.company_id || (k.ads_client_id && k.ads_client_id !== client.id));
+  // Free categories first; with hundreds of clients only the first 50 matches are drawn.
+  const options = categories.filter((k) => !term || k.name.toLowerCase().includes(term))
+    .sort((a, b) => Number(isTaken(a)) - Number(isTaken(b)));
+  const paging = useShowMore(options.length, input);
   const exists = categories.some((k) => k.name.toLowerCase() === newName.trim().toLowerCase());
   const link = (args: { categoryId?: string; create?: boolean }) => start(async () => {
     const r = await setAdsClientCategory({ clientId: client.id, ...args });
@@ -614,7 +645,7 @@ function CategoryLinker({ client, categories, onChanged }: { client: Detail; cat
         <PopoverContent className="w-72 p-0" align="start">
           <Command shouldFilter={false}>
             <CommandInput placeholder="Search categories…" value={input} onValueChange={setInput} maxLength={60} />
-            <CommandList>
+            <CommandList onScroll={paging.onScroll}>
               {options.length === 0 && exists ? <CommandEmpty>No categories found.</CommandEmpty> : null}
               <CommandGroup>
                 {!exists ? (
@@ -622,8 +653,8 @@ function CategoryLinker({ client, categories, onChanged }: { client: Detail; cat
                     <Plus className="size-4" /> Create &ldquo;{newName}&rdquo;
                   </CommandItem>
                 ) : null}
-                {options.map((k) => {
-                  const taken = Boolean(k.company_id || (k.ads_client_id && k.ads_client_id !== client.id));
+                {options.slice(0, paging.count).map((k) => {
+                  const taken = isTaken(k);
                   return (
                     <CommandItem key={k.id} value={k.id} disabled={taken} onSelect={() => link({ categoryId: k.id })}>
                       <Check className="size-4 opacity-0" />
@@ -633,6 +664,7 @@ function CategoryLinker({ client, categories, onChanged }: { client: Detail; cat
                   );
                 })}
               </CommandGroup>
+              {paging.more ? <p className="px-3 py-2 text-xs text-muted-foreground">Scroll for {formatCount(paging.more)} more</p> : null}
             </CommandList>
           </Command>
         </PopoverContent>

@@ -41,6 +41,21 @@ export type AdCategory = {
   in_dashboard: boolean;
 };
 
+/** Categories whose name (or client's name) contains the search, case-insensitive. */
+export function matchCategories<T extends { name: string; client_name?: string | null }>(list: T[], search: string) {
+  const term = search.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!term) return list;
+  return list.filter((c) => c.name.toLowerCase().includes(term) || (c.client_name ?? "").toLowerCase().includes(term));
+}
+
+/** The biggest `keep` slices, the rest added up as "Other", so a donut stays readable with many categories. */
+export function topWithOther<T extends { name: string; value: number }>(items: T[], keep = 7): { name: string; value: number }[] {
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  if (sorted.length <= keep + 1) return sorted;
+  const rest = sorted.slice(keep);
+  return [...sorted.slice(0, keep), { name: `Other (${rest.length})`, value: rest.reduce((s, x) => s + x.value, 0) }];
+}
+
 /** Where an ads client's ads run: a category of the agency's own account, or the client's own account. */
 export type AgencySource = { category_id: string; category_name: string; match_text?: string | null; campaigns?: number; account: AdAccount };
 

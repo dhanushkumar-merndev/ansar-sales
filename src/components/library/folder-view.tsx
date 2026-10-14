@@ -41,6 +41,7 @@ import {
   useLibraryArrange,
   useLibrarySelection,
   useLibrarySort,
+  useLibraryViewMode,
   type LibraryDndMode,
 } from "@/components/library/sorting";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -102,7 +103,7 @@ export function FolderView({ folderId }: { folderId: string }) {
     [folderId, q, archived, sort, foldersFirst, paging.page, paging.pageSize],
   );
 
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useLibraryViewMode();
 
   const folder = useLiveQuery({ queryKey: `library-folder:${profile.id}:${folderId}`, fetcher: (s) => fetchLibraryFolder(folderId, s), tables: ["library_folders"] });
   // One sorted page of this folder's subfolders and files.

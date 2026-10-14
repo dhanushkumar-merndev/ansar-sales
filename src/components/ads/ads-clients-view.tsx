@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Search } from "lucide-react";
+import { Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AdAccountStatus } from "@/components/ads/ad-account-form";
 import { AdsTabs } from "@/components/ads/ads-view";
@@ -76,7 +76,11 @@ export function AdsClientsView() {
       <PageHeader
         title="Ads"
         description={`Clients ${profile.company.name} runs ads for. Won leads arrive here automatically.`}
-        actions={<><FetchingIndicator show={list.isFetching && !list.isInitialLoading} /><Button onClick={() => setAdding(true)}><Plus /> Add client</Button></>}
+        actions={<>
+          <FetchingIndicator show={list.isFetching && !list.isInitialLoading} />
+          {profile.isSuperAdmin ? <Button variant="ghost" asChild><Link href="/ads/clients/deleted"><Trash2 /> Deleted</Link></Button> : null}
+          <Button onClick={() => setAdding(true)}><Plus /> Add client</Button>
+        </>}
       />
       <AdsTabs />
       <div className="mb-3 flex flex-wrap items-center gap-2">

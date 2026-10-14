@@ -616,7 +616,10 @@ export type Database = {
           company_name: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           email: string | null
+          exported_at: string | null
           id: string
           lead_id: string | null
           name: string
@@ -635,7 +638,10 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           email?: string | null
+          exported_at?: string | null
           id?: string
           lead_id?: string | null
           name: string
@@ -654,7 +660,10 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           email?: string | null
+          exported_at?: string | null
           id?: string
           lead_id?: string | null
           name?: string
@@ -677,6 +686,13 @@ export type Database = {
           {
             foreignKeyName: "ads_clients_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_clients_deleted_by_fkey"
+            columns: ["deleted_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -4061,6 +4077,15 @@ export type Database = {
         }
         Returns: Json
       }
+      ads_client_export: {
+        Args: {
+          p_id: string
+          p_section: string
+          p_offset?: number
+          p_limit?: number
+        }
+        Returns: Json
+      }
       ads_client_login_check: {
         Args: {
           p_client: string
@@ -4278,6 +4303,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      delete_ads_client: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       delete_meta_integration: {
         Args: {
           p_company_id: string
@@ -4300,6 +4331,8 @@ export type Database = {
           p_after_created?: string
           p_after_id?: string
           p_limit?: number
+          p_created_from?: string
+          p_created_before?: string
         }
         Returns: Json
       }
@@ -4363,6 +4396,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      import_leads: {
+        Args: {
+          p_rows: Json
+          p_allow_duplicates?: boolean
+        }
+        Returns: Json
+      }
       ingest_meta_lead: {
         Args: {
           p_company_id: string
@@ -4380,6 +4420,19 @@ export type Database = {
         }
         Returns: Json
       }
+      ingest_meta_leads: {
+        Args: {
+          p_company_id: string
+          p_rows: Json
+        }
+        Returns: Json
+      }
+      lead_ads_client: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: Json
+      }
       lead_company: {
         Args: {
           p_lead_id: string
@@ -4390,11 +4443,23 @@ export type Database = {
         Args: never
         Returns: number
       }
+      lead_phones_in_crm: {
+        Args: {
+          p_phones: string[]
+        }
+        Returns: string[]
+      }
       lead_share_summary: {
         Args: {
           p_lead_id: string
         }
         Returns: Json
+      }
+      lead_to_ads_client: {
+        Args: {
+          p_lead_id: string
+        }
+        Returns: string
       }
       library_folder_options: {
         Args: never
@@ -4568,6 +4633,12 @@ export type Database = {
         }
         Returns: string
       }
+      mark_ads_client_exported: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
+      }
       mark_leads_exported: {
         Args: {
           p_ids: string[]
@@ -4664,6 +4735,12 @@ export type Database = {
       my_work: {
         Args: never
         Returns: Json
+      }
+      notify_meta_leads_synced: {
+        Args: {
+          p_counts: Json
+        }
+        Returns: undefined
       }
       open_ads_client_crm: {
         Args: {
@@ -4787,6 +4864,12 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      purge_ads_client: {
+        Args: {
+          p_id: string
+        }
+        Returns: string[]
+      }
       purge_project_folder: {
         Args: {
           p_folder_id: string
@@ -4873,6 +4956,12 @@ export type Database = {
           p_file_id: string
         }
         Returns: Json
+      }
+      restore_ads_client: {
+        Args: {
+          p_id: string
+        }
+        Returns: undefined
       }
       restore_project_folder: {
         Args: {
@@ -5008,6 +5097,22 @@ export type Database = {
         Args: {
           p_client: string
           p_on: boolean
+        }
+        Returns: undefined
+      }
+      set_company_ad_categories: {
+        Args: {
+          p_account: string
+          p_company: string
+          p_categories: string[]
+        }
+        Returns: undefined
+      }
+      set_company_ad_category: {
+        Args: {
+          p_account: string
+          p_company: string
+          p_category?: string
         }
         Returns: undefined
       }
@@ -5216,6 +5321,10 @@ export type Database = {
         Returns: undefined
       }
       super_ads_overview: {
+        Args: never
+        Returns: Json
+      }
+      super_deleted_ads_clients: {
         Args: never
         Returns: Json
       }

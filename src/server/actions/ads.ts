@@ -3,6 +3,7 @@
 import { after } from "next/server";
 import { z } from "zod";
 import { dbError, type ActionResult } from "@/lib/errors";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { createClient } from "@/lib/supabase/server";
 import { passwordSchema, usernameSchema } from "@/lib/validation";
 import { runAction } from "@/server/action-utils";
@@ -149,6 +150,26 @@ export async function mergeAdAccount(input: unknown) {
   });
 }
 
+/** Super admin: which category of a shared ad account is a merged company's (null: one named after it). Its Facebook leads go there too. */
+export async function setCompanyAdCategory(input: unknown) {
+  const schema = z.object({ accountId: z.uuid(), companyId: z.uuid(), categoryId: z.uuid().nullable() });
+  return runAction("super_admin", schema, input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_company_ad_category", { p_account: d.accountId, p_company: d.companyId, p_category: d.categoryId ?? undefined });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Super admin: every category of the shared ad account whose campaigns (and Facebook leads) are this company's. */
+export async function setCompanyAdCategories(input: unknown) {
+  const schema = z.object({ accountId: z.uuid(), companyId: z.uuid(), categoryIds: z.array(z.uuid()).max(500) });
+  return runAction("super_admin", schema, input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_company_ad_categories", { p_account: d.accountId, p_company: d.companyId, p_categories: d.categoryIds });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
 export async function setWonToAdsClient(input: unknown) {
   return runAction(["admin"], z.object({ companyId: z.uuid(), enabled: z.boolean() }), input, async (d, { supabase }) => {
     const { error } = await supabase.rpc("set_won_to_ads_client", { p_company_id: d.companyId, p_enabled: d.enabled });
@@ -243,6 +264,56 @@ export async function openAdsClientCrm(input: unknown) {
     const { error: switchError } = await supabase.rpc("set_active_company", { p_company_id: companyId });
     if (switchError) return dbError(switchError);
     return { ok: true, data: { companyId } };
+  });
+}
+
+/** "Add as client" on a lead: hands it to the ads team without marking it Won. Returns the client. */
+export async function addLeadAsAdsClient(input: unknown) {
+  return runAction([...ADS_ROLES], z.object({ leadId: z.uuid() }), input, async (d, { supabase }) => {
+    const { data, error } = await supabase.rpc("lead_to_ads_client", { p_lead_id: d.leadId });
+    if (error) return dbError(error);
+    return { ok: true, data: { clientId: data } };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Deleting a client (super admin): soft delete → Excel export → permanent delete
+// ---------------------------------------------------------------------------
+/** Hides the client everywhere, closes it, turns its logins off and archives its CRM. Restorable. */
+export async function deleteAdsClient(input: unknown) {
+  return runAction("super_admin", z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
+    const { data: detail } = await supabase.rpc("ads_client_detail", { p_id: d.id });
+    const { error } = await supabase.rpc("delete_ads_client", { p_id: d.id });
+    if (error) return dbError(error);
+    // Also block the portal logins at the Auth layer (RLS already refuses them).
+    for (const login of ((detail as { logins?: { id: string }[] } | null)?.logins ?? [])) await setAuthBan(login.id, false);
+    return { ok: true, data: undefined };
+  });
+}
+
+export async function restoreAdsClient(input: unknown) {
+  return runAction("super_admin", z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("restore_ads_client", { p_id: d.id });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
+/**
+ * Permanent: the database removes everything of the client (allowed only after an Excel export made
+ * since the deletion), then the removed logins' Auth users are deleted here.
+ */
+export async function purgeAdsClient(input: unknown) {
+  return runAction("super_admin", z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
+    const { data, error } = await supabase.rpc("purge_ads_client", { p_id: d.id });
+    if (error) return dbError(error);
+    const admin = createAdminClient();
+    let failed = 0;
+    for (const userId of (data ?? []) as string[]) {
+      const { error: authError } = await admin.auth.admin.deleteUser(userId);
+      if (authError && authError.status !== 404) failed += 1;
+    }
+    return { ok: true, data: { authFailed: failed } };
   });
 }
 

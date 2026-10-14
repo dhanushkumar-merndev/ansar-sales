@@ -152,8 +152,11 @@ export function describeNotification(kind: NotificationKind, payload: Record<str
     case "capital_added":
       return fin(["💰 Capital added", `From: ${p.contributor}`, ...moneyLines(p), `Added by: ${p.actor}`], "/finance");
     case "lead_created":
+      // A bulk import sends one summary instead of an alert per lead.
+      if (p.imported) return fin([`📥 ${p.imported} lead${p.imported === 1 ? "" : "s"} imported`, `By: ${p.actor}`], "/leads", [], "Open leads");
       return fin(["🆕 New lead", `Lead: ${p.lead_name}`, `Niche: ${p.niche}`, `Owner: ${p.owner}`, `Added by: ${p.actor}`], leadPath, [], "Open lead");
     case "lead_assigned":
+      if (p.imported) return fin([`📥 ${p.imported} lead${p.imported === 1 ? "" : "s"} imported to you`, `By: ${p.actor}`], "/leads", [], "Open leads");
       return fin([
         "👤 Lead assigned to you", `Lead: ${p.lead_name}`, ...(s(p.phone) ? [`Phone: ${p.phone}`] : []), `Niche: ${p.niche}`,
         ...(s(p.from) ? [`Previously: ${p.from}`] : []), `Assigned by: ${p.actor}`,

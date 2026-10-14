@@ -65,8 +65,9 @@ export async function ingestLeadgens(companyId: string, secrets: MetaSecrets, le
   const admin = createAdminClient();
   const forms = new Map<string, string | null>();
   let token: string | null = null;
-  // `routed`: new leads that went to an ads client's CRM (their campaign is in the client's category).
-  const result = { created: 0, duplicate: 0, failed: 0, skipped: 0, routed: 0 };
+  // `routed`: new leads that went to another CRM (an ads client's, or a company of ours whose category
+  // the campaign is in). `byCompany`: new leads per company they went to.
+  const result = { created: 0, duplicate: 0, failed: 0, skipped: 0, routed: 0, byCompany: {} as Record<string, number> };
 
   for (const item of leads) {
     const { data: pending } = await admin.rpc("record_meta_leadgen", { p_company_id: companyId, p_leadgen_id: item.leadgenId, p_form_id: item.formId ?? undefined });
@@ -105,10 +106,58 @@ export async function ingestLeadgens(companyId: string, secrets: MetaSecrets, le
       const { state, company_id: target } = data as { state: "created" | "duplicate" | "failed"; company_id?: string };
       result[state] += 1;
       if (state === "created" && target && target !== companyId) result.routed += 1;
+      if (state === "created") result.byCompany[target ?? companyId] = (result.byCompany[target ?? companyId] ?? 0) + 1;
     } catch (e) {
       result.failed += 1;
       await admin.rpc("fail_meta_lead", { p_company_id: companyId, p_leadgen_id: item.leadgenId, p_error: e instanceof Error ? e.message : "Unknown error" });
     }
   }
+  return result;
+}
+
+/** Leads per database call in a bulk sync (the database refuses more). */
+const BULK_BATCH = 100;
+
+/**
+ * "Sync leads": the leads already fetched with their answers, saved 100 per database call instead
+ * of three calls per lead. Each owner then gets one alert ("N leads imported to you"), not one per
+ * lead. Same result shape as ingestLeadgens. A batch the database can't take in one call (e.g. the
+ * bulk function isn't deployed yet) is saved one lead at a time instead, so nothing is lost.
+ */
+export async function ingestLeadgensBulk(
+  companyId: string, secrets: MetaSecrets, leads: { leadgenId: string; formId: string; lead: MetaLead }[], formNames: Map<string, string>,
+) {
+  const admin = createAdminClient();
+  const result = { created: 0, duplicate: 0, failed: 0, skipped: 0, routed: 0, byCompany: {} as Record<string, number> };
+  const owners: Record<string, number> = {};
+  for (let i = 0; i < leads.length; i += BULK_BATCH) {
+    const batch = leads.slice(i, i + BULK_BATCH);
+    const rows = batch.map(({ leadgenId, formId, lead }) => {
+      const f = mapLeadFields(lead);
+      const form = lead.form_id ?? formId;
+      return {
+        leadgen_id: leadgenId, form_id: form, form_name: formNames.get(form) ?? null,
+        name: f.name ?? null, phone: f.phone?.display ?? f.rawPhone ?? "", phone_normalized: f.phone?.e164 ?? null, email: f.email ?? null,
+        ad_name: lead.ad_name ?? null, campaign_name: lead.campaign_name ?? null, answers: f.answers ?? null,
+        campaign_id: lead.campaign_id ?? null, adset_id: lead.adset_id ?? null, ad_id: lead.ad_id ?? null,
+      };
+    });
+    const { data, error } = await admin.rpc("ingest_meta_leads", { p_company_id: companyId, p_rows: rows });
+    if (error) {
+      const one = await ingestLeadgens(companyId, secrets, batch);
+      for (const k of ["created", "duplicate", "failed", "skipped", "routed"] as const) result[k] += one[k];
+      for (const [id, n] of Object.entries(one.byCompany)) result.byCompany[id] = (result.byCompany[id] ?? 0) + n;
+      continue;
+    }
+    for (const r of data as unknown as { state: "created" | "duplicate" | "failed" | "skipped"; company_id?: string; owner_id?: string }[]) {
+      result[r.state] += 1;
+      if (r.state !== "created") continue;
+      const target = r.company_id ?? companyId;
+      if (target !== companyId) result.routed += 1;
+      result.byCompany[target] = (result.byCompany[target] ?? 0) + 1;
+      if (r.owner_id) owners[r.owner_id] = (owners[r.owner_id] ?? 0) + 1;
+    }
+  }
+  if (Object.keys(owners).length) await admin.rpc("notify_meta_leads_synced", { p_counts: owners });
   return result;
 }

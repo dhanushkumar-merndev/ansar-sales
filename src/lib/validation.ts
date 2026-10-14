@@ -48,6 +48,13 @@ export const leadCreateSchema = z.object({
   allowDuplicate: z.boolean().default(false),
 });
 
+/** Excel import: up to 500 leads, each checked like one added by hand (no follow-up). */
+export const importLeadsSchema = z.object({
+  rows: z.array(leadCreateSchema.pick({ name: true, companyName: true, phone: true, email: true, niche: true, stageId: true, ownerId: true, note: true }))
+    .min(1, "The file has no leads").max(500, "At most 500 leads at once"),
+  allowDuplicates: z.boolean().default(false),
+});
+
 export const leadUpdateSchema = z.object({
   id: z.uuid(),
   version: z.number().int().positive(),
