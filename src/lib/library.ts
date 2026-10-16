@@ -38,6 +38,7 @@ export function shareUrl(token: string) {
 }
 
 /** wa.me wants the international number as digits only. */
-export function whatsappUrl(e164: string, text: string) {
-  return `https://wa.me/${e164.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+export function whatsappUrl(e164: string, text?: string) {
+  const base = `https://wa.me/${e164.replace(/\D/g, "")}`;
+  return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }

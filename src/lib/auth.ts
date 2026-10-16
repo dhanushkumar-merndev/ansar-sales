@@ -21,12 +21,17 @@ export type CurrentProfile = {
   isSuperAdmin: boolean;
   /** The company this user works in now (the super admin's active company). */
   company: CompanyBrand;
-  /** Companies this user can switch between (super admin: all; ads manager: assigned); empty otherwise. */
+  /**
+   * Companies this user can switch between (super admin: all; ads manager: assigned; a sales user: their own
+   * plus the ones the super admin ticked for them); empty otherwise.
+   */
   companies: CompanyBrand[];
   /** Optional modules switched on for the current company (e.g. "projects"). */
   features: CompanyFeature[];
   /** Set when the current company is an ads client's CRM. */
   workspace: Workspace | null;
+  /** A sales user working in another of our companies, where they are Sales only. */
+  visiting: boolean;
 };
 
 /** An ads client's CRM: a company of its own under the agency that runs the client's ads. */
@@ -40,6 +45,7 @@ export type Workspace = {
 
 type Context = {
   company_id: string;
+  visiting?: boolean;
   workspace: { parent_id: string; parent_name: string; member: boolean; ads_client_id: string | null } | null;
 };
 
@@ -52,7 +58,7 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
   const [{ data: profile }, { data: companies }, { data: context }] = await Promise.all([
     supabase.from("profiles").select("id, username, display_name, role, extra_roles, is_active").eq("id", uid).maybeSingle(),
     // RLS: the user's own company; every company for the super admin; the assigned ones for an ads
-    // manager; plus the client CRMs the agency's staff may enter.
+    // manager or a sales user who works in several; plus the client CRMs the agency's staff may enter.
     supabase.from("companies").select("id, name, brand_highlight, logo_path, features, parent_company_id").is("archived_at", null).order("created_at").order("id"),
     // Where the database says this user is working now (private.current_company_id()).
     supabase.rpc("my_context"),
@@ -60,16 +66,20 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
   if (!profile) return null;
   const ctx = context as Context | null;
   const isSuperAdmin = profile.role === "super_admin";
-  const switches = isSuperAdmin || profile.role === "ads_manager";
   const rows = companies ?? [];
+  const visiting = Boolean(ctx?.visiting);
+  // A sales user sees more than one of our companies only when the super admin ticked some for them.
+  const switches = isSuperAdmin || profile.role === "ads_manager" || rows.filter((c) => !c.parent_company_id).length > 1;
   const currentRow = rows.find((c) => c.id === ctx?.company_id);
   const current = currentRow ? toCompanyBrand(currentRow) : undefined;
   const workspace: Workspace | null = ctx?.workspace
     ? { parentId: ctx.workspace.parent_id, parentName: ctx.workspace.parent_name, adsClientId: ctx.workspace.ads_client_id, member: ctx.workspace.member }
     : null;
   const main: AppRole = profile.role === "super_admin" ? "admin" : profile.role;
-  // The agency's staff act as Admin inside a client CRM (private.my_roles()).
-  const roles: AppRole[] = workspace && !workspace.member ? ["admin"] : [main, ...(profile.extra_roles as AppRole[]).filter((r) => r !== main)];
+  // The agency's staff act as Admin inside a client CRM, and a visiting sales user is Sales only (private.my_roles()).
+  const roles: AppRole[] = workspace && !workspace.member ? ["admin"]
+    : visiting ? ["sales"]
+      : [main, ...(profile.extra_roles as AppRole[]).filter((r) => r !== main)];
   return {
     id: profile.id,
     username: profile.username,
@@ -84,6 +94,7 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
     companies: switches ? rows.filter((c) => !c.parent_company_id).map(toCompanyBrand) : [],
     features: (currentRow?.features ?? []) as CompanyFeature[],
     workspace,
+    visiting,
   };
 });
 

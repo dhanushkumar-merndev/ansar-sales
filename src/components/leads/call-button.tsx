@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Copy, Loader2, Phone, Smartphone } from "lucide-react";
+import { Copy, Loader2, MessageCircle, Phone, Smartphone } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
-import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
+import { CALL_OUTCOMES, whatsappUrl, type CallOutcome } from "@/lib/library";
 import { cn } from "@/lib/utils";
 import { logCall, setCallOutcome } from "@/server/actions/calls";
 
@@ -59,6 +59,15 @@ export function CallButton({ leadId, phone, leadName, onLogged, className, size 
       {/* On desktop the outcome is asked once the QR code is closed. */}
       <CallOutcomeDialog activityId={call.qrOpen ? null : call.activityId} leadName={leadName} onClose={call.reset} onSaved={onLogged} />
     </>
+  );
+}
+
+/** Opens a WhatsApp chat with the number (the app on phones, WhatsApp Web/desktop otherwise). */
+export function WhatsAppButton({ phone, className, size }: { phone: string; className?: string; size?: "default" | "sm" }) {
+  return (
+    <Button asChild variant="outline" size={size} className={className}>
+      <a href={whatsappUrl(phone)} target="_blank" rel="noopener noreferrer"><MessageCircle /> WhatsApp</a>
+    </Button>
   );
 }
 

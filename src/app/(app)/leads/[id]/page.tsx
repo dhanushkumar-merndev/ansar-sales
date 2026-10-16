@@ -17,9 +17,9 @@ export default async function LeadPage({ params }: PageProps<"/leads/[id]">) {
   const profile = await requireProfile();
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
-  if (hasAnyRole(profile.roles, ["admin", "ads_manager"])) {
+  if (hasAnyRole(profile.roles, ["admin", "ads_manager"]) || profile.companies.length > 1) {
     // A link from Telegram or another tab may point into another company this person works in
-    // (the super admin's companies, or a client's CRM for the agency's staff).
+    // (the super admin's companies, a client's CRM for the agency's staff, or a sales user's other companies).
     const supabase = await createClient();
     const { data } = await supabase.rpc("lead_company", { p_lead_id: id });
     const target = data as { id: string; name: string; brand_highlight: string | null; logo_path: string | null } | null;

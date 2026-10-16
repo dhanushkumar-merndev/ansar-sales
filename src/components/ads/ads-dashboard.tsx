@@ -206,22 +206,33 @@ export function AdsDashboard({ accountId, canManage, version = 0, range: sharedR
 /**
  * Multi-select of categories for the dashboard. The ticks always show what is counted: "Our company"
  * ticks every category switched on plus uncategorised; unticking or ticking one starts a custom pick.
+ * Changes stay a draft while the list is open and load once when it closes, not on every tick.
  */
 function CategoryFilter({ categories, value, onChange, className, ariaLabel = "Categories shown" }: {
   categories: AdCategory[]; value: CategoryView; onChange: (v: CategoryView) => void; className?: string; ariaLabel?: string;
 }) {
   const ours = [...categories.filter((c) => c.in_dashboard).map((c) => c.id), NONE];
   const everything = [...categories.map((c) => c.id), NONE];
-  const ticked = new Set(value.kind === "ours" ? ours : value.kind === "all" ? everything : value.ids);
-  const same = (ids: string[], set: Set<string>) => ids.length === set.size && ids.every((id) => set.has(id));
+  // `null` while closed; open, it holds the picks not yet applied.
+  const [draft, setDraft] = useState<CategoryView | null>(null);
+  const shownView = draft ?? value;
+  const idsOf = (v: CategoryView) => new Set(v.kind === "ours" ? ours : v.kind === "all" ? everything : v.ids);
+  const ticked = idsOf(shownView);
+  const same = (ids: Iterable<string>, set: Set<string>) => { const a = [...ids]; return a.length === set.size && a.every((id) => set.has(id)); };
   const toggle = (id: string) => {
     const next = new Set(ticked);
     if (next.has(id)) next.delete(id); else next.add(id);
-    if (next.size === 0 || same(ours, next)) onChange({ kind: "ours" });
-    else if (same(everything, next)) onChange({ kind: "all" });
-    else onChange({ kind: "pick", ids: [...next] });
+    if (next.size === 0 || same(ours, next)) setDraft({ kind: "ours" });
+    else if (same(everything, next)) setDraft({ kind: "all" });
+    else setDraft({ kind: "pick", ids: [...next] });
   };
   const [search, setSearch] = useState("");
+  const openChange = (o: boolean) => {
+    if (o) { setDraft(value); return; }
+    if (draft && (draft.kind !== value.kind || !same(idsOf(draft), idsOf(value)))) onChange(draft);
+    setDraft(null);
+    setSearch("");
+  };
   const label = value.kind === "ours" ? "Our company" : value.kind === "all" ? "Everything"
     : value.ids.length === 1 ? (value.ids[0] === NONE ? "Uncategorised" : categories.find((c) => c.id === value.ids[0])?.name ?? "1 category")
     : `${value.ids.length} categories`;
@@ -232,7 +243,7 @@ function CategoryFilter({ categories, value, onChange, className, ariaLabel = "C
         <span className="min-w-0 truncate">{name}</span>
       </Label>
       {/* Just this one, without unticking the rest by hand. */}
-      <button type="button" onClick={() => onChange({ kind: "pick", ids: [id] })}
+      <button type="button" onClick={() => setDraft({ kind: "pick", ids: [id] })}
         className="mr-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100">
         Only
       </button>
@@ -247,7 +258,7 @@ function CategoryFilter({ categories, value, onChange, className, ariaLabel = "C
   const shown = sliceGroups(groups.map((g) => g.list), paging.count);
   const showNone = !search.trim() || "uncategorised".includes(search.trim().toLowerCase());
   return (
-    <Popover onOpenChange={(o) => !o && setSearch("")}>
+    <Popover open={draft !== null} onOpenChange={openChange}>
       <PopoverTrigger asChild>
         <Button variant="outline" className={cn("w-56 justify-between font-normal", className)} aria-label={ariaLabel}>
           <span className="truncate">{label}</span><ChevronDown className="opacity-50" />
@@ -261,8 +272,8 @@ function CategoryFilter({ categories, value, onChange, className, ariaLabel = "C
             className="h-8 rounded-lg border-input/30 bg-input/30 pl-8 shadow-none" aria-label="Search categories" />
         </div>
         <div className="grid grid-cols-2 gap-1 p-1">
-          <Button size="sm" variant={value.kind === "ours" ? "secondary" : "ghost"} onClick={() => onChange({ kind: "ours" })}>Our company</Button>
-          <Button size="sm" variant={value.kind === "all" ? "secondary" : "ghost"} onClick={() => onChange({ kind: "all" })}>Everything</Button>
+          <Button size="sm" variant={shownView.kind === "ours" ? "secondary" : "ghost"} onClick={() => setDraft({ kind: "ours" })}>Our company</Button>
+          <Button size="sm" variant={shownView.kind === "all" ? "secondary" : "ghost"} onClick={() => setDraft({ kind: "all" })}>Everything</Button>
         </div>
         <div className="max-h-80 overflow-y-auto" onScroll={paging.onScroll}>
           {groups.map((g, i) => shown[i].length ? (
@@ -274,6 +285,9 @@ function CategoryFilter({ categories, value, onChange, className, ariaLabel = "C
           {paging.more ? <p className="px-2 py-1.5 text-xs text-muted-foreground">Scroll for {formatCount(paging.more)} more</p> : null}
           {!groups.some((g) => g.list.length) && !showNone ? <p className="px-2 py-3 text-center text-sm text-muted-foreground">No category matches.</p> : null}
           {showNone ? <div className="border-t pt-1">{row(NONE, "Uncategorised")}</div> : null}
+        </div>
+        <div className="border-t p-1 pt-2">
+          <Button size="sm" className="w-full" onClick={() => openChange(false)}>Apply</Button>
         </div>
       </PopoverContent>
     </Popover>

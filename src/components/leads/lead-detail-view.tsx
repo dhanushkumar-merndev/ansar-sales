@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { PinButton, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { CompleteFollowUpDialog, FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
-import { CallButton } from "@/components/leads/call-button";
+import { CallButton, WhatsAppButton } from "@/components/leads/call-button";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadProjectActions } from "@/components/projects/lead-project-actions";
 import { ShareFilesDialog } from "@/components/leads/share-files-dialog";
@@ -138,6 +138,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           <LeadProjectActions lead={l} onChanged={refreshAll} />
           {canEdit ? <LeadAdsClientButton leadId={l.id} leadName={l.name} onChanged={timeline.refetch} /> : null}
           {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} /> : null}
+          {canEdit ? <WhatsAppButton phone={l.phone_normalized} /> : null}
           {canEdit ? <Button variant="outline" onClick={() => setShareOpen(true)}><Send /> Share files</Button> : null}
           {canEdit ? <StatusSelect leadId={l.id} stageId={l.stage_id} onChanged={refreshAll} /> : null}
           {canEdit ? (
@@ -220,7 +221,10 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
               {canEdit ? (
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2"><Phone className="size-4 text-muted-foreground" />{l.phone}</span>
-                  <CallButton size="sm" leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} />
+                  <div className="flex items-center gap-1.5">
+                    <WhatsAppButton size="sm" phone={l.phone_normalized} />
+                    <CallButton size="sm" leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} />
+                  </div>
                 </div>
               ) : (
                 <a href={`tel:${l.phone_normalized}`} className="flex items-center gap-2 hover:underline"><Phone className="size-4 text-muted-foreground" />{l.phone}</a>

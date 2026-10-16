@@ -13,8 +13,16 @@ portfolio must own, or have full control of, the Facebook Page.
 ## 1. Create the Meta app
 
 1. Go to **developers.facebook.com → My Apps → Create app**.
-2. Pick the use case for capturing and managing ad leads, or **Other → Business**. Connect the app to the
-   company's Business portfolio.
+2. Pick the use case **Capture & manage ad leads with Marketing API** (or **Other → Business**) and connect the app to the
+   company's Business portfolio. That use case already includes every permission the CRM needs except
+   `pages_manage_metadata`, which is optional there: add it under **Use cases → Customize → Permissions**. An app used only
+   for an ads client's results can take **Measure ad performance data with Marketing API** instead. Meta doesn't let you
+   remove a use case once it's added.
+
+   That one use case is enough: lead capture already includes `ads_read` for the Ads dashboard and the Page permissions for
+   lead forms. Ticking **Measure ad performance data with Marketing API** as well is fine (the Star Groups app has both);
+   it only repeats `ads_read`. Leave the rest unticked (Create & manage ads, Manage everything on your Page, Facebook Login,
+   Messenger, Instagram, WhatsApp, Threads, Catalog and so on): the CRM uses none of them.
 3. In the app dashboard, add the **Webhooks** product. You don't need to configure it: the CRM registers the
    subscription itself.
 4. **App settings → Basic**:
@@ -28,10 +36,72 @@ portfolio must own, or have full control of, the Facebook Page.
 3. Click **Assign assets**:
    - **Apps:** the app from step 1, with full control.
    - **Pages:** the company's Page, with full control (or at least *Manage Page* and leads access).
+   - **Ad accounts** (for the Ads dashboard): *View performance* is enough.
 4. Click **Generate new token**, select the app, and set **Token expiration: Never**. Tick these permissions:
    `leads_retrieval`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`,
-   `pages_manage_ads`, `ads_management`, `business_management`.
+   `pages_manage_ads`, `ads_read`. The CRM only reads from Meta, so `ads_management` and `business_management` are not
+   needed (ticking them does no harm).
 5. Copy the token now: Meta shows it only once.
+
+Already have a token from this system user (for example the one another company uses)? You can reuse it. See
+[One token for several companies](#tokens) before generating a new one.
+
+## The token: what it's used for and what stops it working {#tokens}
+
+**Meta app use case:** **Capture & manage ad leads with Marketing API**, plus `pages_manage_metadata` added under
+**Use cases → Customize → Permissions**. *Measure ad performance data* may be added too (harmless); no *Manage everything on
+your Page* or any other use case.
+
+What the CRM asks Meta for. Everything is a read except subscribing the Page to lead events.
+
+| What the CRM does | Meta call | Permission |
+| --- | --- | --- |
+| Check the token (**Connect & test**) | `GET /me` | none |
+| Get the Page's own token | `GET /<page id>?fields=access_token` | `pages_show_list`, `pages_read_engagement` |
+| Subscribe the Page to new leads | `POST /<page id>/subscribed_apps` | `pages_manage_metadata` |
+| Point the app's webhook at the CRM | `POST /<app id>/subscriptions` (app ID + secret, not the token) | none |
+| Read a lead and its form name; **Sync last 7 days** | `GET /<lead id>`, `/<page id>/leadgen_forms`, `/<form id>/leads` | `leads_retrieval`, `pages_manage_ads` |
+| Ads dashboard: account, campaigns, ads, insights | `GET /act_<id>`, `/act_<id>/campaigns`, `/act_<id>/ads`, `/act_<id>/insights` | `ads_read` |
+
+Ads calls are signed with the app secret (`appsecret_proof`), so the **App ID and App secret entered in the CRM must belong
+to the same app the token was generated for**.
+
+**One token for several companies.** A system user's token can reach every asset assigned to that system user *now*, not
+only the ones assigned when the token was made. To connect another Page or ad account, assign it to the same system user
+(**Assign assets**) and paste the same token, App ID and App secret into the other company's connection. You don't need a new
+token. What a token can do (its permissions) is fixed when it's generated; which Pages and ad accounts it reaches is not.
+
+**Generating another token.** Meta allows several tokens per system user, and in practice an older token keeps working when
+you generate a new one. Meta doesn't state this outright for system users, so after generating one, press **Connect & test**
+on every company that uses the older token to confirm.
+
+**These break the token for every company that uses it:**
+- **Revoke tokens** on the system user: cancels all of its tokens for the app you pick.
+- The bin icon next to an asset on the system user: the token loses that Page or ad account at once.
+- Deleting the system user, or removing the app from it.
+- **Resetting the app secret:** the CRM's signed ads calls fail until the new secret is saved in every company that uses the
+  app, and Meta may also invalidate tokens.
+- Taking `leads_retrieval` access away under **Integrations → Leads access**: new leads stop arriving.
+
+Each company's connection keeps its own encrypted copy of the token, so saving a new token in one company never changes another
+company's.
+
+<!-- super-admin -->
+### Current setup (checked 15 Oct 2026)
+
+Star Growth Hub's lead and ads connections both use one never-expiring token:
+
+| | |
+| --- | --- |
+| System user | **Dhanush**, ID `61595275705362` in Business settings |
+| App | **Star Groups**, App ID `966336746544305` |
+| Page for lead forms | **StarGarden**, `1155579617648250` |
+| Ad account | **Star Garden**, `act_1554836196332969` (View performance), shared with the other companies by category |
+| Permissions | `leads_retrieval`, `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_ads`, `ads_read` |
+
+That is all the CRM needs. To connect another Page or ad account, assign it to **Dhanush** and reuse this token; don't press
+**Revoke tokens** on Dhanush.
+<!-- /super-admin -->
 
 ## 3. Find the Page ID
 
@@ -99,8 +169,8 @@ The **Ads** page shows a company's spend, reach, impressions, clicks, results (l
 with its ads and upload dates. The CRM pulls these from Meta every hour and keeps them in its own database, so the history
 stays even if the ad account is later disconnected.
 
-1. Use a Meta app and a system user as in steps 1–2. The token needs **`ads_read`** (and `read_insights`) in addition to the
-   Lead Ads permissions. You can reuse the same app and token as Lead Ads.
+1. Use a Meta app and a system user as in steps 1–2. The token needs **`ads_read`** in addition to the Lead Ads permissions
+   (`read_insights` is for Page insights and isn't needed). You can reuse the same app and token as Lead Ads.
 2. **Business settings → Users → System users → Assign assets → Ad accounts**: give the system user the company's ad account
    (*View performance* is enough).
 3. Find the **ad account ID**: in Ads Manager, the number in the account picker, or `act=…` in the address bar.
@@ -146,7 +216,8 @@ also add a client by hand on **Ads → Clients**.
 Connect each client's own ads:
 
 1. The client (or you, in their Business portfolio) creates a Meta app and an **Admin system user** as in steps 1–2, with a
-   **never-expiring token** that has **`ads_read`** and `read_insights`, and assigns their ad account to that system user.
+   **never-expiring token** that has **`ads_read`**, and assigns their ad account to that system user (*View performance*
+   is enough).
 2. On the client's page in the CRM, open **Meta connection** and enter their **ad account ID, App ID, App secret and token**.
    The secret and token are stored encrypted in Supabase Vault and are never shown again.
 3. Press **Connect & test**. Their results appear under **Results** and update every hour.

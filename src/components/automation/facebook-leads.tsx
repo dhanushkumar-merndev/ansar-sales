@@ -208,7 +208,11 @@ export function ConnectionCard({ company, adAccount, onChanged, embedded, leadsO
             <FieldLabel htmlFor="meta-token">System user access token</FieldLabel>
             <Input id="meta-token" type="password" autoComplete="off" value={token} onChange={(e) => edit(setToken)(e.target.value)}
               placeholder={saved ? "•••••••• saved (type to replace)" : leadsOnly ? "Never-expiring token with leads_retrieval" : "Never-expiring token with leads_retrieval and ads_read"} />
-            <FieldDescription>Stored encrypted in Supabase Vault and never shown again.</FieldDescription>
+            <FieldDescription>
+              Stored encrypted in Supabase Vault and never shown again. Already connected in another company? Paste the same token, App ID
+              and secret; you don&apos;t need a new token, just assign this Page or ad account to the same system user.{" "}
+              <Link href="/help/meta-lead-ads#tokens" target="_blank" className="underline underline-offset-2">Which use case and permissions</Link>
+            </FieldDescription>
           </Field>
           <div className={cn("grid gap-4", !leadsOnly && "sm:grid-cols-2")}>
             <Field>

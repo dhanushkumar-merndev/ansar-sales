@@ -6,8 +6,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * Opens a CRM path inside a given company, for Telegram links of people who work in more than one
- * (`/switch?company=<id>&next=/finance`): the super admin, ads managers, and the agency's staff in a
- * client's CRM. Everyone else, or an unknown company, just goes to `next`.
+ * (`/switch?company=<id>&next=/finance`): the super admin, ads managers, the agency's staff in a
+ * client's CRM, and sales users who work in several companies. Everyone else, or an unknown company,
+ * just goes to `next`.
  * Switching only changes which company they are looking at, so a GET is acceptable here.
  */
 export async function GET(request: NextRequest) {

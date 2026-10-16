@@ -10,12 +10,22 @@ const nameSchema = z.string().trim().min(1, "Enter a name").max(80);
 const highlightSchema = z.string().trim().max(40).optional();
 
 /**
- * Super admin (any company) or ads manager (an assigned one): work inside another company.
- * The database keeps the choice and checks it, so RLS and Realtime follow it.
+ * Super admin (any company), ads manager (an assigned one) or a sales user (one the super admin ticked
+ * for them): work inside another company. The database keeps the choice and checks it, so RLS and
+ * Realtime follow it.
  */
 export async function switchCompany(input: unknown) {
-  return runAction(["admin", "ads_manager"], z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
+  return runAction(["admin", "ads_manager", "sales"], z.object({ id: z.uuid() }), input, async (d, { supabase }) => {
     const { error } = await supabase.rpc("set_active_company", { p_company_id: d.id });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Super admin: the other companies of ours a sales user also works in (replaces the list). */
+export async function setSalesUserCompanies(input: unknown) {
+  return runAction("super_admin", z.object({ id: z.uuid(), companyIds: z.array(z.uuid()).max(50) }), input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_sales_user_companies", { p_user_id: d.id, p_company_ids: d.companyIds });
     if (error) return dbError(error);
     return { ok: true, data: undefined };
   });

@@ -3640,6 +3640,39 @@ export type Database = {
           },
         ]
       }
+      sales_user_companies: {
+        Row: {
+          company_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_user_companies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_user_companies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       share_events: {
         Row: {
           actor_id: string | null
@@ -5249,6 +5282,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_sales_user_companies: {
+        Args: {
+          p_user_id: string
+          p_company_ids: string[]
+        }
+        Returns: undefined
+      }
       set_won_to_ads_client: {
         Args: {
           p_company_id: string
@@ -5339,6 +5379,10 @@ export type Database = {
         Returns: string
       }
       super_list_ads_managers: {
+        Args: never
+        Returns: Json
+      }
+      super_list_sales_users: {
         Args: never
         Returns: Json
       }

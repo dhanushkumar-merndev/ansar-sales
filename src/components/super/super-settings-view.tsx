@@ -11,6 +11,7 @@ import { useProfile } from "@/components/providers/profile-provider";
 import { UsageView } from "@/components/settings/usage-view";
 import { AdsTab } from "@/components/super/ads-tab";
 import { FinanceMergeTab } from "@/components/super/finance-merge-tab";
+import { SalesTeamTab } from "@/components/super/sales-team-tab";
 import { MetaLeadsTab } from "@/components/automation/facebook-leads";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,11 +28,12 @@ import { formatDate } from "@/lib/time";
 import { switchCompany, type CompanySummary } from "@/server/actions/companies";
 import { setCompanyFeature } from "@/server/actions/features";
 
-const TABS = { companies: "Companies", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", usage: "Usage" } as const;
+const TABS = { companies: "Companies", sales: "Sales team", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", usage: "Usage" } as const;
 type Tab = keyof typeof TABS;
 
 const DESCRIPTIONS: Record<Tab, string> = {
   companies: "Every company has its own leads, users, library and finance. Switch from the top-left menu.",
+  sales: "Salespeople who also work in other companies of ours, switching at the top left.",
   books: "Let several companies share one finance account, and choose which of them may edit it.",
   facebook: "Each company's Facebook Lead Ads connection, and who receives its new leads.",
   ads: "Ads managers and the companies they handle, and ad accounts shared between companies.",
@@ -50,7 +52,7 @@ export function SuperSettingsView() {
           {(Object.keys(TABS) as Tab[]).map((t) => <TabsTrigger key={t} value={t}>{TABS[t]}</TabsTrigger>)}
         </TabsList>
       </Tabs>
-      {tab === "usage" ? <UsageView /> : tab === "books" ? <FinanceMergeTab /> : tab === "facebook" ? <MetaLeadsTab /> : tab === "ads" ? <AdsTab /> : <CompaniesTab />}
+      {tab === "usage" ? <UsageView /> : tab === "sales" ? <SalesTeamTab /> : tab === "books" ? <FinanceMergeTab /> : tab === "facebook" ? <MetaLeadsTab /> : tab === "ads" ? <AdsTab /> : <CompaniesTab />}
     </div>
   );
 }
