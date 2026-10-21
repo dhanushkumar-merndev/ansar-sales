@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, FileSpreadsheet, Phone, Plus, Search, SlidersHorizontal, Tags, UserPlus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, FileSpreadsheet, Phone, Plus, Search, SlidersHorizontal, Tags, UserPlus } from "lucide-react";
 import { DueBadge, StatusBadge } from "@/components/common/badges";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { pastPresets, RangePicker } from "@/components/common/range-picker";
@@ -188,6 +189,23 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, manualSorting: true, getRowId: (r) => r.id });
 
   const activeFilters = [query.stage, query.temperature, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
+  const clearAll = () => {
+    setSearchInput("");
+    set({ q: null, stage: null, temp: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null });
+  };
+  const fetching = isFetching && !isInitialLoading;
+
+  const datePicker = (
+    <RangePicker
+      value={query.from && query.to ? { from: query.from, to: query.to } : null}
+      onChange={(r) => set({ from: r?.from ?? null, to: r?.to ?? null })}
+      presets={pastPresets()}
+      placeholder="Any created date"
+      align="start"
+      ariaLabel="Created date range"
+      className="w-full lg:w-auto"
+    />
+  );
 
   const filters = (
     <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
@@ -214,28 +232,20 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         className="lg:w-[180px]"
       />
       {isAdmin ? <StaffSelect value={query.owner} onChange={(v) => set({ owner: v })} allowAny className="w-full lg:w-[170px]" /> : null}
-      <RangePicker
-        value={query.from && query.to ? { from: query.from, to: query.to } : null}
-        onChange={(r) => set({ from: r?.from ?? null, to: r?.to ?? null })}
-        presets={pastPresets()}
-        placeholder="Any created date"
-        align="start"
-        ariaLabel="Created date range"
-        className="w-full lg:w-auto"
-      />
-      <Label className="flex items-center gap-2 font-normal">
-        <Checkbox checked={query.overdue} onCheckedChange={(c) => set({ overdue: c === true ? "1" : null })} /> Overdue follow-up
-      </Label>
-      {isAdmin ? (
-        <Label className="flex items-center gap-2 font-normal">
-          <Checkbox checked={query.archived} onCheckedChange={(c) => set({ archived: c === true ? "1" : null })} /> Archived
+      {/* On desktop the date picker sits in the page header. */}
+      <div className="lg:hidden">{datePicker}</div>
+      {/* Kept together so Clear and the spinner never wrap onto a line of their own. */}
+      <div className="flex flex-wrap items-center gap-3 lg:shrink-0 lg:flex-nowrap">
+        <Label className="flex items-center gap-2 font-normal whitespace-nowrap">
+          <Checkbox checked={query.overdue} onCheckedChange={(c) => set({ overdue: c === true ? "1" : null })} /> Overdue follow-up
         </Label>
-      ) : null}
-      {activeFilters > 0 ? (
-        <Button variant="ghost" size="sm" onClick={() => set({ stage: null, temp: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null })}>
-          <X /> Clear filters
-        </Button>
-      ) : null}
+        {isAdmin ? (
+          <Label className="flex items-center gap-2 font-normal">
+            <Checkbox checked={query.archived} onCheckedChange={(c) => set({ archived: c === true ? "1" : null })} /> Archived
+          </Label>
+        ) : null}
+        <ClearFiltersButton show={activeFilters > 0 || !!query.q} loading={fetching} onClear={clearAll} />
+      </div>
     </div>
   );
 
@@ -246,6 +256,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         description={isAdmin ? "All leads across the team." : "Leads assigned to you."}
         actions={
           <>
+            <div className="hidden lg:block">{datePicker}</div>
             {isAdmin ? (
               <>
                 <LeadDownloadMenu />
@@ -305,7 +316,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           </SelectContent>
         </Select>
         {data && data.pinnedCount > 0 ? <PinnedCount count={data.pinnedCount} /> : null}
-        <FetchingIndicator show={isFetching && !isInitialLoading} />
+        <span className="lg:hidden"><FetchingIndicator show={fetching} /></span>
       </div>
 
       {error && !data ? (

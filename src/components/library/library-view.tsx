@@ -26,7 +26,8 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
-import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { ArchiveItemDialog, BackgroundContextMenu, LibraryActionsProvider, type LibraryItemActions } from "@/components/library/context-menus";
 import { FolderPickerDialog, moveItems, SelectionBar } from "@/components/library/selection";
 import {
@@ -244,7 +245,7 @@ export function LibraryView() {
             </div>
           ) : null}
 
-          <FetchingIndicator show={isFetching && !isInitialLoading} />
+          <ClearFiltersButton loading={isFetching && !isInitialLoading} show={!!(input || archived)} onClear={() => { clear(); set({ q: null, archived: null }); }} />
         </div>
 
         {/* View Switcher & Sorting */}

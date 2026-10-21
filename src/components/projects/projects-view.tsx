@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, FolderTree, Hand, List, Plus, Search } from "lucide-react";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
-import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { CreateProjectDialog, type ProjectSourceLead } from "@/components/projects/create-project-dialog";
 import { ProjectStatusBadge } from "@/components/projects/project-badges";
 import { ProjectFolders } from "@/components/projects/project-folders";
@@ -141,7 +142,10 @@ export function ProjectsView() {
           <label className="flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm">
             <Checkbox checked={query.late} onCheckedChange={(v) => set({ late: v === true ? "1" : null })} /> Late only
           </label>
-          <FetchingIndicator show={projects.isFetching && !projects.isInitialLoading} />
+          <ClearFiltersButton loading={projects.isFetching && !projects.isInitialLoading}
+            show={!!(query.q || query.status !== "open" || query.late)}
+            onClear={() => { setInput(""); set({ q: null, status: null, late: null }); }}
+          />
         </div>
       </div>
 

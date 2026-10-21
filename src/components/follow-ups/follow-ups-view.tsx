@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { DataPagination } from "@/components/common/data-pagination";
 import { duePresets, RangePicker } from "@/components/common/range-picker";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { PageHeader } from "@/components/common/page-header";
 import { PinnedCount } from "@/components/common/star-pin-buttons";
-import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { FollowUpList } from "@/components/follow-ups/follow-up-list";
 import { StaffSelect } from "@/components/leads/staff-select";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -86,7 +87,10 @@ export function FollowUpsView() {
         />
         {isAdmin ? <StaffSelect value={query.assignee} onChange={(v) => set({ assignee: v })} allowAny className="w-full sm:w-[190px]" /> : null}
         {data && data.pinnedCount > 0 ? <PinnedCount count={data.pinnedCount} /> : null}
-        <FetchingIndicator show={isFetching && !isInitialLoading} />
+        <ClearFiltersButton loading={isFetching && !isInitialLoading}
+          show={!!(query.q || query.from || query.assignee)}
+          onClear={() => { setInput(""); set({ q: null, from: null, to: null, assignee: null }); }}
+        />
       </div>
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
         <EmptyState

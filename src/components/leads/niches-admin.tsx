@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
-import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +61,7 @@ export function NichesAdmin({ initialNiches }: { initialNiches: NicheOption[] })
         <Tabs value={query.archived ? "archived" : "active"} onValueChange={(v) => set({ archived: v === "archived" ? "1" : null })}>
           <TabsList><TabsTrigger value="active">Active</TabsTrigger><TabsTrigger value="archived">Archived</TabsTrigger></TabsList>
         </Tabs>
-        <FetchingIndicator show={isFetching && !isInitialLoading} />
+        <ClearFiltersButton loading={isFetching && !isInitialLoading} show={!!query.q} onClear={() => { setInput(""); set({ q: null }); }} />
       </div>
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
         <EmptyState title="No niches found" description="Niches are created from the lead form." />

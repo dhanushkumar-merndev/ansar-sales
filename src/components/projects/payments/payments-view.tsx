@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search, Wallet } from "lucide-react";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { MilestoneBadge } from "@/components/projects/payments/milestone-badge";
 import { PaymentDialog } from "@/components/projects/payments/payment-dialogs";
@@ -79,7 +80,7 @@ function DuesList({ view }: { view: DueView }) {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input type="search" className="pl-8" placeholder="Search project, client or code" value={input} maxLength={100} onChange={(e) => setInput(e.target.value)} aria-label="Search payments" />
         </div>
-        <FetchingIndicator show={list.isFetching && !list.isInitialLoading} />
+        <ClearFiltersButton loading={list.isFetching && !list.isInitialLoading} show={!!query.q} onClear={() => { setInput(""); set({ q: null }); }} />
       </div>
       {list.error && !data ? <ErrorState message={list.error} onRetry={list.refetch} /> : list.isInitialLoading ? <ListSkeleton /> : !data?.total ? (
         <EmptyState title={view === "overdue" ? "Nothing overdue" : view === "due" ? "Nothing due right now" : "Nothing here"} />

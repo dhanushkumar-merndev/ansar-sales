@@ -5,6 +5,7 @@ import { Archive, ArchiveRestore, ArrowDownRight, ArrowUpRight, Download, Histor
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataPagination } from "@/components/common/data-pagination";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -126,7 +127,7 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base">Entries{data ? <span className="ml-2 text-sm font-normal text-muted-foreground">{formatCount(data.total)}</span> : null}</CardTitle>
         <div className="flex items-center gap-2">
-          <FetchingIndicator show={isFetching && !isInitialLoading} />
+          <FetchingIndicator show={!filtered && isFetching && !isInitialLoading} />
           <CsvButton query={query} fileLabel={fileLabel} disabled={!data?.total} />
         </div>
       </CardHeader>
@@ -178,6 +179,11 @@ export function FinanceEntries({ from, to, fileLabel, onEditExpense, onEditCapit
           <Label className="flex cursor-pointer items-center gap-2 text-xs font-normal text-muted-foreground select-none hover:text-foreground">
             <Checkbox checked={archived} onCheckedChange={(c) => set({ archived: c === true ? "1" : null })} />Archived
           </Label>
+          <ClearFiltersButton
+            show={filtered}
+            loading={filtered && isFetching && !isInitialLoading}
+            onClear={() => { setInput(""); set({ q: null, category: null, company: null, mode: null, recurring: null, archived: null }); }}
+          />
         </div>
 
         {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading || !data ? <ListSkeleton rows={5} /> : data.items.length === 0 ? (

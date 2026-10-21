@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { FileUp, History, Search } from "lucide-react";
 import { PageHeader } from "@/components/common/page-header";
-import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { LateBadge, PhaseStatusBadge } from "@/components/projects/project-badges";
 import { describeProjectActivity } from "@/components/projects/project-activity";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -56,7 +57,7 @@ export function TeamWorkView() {
           <Segmented label="Show" value={show} options={(Object.keys(SHOWS) as Show[]).map((k) => [k, `${SHOWS[k]}${k === "late" && totals.late ? ` (${totals.late})` : k === "changes" && totals.changes ? ` (${totals.changes})` : k === "review" && totals.review ? ` (${totals.review})` : ""}`])}
             onChange={(v) => set({ show: v === "all" ? null : v })} />
           <Segmented label="Period" value={String(days)} options={PERIODS.map((d) => [String(d), `Last ${d} days`])} onChange={(v) => set({ days: v === "7" ? null : v })} />
-          <FetchingIndicator show={q.isFetching && !q.isInitialLoading} />
+          <ClearFiltersButton loading={q.isFetching && !q.isInitialLoading} show={!!(needle || show !== "all" || days !== 7)} onClear={() => { setSearch(""); set({ show: null, days: null }); }} />
         </div>
       </div>
 

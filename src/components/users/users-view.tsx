@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { KeyRound, Loader2, MoreHorizontal, Pencil, Plus, Search, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
+import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataPagination } from "@/components/common/data-pagination";
 import Link from "next/link";
 import { PageHeader } from "@/components/common/page-header";
-import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,7 +94,10 @@ export function UsersView() {
         <Label className="flex shrink-0 items-center gap-2 font-normal">
           <Checkbox checked={query.inactive} onCheckedChange={(c) => set({ inactive: c === true ? "1" : null })} /> Show deactivated
         </Label>
-        <FetchingIndicator show={isFetching && !isInitialLoading} />
+        <ClearFiltersButton loading={isFetching && !isInitialLoading}
+          show={!!(query.q || query.role || query.inactive)}
+          onClear={() => { setInput(""); set({ q: null, role: null, inactive: null }); }}
+        />
       </div>
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
         <EmptyState title="No users found" />
