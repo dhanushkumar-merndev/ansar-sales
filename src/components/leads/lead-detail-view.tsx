@@ -17,6 +17,7 @@ import { ShareFilesDialog } from "@/components/leads/share-files-dialog";
 import { ScrollBox } from "@/components/common/scroll-box";
 import { SharedLinksCard } from "@/components/leads/shared-links-card";
 import { StaffSelect } from "@/components/leads/staff-select";
+import { TemperatureBadge, TemperatureSelect } from "@/components/leads/temperature-select";
 import { Timeline } from "@/components/leads/timeline";
 import { useProfile } from "@/components/providers/profile-provider";
 import { useStages } from "@/components/providers/stages-provider";
@@ -127,6 +128,9 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <StatusBadge stageId={l.stage_id} status={l.status} />
+            {canEdit ? (
+              <TemperatureSelect leadId={l.id} value={l.temperature} onChanged={refreshAll} />
+            ) : l.temperature ? <TemperatureBadge value={l.temperature} /> : null}
             {l.source === "facebook" ? <SourceBadge meta={l.source_meta} /> : null}
             {l.company_name ? <><span className="text-foreground">{l.company_name}</span><span aria-hidden>·</span></> : null}
             <span>{l.niche.name}</span>

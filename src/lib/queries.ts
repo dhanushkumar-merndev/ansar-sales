@@ -3,7 +3,7 @@
 // Read queries run in the browser as the signed-in user: RLS decides what is returned.
 // Every list is server-filtered, server-paginated and abortable.
 import type { AppNotificationPage } from "@/lib/app-notifications";
-import type { AssignableRole, ExpenseCategory, LeadOutcome, PaymentMode, ReminderState } from "@/lib/constants";
+import type { AssignableRole, ExpenseCategory, LeadOutcome, LeadTemperature, PaymentMode, ReminderState } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
@@ -28,7 +28,7 @@ function unwrapStarredPage<T>(data: Json | null, page: number, pageSize: number)
 
 export type LeadQuery = {
   /** Pipeline stage id. */
-  q: string; stage: string | null; niche: string | null; owner: string | null;
+  q: string; stage: string | null; niche: string | null; owner: string | null; temperature: LeadTemperature | null;
   from: string | null; to: string | null; overdue: boolean; archived: boolean; starred: boolean;
   sort: string; dir: "asc" | "desc"; page: number; pageSize: number;
 };
@@ -49,6 +49,7 @@ export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<Sta
       p_limit: p.pageSize,
       p_offset: (p.page - 1) * p.pageSize,
       p_starred_only: p.starred,
+      p_temperature: p.temperature ?? undefined,
     })
     .abortSignal(signal);
   if (error) throw error;
@@ -80,7 +81,7 @@ export async function fetchLead(id: string, signal: AbortSignal) {
   const { data, error } = await sb()
     .from("leads")
     .select(
-      "id, name, company_name, phone, phone_normalized, email, status, stage_id, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
+      "id, name, company_name, phone, phone_normalized, email, status, stage_id, temperature, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
         "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
         "stars:lead_stars(pinned_at), handoff_at, handoff_note, projects(id, code)", // RLS: only the user's own star; projects they may see
     )
@@ -93,6 +94,7 @@ export async function fetchLead(id: string, signal: AbortSignal) {
 
 export type LeadDetail = {
   id: string; name: string; company_name: string | null; phone: string; phone_normalized: string; email: string | null; status: LeadOutcome; stage_id: string;
+  temperature: LeadTemperature | null;
   source: "manual" | "facebook"; source_meta: { form_name?: string; ad_name?: string; campaign_name?: string };
   version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
   niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
@@ -144,16 +146,8 @@ export async function fetchTimeline(leadId: string, limit: number, signal: Abort
 }
 
 export async function fetchStaff(signal: AbortSignal): Promise<StaffOption[]> {
-  const { data, error } = await sb()
-    .from("profiles")
-    .select("id, display_name, role")
-    .eq("is_active", true)
-    // Ads managers are only visible (RLS) inside the client CRMs they work in.
-    .in("role", ["sales", "admin", "ads_manager"])
-    .order("display_name")
-    .order("id")
-    .limit(100)
-    .abortSignal(signal);
+  // Only people who can own a lead in the current company (not every company sharing the books).
+  const { data, error } = await sb().rpc("list_lead_staff").abortSignal(signal);
   if (error) throw error;
   return data;
 }
@@ -176,13 +170,14 @@ export async function searchNiches(term: string, signal: AbortSignal) {
   return { options: list.data as NicheOption[], exact: exact.data as (NicheOption & { archived_at: string | null; merged_into_id: string | null }) | null };
 }
 
-export async function fetchUsers(p: { q: string; role: string | null; page: number; pageSize: number }, signal: AbortSignal) {
+export async function fetchUsers(p: { q: string; role: string | null; inactive: boolean; page: number; pageSize: number }, signal: AbortSignal) {
   const { data, error } = await sb()
     .rpc("admin_list_users", {
       p_search: cleanSearch(p.q) || undefined,
       p_role: (p.role as AssignableRole | null) ?? undefined,
       p_limit: p.pageSize,
       p_offset: (p.page - 1) * p.pageSize,
+      p_include_inactive: p.inactive,
     })
     .abortSignal(signal);
   if (error) throw error;

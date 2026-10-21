@@ -2,6 +2,7 @@
 
 import { updateTag } from "next/cache";
 import { z } from "zod";
+import { LEAD_TEMPERATURES } from "@/lib/constants";
 import { dbError } from "@/lib/errors";
 import { nichesTag } from "@/lib/niches-cache";
 import { runAction } from "@/server/action-utils";
@@ -92,6 +93,16 @@ export async function checkDuplicatePhone(input: unknown) {
 export async function setLeadStage(input: unknown) {
   return runAction([...LEAD_ROLES], z.object({ id: z.uuid(), stageId: z.uuid() }), input, async (d, { supabase }) => {
     const { data, error } = await supabase.from("leads").update({ stage_id: d.stageId }).eq("id", d.id).select("id").maybeSingle();
+    if (error) return dbError(error);
+    if (!data) return dbError({ message: "not_found" });
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Sets (or clears, with null) how warm a lead is. RLS limits Sales to their own leads. */
+export async function setLeadTemperature(input: unknown) {
+  return runAction([...LEAD_ROLES], z.object({ id: z.uuid(), temperature: z.enum(LEAD_TEMPERATURES).nullable() }), input, async (d, { supabase }) => {
+    const { data, error } = await supabase.from("leads").update({ temperature: d.temperature }).eq("id", d.id).select("id").maybeSingle();
     if (error) return dbError(error);
     if (!data) return dbError({ message: "not_found" });
     return { ok: true, data: undefined };

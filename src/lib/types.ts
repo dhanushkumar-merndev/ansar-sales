@@ -1,4 +1,4 @@
-import type { AssignableRole, LeadOutcome, ReminderState } from "@/lib/constants";
+import type { AssignableRole, LeadOutcome, LeadTemperature, ReminderState } from "@/lib/constants";
 
 export type NicheOption = { id: string; name: string };
 
@@ -10,6 +10,7 @@ export type LeadListItem = {
   email: string | null;
   status: LeadOutcome;
   stage_id: string;
+  temperature: LeadTemperature | null;
   source: "manual" | "facebook";
   niche: NicheOption;
   owner: { id: string; display_name: string };

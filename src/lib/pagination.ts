@@ -5,12 +5,12 @@ export type PageResult<T> = { items: T[]; page: number; pageSize: number; total:
 const MAX_PAGE = 50_000;
 
 /** Parses one-based page + allowlisted page size from URL params. Invalid input falls back to defaults. */
-export function parsePaging(params: { get(name: string): string | null }) {
+export function parsePaging(params: { get(name: string): string | null }, defaultSize: number = DEFAULT_PAGE_SIZE) {
   const rawPage = params.get("page");
   const rawSize = params.get("pageSize");
   const page = rawPage && /^\d{1,6}$/.test(rawPage) ? Math.min(Math.max(Number(rawPage), 1), MAX_PAGE) : 1;
   const size = Number(rawSize);
-  const pageSize = (PAGE_SIZES as readonly number[]).includes(size) ? size : DEFAULT_PAGE_SIZE;
+  const pageSize = (PAGE_SIZES as readonly number[]).includes(size) ? size : defaultSize;
   return { page, pageSize, offset: (page - 1) * pageSize };
 }
 

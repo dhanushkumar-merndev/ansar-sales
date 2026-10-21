@@ -16,6 +16,7 @@ import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
 import { StaffSelect } from "@/components/leads/staff-select";
+import { TemperatureBadge, TemperatureSelect } from "@/components/leads/temperature-select";
 import { useProfile } from "@/components/providers/profile-provider";
 import { useStages } from "@/components/providers/stages-provider";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
-import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
+import { LEAD_TEMPERATURES, LEADS_PAGE_SIZE, SEARCH_DEBOUNCE_MS, TEMPERATURE_LABELS, type LeadTemperature } from "@/lib/constants";
 import { lastPage, parsePaging } from "@/lib/pagination";
 import { fetchLeads, type LeadQuery } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
@@ -55,8 +56,9 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
 
   // Parse and sanitize URL state (the database validates again).
   const query: LeadQuery = useMemo(() => {
-    const { page, pageSize } = parsePaging(params);
+    const { page, pageSize } = parsePaging(params, LEADS_PAGE_SIZE);
     const stage = params.get("stage");
+    const temp = params.get("temp");
     const sort = params.get("sort");
     const from = params.get("from");
     const to = params.get("to");
@@ -65,6 +67,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
       stage: UUID_RE.test(stage ?? "") ? stage : null,
       niche: UUID_RE.test(params.get("niche") ?? "") ? params.get("niche") : null,
       owner: isAdmin && UUID_RE.test(params.get("owner") ?? "") ? params.get("owner") : null,
+      temperature: LEAD_TEMPERATURES.includes(temp as LeadTemperature) ? (temp as LeadTemperature) : null,
       ...(from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to ? { from, to } : { from: null, to: null }),
       overdue: params.get("overdue") === "1",
       archived: isAdmin && params.get("archived") === "1",
@@ -145,6 +148,16 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           </div>
         ),
       },
+      {
+        id: "temperature",
+        header: "Temperature",
+        // The dropdown renders in a portal, but React still bubbles its clicks to the row (which opens the lead).
+        cell: ({ row: { original: l } }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            {l.archived_at ? <TemperatureBadge value={l.temperature} /> : <TemperatureSelect leadId={l.id} value={l.temperature} onChanged={refetch} />}
+          </div>
+        ),
+      },
       { id: "status", header: function SortHeader() { return sortButton("Stage", "status"); }, cell: ({ row }) => <StatusBadge stageId={row.original.stage_id} status={row.original.status} /> },
       { id: "niche", header: "Niche", cell: ({ row }) => <span className="text-sm">{row.original.niche.name}</span> },
     ];
@@ -174,7 +187,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, manualSorting: true, getRowId: (r) => r.id });
 
-  const activeFilters = [query.stage, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
+  const activeFilters = [query.stage, query.temperature, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
 
   const filters = (
     <div className="grid gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
@@ -183,6 +196,13 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         <SelectContent>
           <SelectItem value="__all">All stages</SelectItem>
           {stages.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Select value={query.temperature ?? "__all"} onValueChange={(v) => set({ temp: v === "__all" ? null : v })}>
+        <SelectTrigger className="w-full lg:w-[170px]" aria-label="Temperature"><SelectValue placeholder="All temperatures" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all">All temperatures</SelectItem>
+          {LEAD_TEMPERATURES.map((t) => <SelectItem key={t} value={t}>{TEMPERATURE_LABELS[t]}</SelectItem>)}
         </SelectContent>
       </Select>
       <NicheCombobox
@@ -212,7 +232,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
         </Label>
       ) : null}
       {activeFilters > 0 ? (
-        <Button variant="ghost" size="sm" onClick={() => set({ stage: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null })}>
+        <Button variant="ghost" size="sm" onClick={() => set({ stage: null, temp: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null })}>
           <X /> Clear filters
         </Button>
       ) : null}
@@ -315,7 +335,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
               <TableBody>
                 {table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
-                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
                   </TableRow>
                 ))}
               </TableBody>
@@ -343,7 +363,11 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                       </span>
                     ) : null}
                   </div>
+                  <div className="mt-2 h-7" aria-hidden />
                 </Link>
+                <div className="absolute bottom-2.5 left-3">
+                  {l.archived_at ? <TemperatureBadge value={l.temperature} /> : <TemperatureSelect leadId={l.id} value={l.temperature} onChanged={refetch} />}
+                </div>
                 {/* Outside the link: buttons inside an anchor are invalid and would navigate. */}
                 <div className="absolute right-1.5 bottom-1.5 flex items-center">
                   <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />

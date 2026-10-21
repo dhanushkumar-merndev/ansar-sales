@@ -73,6 +73,26 @@ describe("transaction integrity", () => {
     expect(other.items).toEqual([]);
   });
 
+  it("sets a lead's temperature with history, filters on it, and keeps Sales to their own leads", async () => {
+    const id = await createLead(db, salesA, { name: "Warmth" });
+    await asUser(db, salesB, (tx) => tx.query("update public.leads set temperature = 'hot' where id = $1", [id]));
+    expect(await one(db, "select temperature from public.leads where id = $1", [id])).toEqual({ temperature: null });
+
+    await asUser(db, salesA, (tx) => tx.query("update public.leads set temperature = 'hot' where id = $1", [id]));
+    await asUser(db, salesA, (tx) => tx.query("update public.leads set temperature = 'cold' where id = $1", [id]));
+    const acts = await rows<{ meta: { changes: Record<string, unknown> } }>(db,
+      "select meta from public.lead_activities where lead_id = $1 and type = 'lead_updated' order by created_at", [id]);
+    expect(acts.map((a) => a.meta.changes)).toEqual([
+      { Temperature: { from: null, to: "Hot" } },
+      { Temperature: { from: "Hot", to: "Cold" } },
+    ]);
+
+    const list = (temperature: string) => asUser(db, salesA, async (tx) => (await one<{ r: { items: { id: string; temperature: string }[] } }>(tx,
+      "select public.list_leads(p_limit => 100, p_temperature => $1::public.lead_temperature) as r", [temperature])).r.items);
+    expect(await list("cold")).toEqual([expect.objectContaining({ id, temperature: "cold" })]);
+    expect((await list("hot")).map((l) => l.id)).not.toContain(id);
+  });
+
   it("flags edit conflicts instead of overwriting", async () => {
     const id = await createLead(db, salesA, { name: "Delta" });
     const interested = await stageId(db, "Interested");

@@ -58,6 +58,11 @@ export const SUPER_ADMIN_LABEL = "Super admin";
 
 export const OUTCOME_LABELS: Record<LeadOutcome, string> = { open: "Open", won: "Won", lost: "Lost" };
 
+/** How warm a lead is, separate from its pipeline stage. Unset (null) until someone picks one. */
+export const LEAD_TEMPERATURES = ["hot", "medium", "cold"] as const;
+export type LeadTemperature = (typeof LEAD_TEMPERATURES)[number];
+export const TEMPERATURE_LABELS: Record<LeadTemperature, string> = { hot: "Hot lead", medium: "Medium lead", cold: "Cold lead" };
+
 const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   salary: "Salary", rent: "Rent", software: "Software", marketing: "Marketing", utilities: "Utilities", miscellaneous: "Miscellaneous",
 };
@@ -72,6 +77,7 @@ export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
 
 export const PAGE_SIZES = [20, 50, 100] as const;
 export const DEFAULT_PAGE_SIZE = 20;
+export const LEADS_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 100;
 export const SEARCH_DEBOUNCE_MS = 300;
 export const REALTIME_DEBOUNCE_MS = 350;

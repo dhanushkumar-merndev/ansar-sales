@@ -1647,6 +1647,7 @@ export type Database = {
           source_meta: Json
           stage_id: string
           status: Database["public"]["Enums"]["lead_outcome"]
+          temperature: Database["public"]["Enums"]["lead_temperature"] | null
           updated_at: string
           version: number
         }
@@ -1671,6 +1672,7 @@ export type Database = {
           source_meta?: Json
           stage_id: string
           status?: Database["public"]["Enums"]["lead_outcome"]
+          temperature?: Database["public"]["Enums"]["lead_temperature"] | null
           updated_at?: string
           version?: number
         }
@@ -1695,6 +1697,7 @@ export type Database = {
           source_meta?: Json
           stage_id?: string
           status?: Database["public"]["Enums"]["lead_outcome"]
+          temperature?: Database["public"]["Enums"]["lead_temperature"] | null
           updated_at?: string
           version?: number
         }
@@ -4053,6 +4056,7 @@ export type Database = {
           p_role?: Database["public"]["Enums"]["app_role"]
           p_limit?: number
           p_offset?: number
+          p_include_inactive?: boolean
         }
         Returns: Json
       }
@@ -4568,6 +4572,14 @@ export type Database = {
         }
         Returns: Json
       }
+      list_lead_staff: {
+        Args: never
+        Returns: {
+          id: string
+          display_name: string
+          role: Database["public"]["Enums"]["app_role"]
+        }[]
+      }
       list_leads: {
         Args: {
           p_search?: string
@@ -4583,6 +4595,7 @@ export type Database = {
           p_limit?: number
           p_offset?: number
           p_starred_only?: boolean
+          p_temperature?: Database["public"]["Enums"]["lead_temperature"]
         }
         Returns: Json
       }
@@ -5382,11 +5395,11 @@ export type Database = {
         Args: never
         Returns: Json
       }
-      super_list_sales_users: {
+      super_list_companies: {
         Args: never
         Returns: Json
       }
-      super_list_companies: {
+      super_list_sales_users: {
         Args: never
         Returns: Json
       }
@@ -5505,6 +5518,7 @@ export type Database = {
       follow_up_state: "pending" | "completed" | "cancelled"
       lead_activity_type: "lead_created" | "note" | "note_corrected" | "status_changed" | "assigned" | "lead_updated" | "lead_archived" | "lead_restored" | "follow_up_scheduled" | "follow_up_rescheduled" | "follow_up_updated" | "follow_up_completed" | "follow_up_cancelled" | "call_logged" | "files_shared" | "share_revoked" | "share_opened" | "handed_off" | "project_created"
       lead_outcome: "open" | "won" | "lost"
+      lead_temperature: "hot" | "medium" | "cold"
       phase_status: "not_started" | "in_progress" | "in_review" | "changes_requested" | "done" | "skipped"
       project_member_role: "architect_manager" | "landscape_designer" | "execution" | "client"
       project_status: "active" | "on_hold" | "completed" | "cancelled"
@@ -5529,6 +5543,7 @@ export const Constants = {
       follow_up_state: ["pending", "completed", "cancelled"],
       lead_activity_type: ["lead_created", "note", "note_corrected", "status_changed", "assigned", "lead_updated", "lead_archived", "lead_restored", "follow_up_scheduled", "follow_up_rescheduled", "follow_up_updated", "follow_up_completed", "follow_up_cancelled", "call_logged", "files_shared", "share_revoked", "share_opened", "handed_off", "project_created"],
       lead_outcome: ["open", "won", "lost"],
+      lead_temperature: ["hot", "medium", "cold"],
       phase_status: ["not_started", "in_progress", "in_review", "changes_requested", "done", "skipped"],
       project_member_role: ["architect_manager", "landscape_designer", "execution", "client"],
       project_status: ["active", "on_hold", "completed", "cancelled"],

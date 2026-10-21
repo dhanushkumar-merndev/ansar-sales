@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -39,6 +40,7 @@ export function UsersView() {
     ...parsePaging(params),
     q: cleanSearch(params.get("q")),
     role: (ASSIGNABLE_ROLES as readonly string[]).includes(roleParam ?? "") ? roleParam : null,
+    inactive: params.get("inactive") === "1",
   }), [params, roleParam]);
   const [input, setInput] = useState(query.q);
   const debounced = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
@@ -88,6 +90,9 @@ export function UsersView() {
             {roleChoices(me.features).map((r) => <SelectItem key={r} value={r}>{roleLabel(r, me.features)}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Label className="flex shrink-0 items-center gap-2 font-normal">
+          <Checkbox checked={query.inactive} onCheckedChange={(c) => set({ inactive: c === true ? "1" : null })} /> Show deactivated
+        </Label>
         <FetchingIndicator show={isFetching && !isInitialLoading} />
       </div>
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
