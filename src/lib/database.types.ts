@@ -1519,6 +1519,45 @@ export type Database = {
           },
         ]
       }
+      lead_note_orders: {
+        Row: {
+          activity_ids: string[]
+          lead_id: string
+          note_colors: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          activity_ids?: string[]
+          lead_id: string
+          note_colors?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          activity_ids?: string[]
+          lead_id?: string
+          note_colors?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_note_orders_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_note_orders_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_shares: {
         Row: {
           created_at: string
@@ -4572,6 +4611,13 @@ export type Database = {
         }
         Returns: Json
       }
+      list_lead_notes: {
+        Args: {
+          p_lead_id: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
       list_lead_staff: {
         Args: never
         Returns: {
@@ -5204,6 +5250,21 @@ export type Database = {
           p_starred: boolean
         }
         Returns: Json
+      }
+      set_lead_note_color: {
+        Args: {
+          p_lead_id: string
+          p_activity_id: string
+          p_color: string | null
+        }
+        Returns: undefined
+      }
+      set_lead_note_order: {
+        Args: {
+          p_lead_id: string
+          p_ids: string[]
+        }
+        Returns: undefined
       }
       set_lead_pin: {
         Args: {

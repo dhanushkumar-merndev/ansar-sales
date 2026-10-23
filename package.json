@@ -18,6 +18,8 @@
     "telegram:webhook": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/set-telegram-webhook.mjs",
     "seed:demo": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/seed-demo.mjs",
     "seed:star-gardens": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/seed-star-gardens.mjs",
+    "perf:sandbox": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/perf-sandbox.mjs",
+    "perf:measure": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/perf-measure.mjs",
     "storage:cors": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/tigris-cors.mjs",
     "storage:migrate": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/migrate-storage-to-tigris.mjs"
   },

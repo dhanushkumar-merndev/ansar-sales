@@ -195,7 +195,7 @@ function CompleteFollowUpContent({
           <Button type="submit" form="fu-complete" disabled={pending}>{pending && <Loader2 className="animate-spin" />}{call.activityId ? "Save & complete" : "Mark complete"}</Button>
         </DialogFooter>
       </DialogContent>
-      {lead ? <CallQrDialog open={call.qrOpen} onClose={call.closeQr} phone={lead.phone} leadName={lead.name} /> : null}
+      {lead ? <CallQrDialog open={call.qrOpen} onClose={call.closeQr} leadId={lead.id} phone={lead.phone} leadName={lead.name} /> : null}
     </>
   );
 }

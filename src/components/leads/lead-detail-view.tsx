@@ -141,7 +141,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         <div className="flex flex-wrap items-center gap-2">
           <LeadProjectActions lead={l} onChanged={refreshAll} />
           {canEdit ? <LeadAdsClientButton leadId={l.id} leadName={l.name} onChanged={timeline.refetch} /> : null}
-          {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} /> : null}
+          {canEdit ? <CallButton leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={refreshAll} /> : null}
           {canEdit ? <WhatsAppButton phone={l.phone_normalized} /> : null}
           {canEdit ? <Button variant="outline" onClick={() => setShareOpen(true)}><Send /> Share files</Button> : null}
           {canEdit ? <StatusSelect leadId={l.id} stageId={l.stage_id} onChanged={refreshAll} /> : null}
@@ -227,7 +227,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
                   <span className="flex items-center gap-2"><Phone className="size-4 text-muted-foreground" />{l.phone}</span>
                   <div className="flex items-center gap-1.5">
                     <WhatsAppButton size="sm" phone={l.phone_normalized} />
-                    <CallButton size="sm" leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={timeline.refetch} />
+                    <CallButton size="sm" leadId={l.id} phone={l.phone_normalized} leadName={l.name} onLogged={refreshAll} />
                   </div>
                 </div>
               ) : (

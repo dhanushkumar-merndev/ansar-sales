@@ -7,6 +7,7 @@ import type { AssignableRole, ExpenseCategory, LeadOutcome, LeadTemperature, Pay
 import type { Json } from "@/lib/database.types";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
+import type { StageColor } from "@/lib/stages";
 import { createClient } from "@/lib/supabase/client";
 import { addDays, istDayStartUtc } from "@/lib/time";
 import type { FollowUpListItem, LeadListItem, NicheOption, StaffOption, UserListItem } from "@/lib/types";
@@ -143,6 +144,15 @@ export async function fetchTimeline(leadId: string, limit: number, signal: Abort
   if (error) throw error;
   const rows = data as unknown as Activity[];
   return { items: rows.slice(0, limit), hasMore: rows.length > limit };
+}
+
+export type LeadNote = Pick<Activity, "id" | "type" | "body" | "meta" | "created_at" | "edited_at" | "actor"> & { color?: StageColor | null };
+
+/** A lead's notes and call notes in the order the team dragged them into (newer unsorted ones first). */
+export async function fetchLeadNotes(leadId: string, signal: AbortSignal) {
+  const { data, error } = await sb().rpc("list_lead_notes", { p_lead_id: leadId, p_limit: 50 }).abortSignal(signal);
+  if (error) throw error;
+  return (data ?? []) as unknown as LeadNote[];
 }
 
 export async function fetchStaff(signal: AbortSignal): Promise<StaffOption[]> {

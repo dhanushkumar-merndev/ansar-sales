@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { Copy, Loader2, MessageCircle, Phone, Smartphone } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { CallNotes } from "@/components/leads/call-notes";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -55,7 +57,7 @@ export function CallButton({ leadId, phone, leadName, onLogged, className, size 
       <Button size={size} className={className} onClick={() => void call.start()} disabled={call.starting}>
         {call.starting ? <Loader2 className="animate-spin" /> : <Phone />} Call
       </Button>
-      <CallQrDialog open={call.qrOpen} onClose={call.closeQr} phone={phone} leadName={leadName} />
+      <CallQrDialog open={call.qrOpen} onClose={call.closeQr} leadId={leadId} phone={phone} leadName={leadName} />
       {/* On desktop the outcome is asked once the QR code is closed. */}
       <CallOutcomeDialog activityId={call.qrOpen ? null : call.activityId} leadName={leadName} onClose={call.reset} onSaved={onLogged} />
     </>
@@ -71,8 +73,12 @@ export function WhatsAppButton({ phone, className, size }: { phone: string; clas
   );
 }
 
-/** Centered QR code that opens the phone's dialer with this number. */
-export function CallQrDialog({ open, onClose, phone, leadName }: { open: boolean; onClose: () => void; phone: string; leadName: string }) {
+/**
+ * Centered QR code that opens the phone's dialer with this number, beside the lead's earlier notes.
+ * Done closes it; X, Esc or a click outside ask first, so it isn't lost mid-call by accident.
+ */
+export function CallQrDialog({ open, onClose, leadId, phone, leadName }: { open: boolean; onClose: () => void; leadId: string; phone: string; leadName: string }) {
+  const [confirmClose, setConfirmClose] = useState(false);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(phone);
@@ -82,27 +88,41 @@ export function CallQrDialog({ open, onClose, phone, leadName }: { open: boolean
     }
   };
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader className="items-center text-center">
-          <DialogTitle>Call {leadName}</DialogTitle>
-          <DialogDescription className="flex items-center gap-1.5">
-            <Smartphone className="size-4" /> Scan with your phone&apos;s camera to dial.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col items-center gap-3">
-          <div className="rounded-xl bg-white p-4">
-            <QRCodeSVG value={`tel:${phone}`} size={208} marginSize={0} aria-label={`QR code to call ${phone}`} />
+    <>
+      <Dialog open={open} onOpenChange={(o) => !o && setConfirmClose(true)}>
+        {/* Full screen: the notes get the whole height beside the QR code. */}
+        <DialogContent className="flex h-[calc(100svh-2rem)] flex-col sm:max-w-[calc(100%-2rem)]">
+          <DialogHeader className="items-center text-center">
+            <DialogTitle>Call {leadName}</DialogTitle>
+            <DialogDescription className="flex items-center gap-1.5">
+              <Smartphone className="size-4" /> Scan with your phone&apos;s camera to dial.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto sm:grid-cols-[auto_minmax(0,1fr)] sm:overflow-hidden">
+            <div className="flex flex-col items-center gap-3 sm:justify-center sm:px-6">
+              <div className="rounded-xl bg-white p-4">
+                <QRCodeSVG value={`tel:${phone}`} size={208} marginSize={0} aria-label={`QR code to call ${phone}`} />
+              </div>
+              <p className="text-lg font-semibold tracking-wide tabular-nums">{phone}</p>
+              <p className="text-center text-xs text-muted-foreground">The call is already logged in the timeline.</p>
+            </div>
+            {open ? <CallNotes leadId={leadId} className="sm:border-l sm:pl-6" /> : null}
           </div>
-          <p className="text-lg font-semibold tracking-wide tabular-nums">{phone}</p>
-          <p className="text-center text-xs text-muted-foreground">The call is already logged in the timeline.</p>
-        </div>
-        <DialogFooter className="sm:justify-center">
-          <Button variant="outline" onClick={() => void copy()}><Copy /> Copy number</Button>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="sm:justify-center">
+            <Button variant="outline" onClick={() => void copy()}><Copy /> Copy number</Button>
+            <Button onClick={onClose}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={open && confirmClose}
+        onOpenChange={setConfirmClose}
+        title="Close the call screen?"
+        description="The call is already logged. You'll be asked how it went next."
+        confirmLabel="Close"
+        onConfirm={async () => onClose()}
+      />
+    </>
   );
 }
 

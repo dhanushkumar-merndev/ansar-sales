@@ -5,6 +5,7 @@ import { z } from "zod";
 import { LEAD_TEMPERATURES } from "@/lib/constants";
 import { dbError } from "@/lib/errors";
 import { nichesTag } from "@/lib/niches-cache";
+import { STAGE_COLORS } from "@/lib/stages";
 import { runAction } from "@/server/action-utils";
 import { importLeadsSchema, leadCreateSchema, leadUpdateSchema, noteCorrectionSchema, noteSchema } from "@/lib/validation";
 
@@ -95,6 +96,26 @@ export async function setLeadStage(input: unknown) {
     const { data, error } = await supabase.from("leads").update({ stage_id: d.stageId }).eq("id", d.id).select("id").maybeSingle();
     if (error) return dbError(error);
     if (!data) return dbError({ message: "not_found" });
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Saves the dragged order of a lead's notes (shared by everyone who can see the lead). */
+export async function reorderLeadNotes(input: unknown) {
+  const schema = z.object({ leadId: z.uuid(), ids: z.array(z.uuid()).max(200) });
+  return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_lead_note_order", { p_lead_id: d.leadId, p_ids: d.ids });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
+/** Colours one note card on the call screen (null clears it); shared like the order. */
+export async function setLeadNoteColor(input: unknown) {
+  const schema = z.object({ leadId: z.uuid(), activityId: z.uuid(), color: z.enum(STAGE_COLORS).nullable() });
+  return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_lead_note_color", { p_lead_id: d.leadId, p_activity_id: d.activityId, p_color: d.color });
+    if (error) return dbError(error);
     return { ok: true, data: undefined };
   });
 }

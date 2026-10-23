@@ -16,6 +16,7 @@ import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { NicheCombobox, type NicheValue } from "@/components/leads/niche-combobox";
+import { StageSelect } from "@/components/leads/stage-select";
 import { StaffSelect } from "@/components/leads/staff-select";
 import { TemperatureBadge, TemperatureSelect } from "@/components/leads/temperature-select";
 import { useProfile } from "@/components/providers/profile-provider";
@@ -159,7 +160,15 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           </div>
         ),
       },
-      { id: "status", header: function SortHeader() { return sortButton("Stage", "status"); }, cell: ({ row }) => <StatusBadge stageId={row.original.stage_id} status={row.original.status} /> },
+      {
+        id: "status",
+        header: function SortHeader() { return sortButton("Stage", "status"); },
+        cell: ({ row: { original: l } }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            {l.archived_at ? <StatusBadge stageId={l.stage_id} status={l.status} /> : <StageSelect leadId={l.id} stageId={l.stage_id} onChanged={refetch} />}
+          </div>
+        ),
+      },
       { id: "niche", header: "Niche", cell: ({ row }) => <span className="text-sm">{row.original.niche.name}</span> },
     ];
     if (isAdmin) cols.push({ id: "owner", header: "Owner", cell: ({ row }) => <span className="text-sm">{row.original.owner.display_name}</span> });
@@ -346,7 +355,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
               <TableBody>
                 {table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
-                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || cell.column.id === "status" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
                   </TableRow>
                 ))}
               </TableBody>
