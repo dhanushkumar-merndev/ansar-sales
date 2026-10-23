@@ -14,15 +14,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { clearKeptQueries } from "@/hooks/use-live-query";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar,
 } from "@/components/ui/sidebar";
 import { rolesLabel, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { initials } from "@/lib/format";
 import { type NavKey, navFor } from "@/lib/permissions";
+import { signOutAndReload } from "@/lib/sign-out";
 import { cn } from "@/lib/utils";
-import { signOut } from "@/server/actions/auth";
+
+/**
+ * Hover or touch preloads the whole page, data included (needs experimental.dynamicOnHover). The App Router
+ * Link reads this prop, but next/link's types are the Pages Router's and don't list it.
+ */
+const PRELOAD_ON_HOVER = { unstable_dynamicOnHover: true } as Record<string, unknown>;
 
 const ITEMS: Record<NavKey, { label: string; href: string; icon: React.ComponentType<{ className?: string }> }> = {
   dashboard: { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -64,7 +69,7 @@ export function AppSidebar() {
                 return (
                   <SidebarMenuItem key={key}>
                     <SidebarMenuButton asChild isActive={active} tooltip={item.label} className="h-9 rounded-lg text-[14px] data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium">
-                      <Link href={item.href} onClick={() => setOpenMobile(false)}>
+                      <Link href={item.href} onClick={() => setOpenMobile(false)} {...PRELOAD_ON_HOVER}>
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
@@ -107,9 +112,9 @@ export function AppSidebar() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/settings"><Settings /> Settings</Link>
+                  <Link href="/settings" {...PRELOAD_ON_HOVER}><Settings /> Settings</Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => { clearKeptQueries(); startTransition(() => signOut()); }}>
+                <DropdownMenuItem onSelect={() => startTransition(() => signOutAndReload())}>
                   <LogOut /> Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>

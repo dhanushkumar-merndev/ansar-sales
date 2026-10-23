@@ -3,8 +3,9 @@
 // Read queries run in the browser as the signed-in user: RLS decides what is returned.
 // Every list is server-filtered, server-paginated and abortable.
 import type { AppNotificationPage } from "@/lib/app-notifications";
-import type { AssignableRole, ExpenseCategory, LeadOutcome, LeadTemperature, PaymentMode, ReminderState } from "@/lib/constants";
+import type { AssignableRole, ExpenseCategory, PaymentMode } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
+import { type Activity, readLead, readLeadFollowUps, readTimeline } from "@/lib/lead-queries";
 import { followUpListArgs, leadListArgs, unwrapStarredPage, type FollowUpQuery, type LeadQuery, type StarredPageResult } from "@/lib/list-queries";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
@@ -33,72 +34,20 @@ export async function fetchFollowUps(p: FollowUpQuery, signal: AbortSignal): Pro
   return unwrapStarredPage<FollowUpListItem>(data, p.page, p.pageSize);
 }
 
-export async function fetchLead(id: string, signal: AbortSignal) {
-  const { data, error } = await sb()
-    .from("leads")
-    .select(
-      "id, name, company_name, phone, phone_normalized, email, status, stage_id, temperature, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
-        "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
-        "stars:lead_stars(pinned_at), handoff_at, handoff_note, projects(id, code)", // RLS: only the user's own star; projects they may see
-    )
-    .eq("id", id)
-    .abortSignal(signal)
-    .maybeSingle();
-  if (error) throw error;
-  return data as unknown as LeadDetail | null;
+export type { Activity, LeadDetail, LeadFollowUp } from "@/lib/lead-queries";
+
+export function fetchLead(id: string, signal: AbortSignal) {
+  return readLead(sb(), id, signal);
 }
-
-export type LeadDetail = {
-  id: string; name: string; company_name: string | null; phone: string; phone_normalized: string; email: string | null; status: LeadOutcome; stage_id: string;
-  temperature: LeadTemperature | null;
-  source: "manual" | "facebook"; source_meta: { form_name?: string; ad_name?: string; campaign_name?: string };
-  version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
-  niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
-  stars: { pinned_at: string | null }[];
-  /** Projects module: handed to admins, and the project made from it (when visible to this user). */
-  handoff_at: string | null; handoff_note: string | null;
-  projects: { id: string; code: string }[] | { id: string; code: string } | null;
-};
-
-export type LeadFollowUp = {
-  id: string; task: string; due_at: string; state: "pending" | "completed" | "cancelled"; revision: number;
-  assignee: { display_name: string } | null;
-  reminder_deliveries: { revision: number; state: ReminderState; attempts: number; last_error: string | null; sent_at: string | null }[];
-};
 
 /** Pending follow-ups for one lead (bounded). */
-export async function fetchLeadFollowUps(leadId: string, signal: AbortSignal) {
-  const { data, error } = await sb()
-    .from("follow_ups")
-    .select("id, task, due_at, state, revision, assignee:profiles!follow_ups_assignee_id_fkey(display_name), reminder_deliveries(revision, state, attempts, last_error, sent_at)")
-    .eq("lead_id", leadId)
-    .eq("state", "pending")
-    .order("due_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(20)
-    .abortSignal(signal);
-  if (error) throw error;
-  return data as unknown as LeadFollowUp[];
+export function fetchLeadFollowUps(leadId: string, signal: AbortSignal) {
+  return readLeadFollowUps(sb(), leadId, signal);
 }
 
-export type Activity = {
-  id: string; type: string; body: string | null; meta: Record<string, unknown>; created_at: string; edited_at: string | null;
-  follow_up_id: string | null; actor_id: string | null; actor: { display_name: string } | null;
-};
-
 /** Newest-first timeline; fetches one extra row to know whether more exist (no count needed). */
-export async function fetchTimeline(leadId: string, limit: number, signal: AbortSignal) {
-  const { data, error } = await sb()
-    .from("lead_activities")
-    .select("id, type, body, meta, created_at, edited_at, follow_up_id, actor_id, actor:profiles!lead_activities_actor_id_fkey(display_name)")
-    .eq("lead_id", leadId)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .range(0, limit) // inclusive: limit + 1 rows
-    .abortSignal(signal);
-  if (error) throw error;
-  const rows = data as unknown as Activity[];
-  return { items: rows.slice(0, limit), hasMore: rows.length > limit };
+export function fetchTimeline(leadId: string, limit: number, signal: AbortSignal) {
+  return readTimeline(sb(), leadId, limit, signal);
 }
 
 export type LeadNote = Pick<Activity, "id" | "type" | "body" | "meta" | "created_at" | "edited_at" | "actor"> & { color?: StageColor | null };

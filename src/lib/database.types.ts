@@ -4850,6 +4850,10 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      my_session: {
+        Args: never
+        Returns: Json
+      }
       my_work: {
         Args: never
         Returns: Json

@@ -17,6 +17,8 @@ export function LoginForm() {
   // Each failed attempt returns a new state object, so every attempt gets its own toast.
   useEffect(() => {
     if (state && !state.ok) toast.error(state.error);
+    // A full load, not a client-side navigation: pages kept from an earlier session on this tab are dropped.
+    if (state?.ok) window.location.replace(state.data.next);
   }, [state]);
   useEffect(() => {
     if (params.get("error") === "inactive") toast.error("Your account is deactivated. Contact an admin.", { id: "login-inactive" });
@@ -34,8 +36,8 @@ export function LoginForm() {
           {show ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
         </button>
       </div>
-      <button type="submit" disabled={pending} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-full bg-primary text-[15px] font-medium text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-60">
-        {pending && <Loader2 className="size-4 animate-spin" />}
+      <button type="submit" disabled={pending || !!state?.ok} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-full bg-primary text-[15px] font-medium text-primary-foreground transition-colors hover:bg-primary/85 disabled:opacity-60">
+        {(pending || state?.ok) && <Loader2 className="size-4 animate-spin" />}
         Continue
       </button>
       <p className="pt-3 text-center text-[13px] text-muted-foreground">Forgot your password? Ask an admin to reset it.</p>

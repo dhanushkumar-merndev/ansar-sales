@@ -17,10 +17,10 @@ import { useLiveQuery } from "@/hooks/use-live-query";
 import { companyLogoUrl } from "@/lib/companies";
 import { formatINR } from "@/lib/format";
 import { formatBytes, MEMBER_ROLE_LABELS, type FileKind, type FileVersionStatus, type Milestone, type PhaseStatus, type ProjectMemberRole } from "@/lib/projects";
+import { signOutAndReload } from "@/lib/sign-out";
 import { STAGE_BADGE, STAGE_HEX, type StageColor } from "@/lib/stages";
 import { createClient } from "@/lib/supabase/client";
 import { formatCalendarDate, formatRelative } from "@/lib/time";
-import { signOut } from "@/server/actions/auth";
 import { portalDecision, portalFileUrl } from "@/server/actions/project-portal";
 
 type PortalFile = {
@@ -64,7 +64,7 @@ export function ProjectPortalView() {
             {p ? <BrandName name={p.company.name} highlight={p.company.brand_highlight} className="text-sm font-semibold" /> : <span className="text-sm">&nbsp;</span>}
             <p className="truncate text-xs text-muted-foreground">Welcome{p?.me ? `, ${p.me}` : ""}</p>
           </div>
-          <Button variant="ghost" size="sm" disabled={leaving} onClick={() => startLeaving(() => signOut())}>{leaving ? <Loader2 className="animate-spin" /> : <LogOut />} Sign out</Button>
+          <Button variant="ghost" size="sm" disabled={leaving} onClick={() => startLeaving(() => signOutAndReload())}>{leaving ? <Loader2 className="animate-spin" /> : <LogOut />} Sign out</Button>
         </div>
       </header>
       <main className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">

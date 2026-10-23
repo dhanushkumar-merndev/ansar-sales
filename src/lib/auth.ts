@@ -49,12 +49,18 @@ type Context = {
   workspace: { parent_id: string; parent_name: string; member: boolean; ads_client_id: string | null } | null;
 };
 
-/** Current user's authoritative profile (read through RLS on every request; never cached across requests). */
-export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> => {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const uid = data?.claims?.sub;
-  if (!uid) return null;
+type Session = {
+  profile: { id: string; username: string; display_name: string; role: AppRole | "super_admin"; extra_roles: AppRole[]; is_active: boolean } | null;
+  companies: { id: string; name: string; brand_highlight: string | null; logo_path: string | null; features: string[]; parent_company_id: string | null }[];
+  context: Context | null;
+};
+
+/** The profile, the companies this user can see and where they work now, through RLS. */
+async function readSession(supabase: Awaited<ReturnType<typeof createClient>>, uid: string): Promise<Session> {
+  // One request (20261008005200_my_session) instead of the three below.
+  const { data, error } = await supabase.rpc("my_session");
+  if (!error) return data as unknown as Session;
+  // Until that migration is applied (function not found), or if it fails: the three reads.
   const [{ data: profile }, { data: companies }, { data: context }] = await Promise.all([
     supabase.from("profiles").select("id, username, display_name, role, extra_roles, is_active").eq("id", uid).maybeSingle(),
     // RLS: the user's own company; every company for the super admin; the assigned ones for an ads
@@ -63,8 +69,17 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
     // Where the database says this user is working now (private.current_company_id()).
     supabase.rpc("my_context"),
   ]);
+  return { profile, companies: companies ?? [], context: context as Context | null } as Session;
+}
+
+/** Current user's authoritative profile (read through RLS on every request; never cached across requests). */
+export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> => {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const uid = data?.claims?.sub;
+  if (!uid) return null;
+  const { profile, companies, context: ctx } = await readSession(supabase, uid);
   if (!profile) return null;
-  const ctx = context as Context | null;
   const isSuperAdmin = profile.role === "super_admin";
   const rows = companies ?? [];
   const visiting = Boolean(ctx?.visiting);

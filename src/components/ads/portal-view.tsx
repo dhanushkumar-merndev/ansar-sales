@@ -13,9 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import type { AdAccount, AgencySource } from "@/lib/ads";
 import { companyLogoUrl } from "@/lib/companies";
+import { signOutAndReload } from "@/lib/sign-out";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/time";
-import { signOut } from "@/server/actions/auth";
 
 type Portal = {
   client: { id: string; name: string; company_name: string | null; business: string | null; status: string; started_at: string };
@@ -103,7 +103,7 @@ export function PortalView() {
             {p ? <BrandName name={p.agency.name} highlight={p.agency.brand_highlight} className="text-sm font-semibold" /> : <span className="text-sm">&nbsp;</span>}
             <p className="truncate text-xs text-muted-foreground">Ad results for {p?.client.name ?? "…"}</p>
           </div>
-          <Button variant="ghost" size="sm" disabled={leaving} onClick={() => startLeaving(() => signOut())}>
+          <Button variant="ghost" size="sm" disabled={leaving} onClick={() => startLeaving(() => signOutAndReload())}>
             {leaving ? <Loader2 className="animate-spin" /> : <LogOut />} Sign out
           </Button>
         </div>

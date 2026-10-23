@@ -36,6 +36,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useHiddenColumns } from "@/hooks/use-hidden-columns";
+import { useLeadPrefetch } from "@/hooks/use-lead-prefetch";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
 import { LEAD_TEMPERATURES, SEARCH_DEBOUNCE_MS, TEMPERATURE_LABELS } from "@/lib/constants";
@@ -57,6 +59,9 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
   const { stages } = useStages();
   const isAdmin = profile.role === "admin";
   const router = useRouter();
+  const leadIntent = useLeadPrefetch();
+  // Rows render once, as the table or as cards (never both): the list only renders in the browser.
+  const isMobile = useIsMobile();
   const { params, set } = useUrlState();
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -352,7 +357,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
       ) : (
         <div className={cn("transition-opacity", isStale && "opacity-60")} aria-busy={isStale}>
           {/* Desktop table */}
-          <Card className="hidden py-0 md:block">
+          {isMobile ? null : <Card className="hidden py-0 md:block">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((hg) => (
@@ -363,18 +368,18 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
               </TableHeader>
               <TableBody>
                 {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
+                  <TableRow key={row.id} {...leadIntent(row.id)} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
                     {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || cell.column.id === "status" || cell.column.id === "actions" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0", cell.column.id === "actions" && "w-px text-right")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </Card>
+          </Card>}
           {/* Mobile cards */}
-          <ul className="space-y-2 md:hidden">
+          {isMobile ? <ul className="space-y-2 md:hidden">
             {data?.items.map((l) => (
               <li key={l.id} className="relative">
-                <Link href={`/leads/${l.id}`} className={cn("block rounded-lg border bg-card p-3 active:bg-muted", l.pinned_at && "bg-muted/40")}>
+                <Link href={`/leads/${l.id}`} {...leadIntent(l.id)} className={cn("block rounded-lg border bg-card p-3 active:bg-muted", l.pinned_at && "bg-muted/40")}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium"><span className="truncate">{l.name}</span>{l.pinned_at ? <PinnedBadge /> : null}</p>
@@ -413,7 +418,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
                 </div>
               </li>
             ))}
-          </ul>
+          </ul> : null}
           {data ? (
             <DataPagination
               page={query.page}

@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { getCurrentProfile } from "@/lib/auth";
 import { serverEnv } from "@/lib/env";
 import type { ActionResult } from "@/lib/errors";
@@ -15,10 +14,11 @@ function authEmailFor(username: string) {
 }
 
 function safeNext(next: unknown) {
-  return typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  // Same-site paths only: browsers read "/\evil.example" like "//evil.example".
+  return typeof next === "string" && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/dashboard";
 }
 
-export async function signIn(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+export async function signIn(_prev: ActionResult<{ next: string }> | null, formData: FormData): Promise<ActionResult<{ next: string }>> {
   const parsed = loginSchema.safeParse({ username: formData.get("username"), password: formData.get("password") });
   if (!parsed.success) return { ok: false, error: INVALID };
   const username = usernameSchema.safeParse(parsed.data.username);
@@ -36,13 +36,14 @@ export async function signIn(_prev: ActionResult | null, formData: FormData): Pr
     await supabase.auth.signOut();
     return { ok: false, error: INVALID };
   }
-  redirect(safeNext(formData.get("next")));
+  // The form loads it fresh (not a client-side navigation): nothing from an earlier session on this tab survives.
+  return { ok: true, data: { next: safeNext(formData.get("next")) } };
 }
 
+/** Ends the session; the caller loads /login fresh (src/lib/sign-out.ts). */
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
-  redirect("/login");
 }
 
 export async function changePassword(input: { currentPassword: string; newPassword: string }): Promise<ActionResult> {

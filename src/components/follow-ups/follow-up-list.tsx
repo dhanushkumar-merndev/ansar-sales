@@ -8,6 +8,7 @@ import { PinButton, PinnedBadge, StarButton } from "@/components/common/star-pin
 import { CompleteFollowUpDialog, FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { Button } from "@/components/ui/button";
 import { useHiddenColumns } from "@/hooks/use-hidden-columns";
+import { useLeadPrefetch } from "@/hooks/use-lead-prefetch";
 import { formatDateTime, formatRelative } from "@/lib/time";
 import type { FollowUpListItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ export function FollowUpList({ items, showAssignee, onChanged }: { items: Follow
   const [completing, setCompleting] = useState<FollowUpListItem | null>(null);
   const [rescheduling, setRescheduling] = useState<FollowUpListItem | null>(null);
   const { hidden } = useHiddenColumns("follow_ups");
+  const leadIntent = useLeadPrefetch();
   return (
     <>
       <ul className="divide-y rounded-lg border bg-card">
@@ -25,7 +27,7 @@ export function FollowUpList({ items, showAssignee, onChanged }: { items: Follow
           <li key={f.id} className={cn("flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between", f.overdue ? "bg-red-50/40" : f.pinned_at && "bg-muted/40")}>
             <div className="min-w-0 space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/leads/${f.lead.id}`} className="font-medium hover:underline">{f.lead.name}</Link>
+                <Link href={`/leads/${f.lead.id}`} {...leadIntent(f.lead.id)} className="font-medium hover:underline">{f.lead.name}</Link>
                 {hidden.has("stage") ? null : <StatusBadge stageId={f.lead.stage_id} status={f.lead.status} />}
                 <DueBadge overdue={f.overdue} state={f.state} />
                 {f.pinned_at ? <PinnedBadge /> : null}

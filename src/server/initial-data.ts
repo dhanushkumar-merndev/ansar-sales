@@ -5,6 +5,10 @@ import {
   type Initial, type StarredPageResult,
 } from "@/lib/list-queries";
 import { dashKey, defaultDashRange } from "@/lib/dashboard-keys";
+import {
+  leadFollowUpsKey, leadKey, readLead, readLeadFollowUps, readTimeline, TIMELINE_PAGE, timelineKey,
+  type LeadDetail, type LeadFollowUp, type TimelinePage,
+} from "@/lib/lead-queries";
 import { createClient } from "@/lib/supabase/server";
 import type { FollowUpListItem, LeadListItem } from "@/lib/types";
 
@@ -22,7 +26,7 @@ export function toParams(sp: SearchParams) {
 
 async function read<T>(key: string, fn: (sb: Awaited<ReturnType<typeof createClient>>) => Promise<T>): Initial<T> {
   try {
-    return { key, data: await fn(await createClient()) };
+    return { key, data: await fn(await createClient()), at: Date.now() };
   } catch {
     return null;
   }
@@ -54,4 +58,15 @@ export function initialDashboard<T>(profile: CurrentProfile, kind: "admin" | "sa
     if (error) throw error;
     return data as unknown as T;
   });
+}
+
+/** The lead page's three reads (lead, pending follow-ups, first timeline page), under lead-detail-view.tsx's keys. */
+export function initialLeadPage(profile: CurrentProfile, leadId: string): {
+  lead: Initial<LeadDetail | null>; followUps: Initial<LeadFollowUp[]>; timeline: Initial<TimelinePage>;
+} {
+  return {
+    lead: read(leadKey(profile.id, leadId), (sb) => readLead(sb, leadId)),
+    followUps: read(leadFollowUpsKey(profile.id, leadId), (sb) => readLeadFollowUps(sb, leadId)),
+    timeline: read(timelineKey(profile.id, leadId, TIMELINE_PAGE), (sb) => readTimeline(sb, leadId, TIMELINE_PAGE)),
+  };
 }

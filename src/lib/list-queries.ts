@@ -19,8 +19,11 @@ function dayRange(params: Params) {
   return from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to ? { from, to } : { from: null, to: null };
 }
 
-/** A first read the server started for one query key (null when it failed: the browser reads instead). */
-export type Initial<T> = Promise<{ key: string; data: T } | null>;
+/**
+ * A first read the server started for one query key (null when it failed: the browser reads instead).
+ * `at` is when the server read it: a page kept by the browser or preloaded on hover can carry an older one.
+ */
+export type Initial<T> = Promise<{ key: string; data: T; at: number } | null>;
 
 /** A page from a list that supports stars, plus how many of the user's items are pinned (max 10). */
 export type StarredPageResult<T> = PageResult<T> & { pinnedCount: number };

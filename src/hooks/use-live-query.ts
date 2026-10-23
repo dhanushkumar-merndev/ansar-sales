@@ -24,7 +24,7 @@ type Options<T> = {
    * The server's first read, streamed with the page: used on mount instead of a browser read when its key
    * matches (null or a different key falls back to fetching).
    */
-  initial?: Promise<{ key: string; data: T } | null>;
+  initial?: Promise<{ key: string; data: T; at: number } | null>;
   /** Realtime filter: return false for events that cannot affect this query (e.g. another lead's change). */
   match?: (event: RealtimeEvent) => boolean;
 };
@@ -32,6 +32,8 @@ type Options<T> = {
 const RETRY_DELAYS = [400, 1500];
 const KEEP_MAX_AGE_MS = 10 * 60_000;
 const KEEP_MAX_ENTRIES = 40;
+/** A server first read older than this (a page the browser kept, or preloaded on hover) is read again. */
+const INITIAL_MAX_AGE_MS = 10_000;
 const kept = new Map<string, { data: unknown; at: number }>();
 
 function keptData<T>(key: string): T | undefined {
@@ -59,11 +61,6 @@ export function forLead(leadId: string) {
     const id = table === "leads" ? row.id : row.lead_id;
     return id === undefined || id === leadId;
   };
-}
-
-/** Forget every kept result (sign-out). */
-export function clearKeptQueries() {
-  kept.clear();
 }
 
 /**
@@ -173,6 +170,8 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
         setDataKey(r.key);
         setError(null);
         lastRun.current = Date.now();
+        // Shown at once; read again when the page was kept or preloaded a while ago (or the clocks disagree).
+        if (Math.abs(Date.now() - r.at) > INITIAL_MAX_AGE_MS) void run("event");
       }, fallback);
       return () => {
         cancelled = true;

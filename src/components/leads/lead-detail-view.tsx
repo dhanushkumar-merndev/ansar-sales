@@ -32,6 +32,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { forLead, useLiveQuery } from "@/hooks/use-live-query";
+import { leadFollowUpsKey, leadKey, TIMELINE_PAGE, timelineKey, type LeadDetail, type TimelinePage } from "@/lib/lead-queries";
+import type { Initial } from "@/lib/list-queries";
 import { fetchLead, fetchLeadFollowUps, fetchTimeline, type Activity, type LeadFollowUp } from "@/lib/queries";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/time";
 import type { NicheOption } from "@/lib/types";
@@ -41,24 +43,31 @@ import { cancelFollowUp } from "@/server/actions/follow-ups";
 import { addNote, assignLead, correctNote, setLeadArchived, setLeadStage } from "@/server/actions/leads";
 import { toggleLeadPin, toggleLeadStar } from "@/server/actions/stars";
 
-const TIMELINE_PAGE = 20;
 const TIMELINE_MAX = 500;
 /** Talk time can be corrected for a day after the call (set_call_duration enforces it too). */
 const CALL_EDIT_MS = 24 * 60 * 60 * 1000;
 
-export function LeadDetailView({ leadId, initialNiches }: { leadId: string; initialNiches: NicheOption[] }) {
+/** The server's first reads of the lead, its pending follow-ups and its first timeline page. */
+type LeadPageInitial = { lead: Initial<LeadDetail | null>; followUps: Initial<LeadFollowUp[]>; timeline: Initial<TimelinePage> };
+
+export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: string; initialNiches: NicheOption[]; initial?: LeadPageInitial }) {
   const profile = useProfile();
   const isAdmin = profile.role === "admin";
   const [timelineLimit, setTimelineLimit] = useState(TIMELINE_PAGE);
 
-  const lead = useLiveQuery({ queryKey: `lead:${profile.id}:${leadId}`, fetcher: (s) => fetchLead(leadId, s), tables: ["leads", "niches", "lead_stars"], match: forLead(leadId), keep: true });
-  const followUps = useLiveQuery({ queryKey: `lead-fu:${profile.id}:${leadId}`, fetcher: (s) => fetchLeadFollowUps(leadId, s), tables: ["follow_ups", "leads"], match: forLead(leadId), keep: true });
+  const lead = useLiveQuery({
+    queryKey: leadKey(profile.id, leadId), fetcher: (s) => fetchLead(leadId, s), tables: ["leads", "niches", "lead_stars"], match: forLead(leadId), keep: true, initial: initial?.lead,
+  });
+  const followUps = useLiveQuery({
+    queryKey: leadFollowUpsKey(profile.id, leadId), fetcher: (s) => fetchLeadFollowUps(leadId, s), tables: ["follow_ups", "leads"], match: forLead(leadId), keep: true, initial: initial?.followUps,
+  });
   const timeline = useLiveQuery({
-    queryKey: `timeline:${profile.id}:${leadId}:${timelineLimit}`,
+    queryKey: timelineKey(profile.id, leadId, timelineLimit),
     fetcher: (s) => fetchTimeline(leadId, timelineLimit, s),
     tables: ["lead_activities", "leads"],
     match: forLead(leadId),
     keep: true,
+    initial: initial?.timeline,
   });
 
   const [editOpen, setEditOpen] = useState(false);
