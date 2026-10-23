@@ -4037,6 +4037,32 @@ export type Database = {
           },
         ]
       }
+      user_table_prefs: {
+        Row: {
+          columns: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          columns?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          columns?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_table_prefs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: { [_ in never]: never }
     Functions: {
@@ -5166,6 +5192,20 @@ export type Database = {
         Args: {
           p_user_id: string
           p_company_ids: string[]
+        }
+        Returns: undefined
+      }
+      set_call_duration: {
+        Args: {
+          p_activity_id: string
+          p_seconds: number
+        }
+        Returns: undefined
+      }
+      set_table_columns: {
+        Args: {
+          p_table: string
+          p_hidden: string[]
         }
         Returns: undefined
       }

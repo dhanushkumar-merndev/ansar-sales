@@ -9,15 +9,16 @@ import { toast } from "sonner";
 import { COLOR_NAMES } from "@/components/common/color-swatch-picker";
 import { ScrollBox } from "@/components/common/scroll-box";
 import { useProfile } from "@/components/providers/profile-provider";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLiveQuery } from "@/hooks/use-live-query";
+import { forLead, useLiveQuery } from "@/hooks/use-live-query";
 import { parseFormAnswers } from "@/lib/form-answers";
 import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
 import { fetchLeadNotes, type LeadNote } from "@/lib/queries";
 import { STAGE_COLORS, STAGE_HEX, type StageColor } from "@/lib/stages";
-import { formatDateTime } from "@/lib/time";
+import { formatDateTime, formatDuration } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { reorderLeadNotes, setLeadNoteColor } from "@/server/actions/leads";
 
@@ -32,6 +33,7 @@ export function CallNotes({ leadId, className }: { leadId: string; className?: s
     queryKey: `lead-notes:${profile.id}:${leadId}`,
     fetcher: (s) => fetchLeadNotes(leadId, s),
     tables: ["lead_activities", "leads"],
+    match: forLead(leadId),
   });
   // The dragged order, shown until the server's list catches up.
   const [order, setOrder] = useState<string[] | null>(null);
@@ -105,7 +107,7 @@ function NoteMeta({ note }: { note: LeadNote }) {
       <span className="inline-flex items-center gap-1">
         <Icon className="size-3" />
         <span className="font-medium text-foreground">{note.actor?.display_name ?? "System"}</span>
-        {isCall ? <span>· Call{outcome ? ` · ${outcome}` : ""}</span> : null}
+        {isCall ? <span>· Call{outcome ? ` · ${outcome}` : ""}{typeof note.meta?.duration_seconds === "number" ? ` · ${formatDuration(note.meta.duration_seconds)}` : ""}</span> : null}
         {note.edited_at ? <span>· edited</span> : null}
       </span>
       <time dateTime={note.created_at}>{formatDateTime(note.created_at)}</time>
@@ -240,5 +242,23 @@ function NoteColorPicker({ value, onChange }: { value: StageColor | null; onChan
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** All of a lead's notes full screen (the same cards as the call screen), from the Leads table or the lead page. */
+export function LeadNotesDialog({ leadId, leadName, open, onOpenChange }: { leadId: string; leadName: string; open: boolean; onOpenChange: (o: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[calc(100svh-2rem)] flex-col sm:max-w-[calc(100%-2rem)]">
+        <DialogHeader>
+          <DialogTitle>Notes · {leadName}</DialogTitle>
+          <DialogDescription>Notes and call notes. Drag to reorder, pick a colour, or open one to read it all.</DialogDescription>
+        </DialogHeader>
+        {open ? <CallNotes leadId={leadId} className="flex-1" /> : null}
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

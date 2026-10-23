@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Copy, Loader2, MessageCircle, Phone, Smartphone } from "lucide-react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Copy, Loader2, MessageCircle, Phone, Smartphone, Timer } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -11,8 +11,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { CALL_OUTCOMES, whatsappUrl, type CallOutcome } from "@/lib/library";
+import { formatDuration } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { logCall, setCallOutcome } from "@/server/actions/calls";
+import { logCall, setCallDuration, setCallOutcome } from "@/server/actions/calls";
 
 const DIAL_WAIT_MS = 1200;
 
@@ -23,43 +24,85 @@ const isDesktop = () => typeof window !== "undefined" && window.matchMedia("(hov
  * Starts a call: logs it in the lead's timeline, then opens the phone dialer
  * (phones) or a QR code to scan with a phone (desktop). Dialing never waits
  * more than ~1 s for the log to be saved.
+ *
+ * Talk time runs from pressing Call until Done on the QR code (desktop) or until
+ * the person comes back to the app after dialing (phone); it is saved on the call.
  */
 export function useLeadCall(leadId: string, phone: string, onLogged?: () => void) {
   const [starting, setStarting] = useState(false);
   const [activityId, setActivityId] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [dialing, setDialing] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+  const startedAt = useRef<number | null>(null);
+  const logged = useRef<Promise<string | null> | null>(null);
+
+  async function stop() {
+    if (startedAt.current === null) return;
+    const seconds = Math.round((Date.now() - startedAt.current) / 1000);
+    startedAt.current = null;
+    setDurationSeconds(seconds);
+    const id = await logged.current;
+    if (!id) return;
+    const r = await setCallDuration({ activityId: id, seconds });
+    if (!r.ok) toast.error(`Talk time not saved: ${r.error}`);
+    else onLogged?.();
+  }
+  const stopRef = useRef(stop);
+  useEffect(() => { stopRef.current = stop; });
+
+  // On a phone the dialer takes over the screen; the call is over when the app is visible again.
+  useEffect(() => {
+    if (!dialing) return;
+    let left = document.visibilityState === "hidden";
+    const onChange = () => {
+      if (document.visibilityState === "hidden") left = true;
+      else if (left) { setDialing(false); void stopRef.current(); }
+    };
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, [dialing]);
 
   async function start() {
     if (starting) return;
     setStarting(true);
+    setDurationSeconds(null);
+    startedAt.current = Date.now();
     const logging = logCall({ leadId });
+    logged.current = logging.then((r) => (r.ok ? r.data.activityId : null));
     if (isDesktop()) setQrOpen(true);
     else {
+      setDialing(true);
       await Promise.race([logging, new Promise((r) => setTimeout(r, DIAL_WAIT_MS))]);
       window.location.href = `tel:${phone}`;
     }
     const r = await logging;
     setStarting(false);
-    if (!r.ok) { toast.error(`Call not logged: ${r.error}`); return; }
+    if (!r.ok) { startedAt.current = null; setDialing(false); toast.error(`Call not logged: ${r.error}`); return; }
     onLogged?.();
     setActivityId(r.data.activityId);
   }
 
-  return { start, starting, activityId, qrOpen, closeQr: () => setQrOpen(false), reset: () => { setActivityId(null); setQrOpen(false); } };
+  return {
+    start, starting, activityId, qrOpen, durationSeconds,
+    closeQr: () => { setQrOpen(false); void stop(); },
+    reset: () => { setActivityId(null); setQrOpen(false); setDialing(false); setDurationSeconds(null); startedAt.current = null; },
+  };
 }
 
-export function CallButton({ leadId, phone, leadName, onLogged, className, size }: {
-  leadId: string; phone: string; leadName: string; onLogged?: () => void; className?: string; size?: "default" | "sm";
+export function CallButton({ leadId, phone, leadName, onLogged, className, size, variant, iconOnly }: {
+  leadId: string; phone: string; leadName: string; onLogged?: () => void; className?: string;
+  size?: "default" | "sm" | "icon-sm"; variant?: "default" | "outline" | "ghost"; iconOnly?: boolean;
 }) {
   const call = useLeadCall(leadId, phone, onLogged);
   return (
     <>
-      <Button size={size} className={className} onClick={() => void call.start()} disabled={call.starting}>
-        {call.starting ? <Loader2 className="animate-spin" /> : <Phone />} Call
+      <Button size={size} variant={variant} className={className} onClick={() => void call.start()} disabled={call.starting} aria-label={iconOnly ? `Call ${leadName}` : undefined}>
+        {call.starting ? <Loader2 className="animate-spin" /> : <Phone />}{iconOnly ? null : " Call"}
       </Button>
       <CallQrDialog open={call.qrOpen} onClose={call.closeQr} leadId={leadId} phone={phone} leadName={leadName} />
       {/* On desktop the outcome is asked once the QR code is closed. */}
-      <CallOutcomeDialog activityId={call.qrOpen ? null : call.activityId} leadName={leadName} onClose={call.reset} onSaved={onLogged} />
+      <CallOutcomeDialog activityId={call.qrOpen ? null : call.activityId} durationSeconds={call.durationSeconds} leadName={leadName} onClose={call.reset} onSaved={onLogged} />
     </>
   );
 }
@@ -147,7 +190,9 @@ export function CallOutcomePicker({ value, onChange }: { value: CallOutcome | nu
   );
 }
 
-function CallOutcomeDialog({ activityId, leadName, onClose, onSaved }: { activityId: string | null; leadName: string; onClose: () => void; onSaved?: () => void }) {
+function CallOutcomeDialog({ activityId, durationSeconds, leadName, onClose, onSaved }: {
+  activityId: string | null; durationSeconds: number | null; leadName: string; onClose: () => void; onSaved?: () => void;
+}) {
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [note, setNote] = useState("");
   const [pending, start] = useTransition();
@@ -176,6 +221,11 @@ function CallOutcomeDialog({ activityId, leadName, onClose, onSaved }: { activit
           <DialogDescription>The call to {leadName} is already in the timeline. Add the result so the team knows what happened.</DialogDescription>
         </DialogHeader>
         <CallOutcomePicker value={outcome} onChange={setOutcome} />
+        {/* Measured, not typed: it can be corrected later from the timeline ("Edit talk time"). */}
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Timer className="size-3.5" aria-hidden /> Talk time
+          <span className="font-medium text-foreground">{durationSeconds === null ? "—" : formatDuration(durationSeconds)}</span>
+        </p>
         <Field>
           <FieldLabel htmlFor="call-note">Note (optional)</FieldLabel>
           <Textarea id="call-note" rows={3} maxLength={1000} placeholder="e.g. Asked to call back after 6 pm" value={note} onChange={(e) => setNote(e.target.value)} />

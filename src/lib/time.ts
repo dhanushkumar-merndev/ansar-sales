@@ -89,3 +89,14 @@ export function parsePeriod(key: string): Period | null {
   const next = month === 12 ? `${year + 1}-01` : `${year}-${pad(month + 1)}`;
   return { key, kind: "month", from: `${key}-01`, to: `${key}-${pad(lastDay)}`, label: formatMonthLong(key), year, prev, next };
 }
+
+/** A call's talk time: "45 s", "3 min 20 s", "1 h 5 min". */
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  if (s < 60) return `${s} s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const rest = s % 60;
+  if (h > 0) return m ? `${h} h ${m} min` : `${h} h`;
+  return rest ? `${m} min ${rest} s` : `${m} min`;
+}

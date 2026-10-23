@@ -6,7 +6,10 @@ import { useProfile } from "@/components/providers/profile-provider";
 import { realtimeTablesFor } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/client";
 
-type Listener = () => void;
+/** One postgres_changes event: the table and the changed row's columns (new row, or the old one for deletes). */
+export type RealtimeEvent = { table: string; row: Record<string, unknown> };
+/** Called with the event, or with null after a reconnect (anything may have changed). */
+type Listener = (event: RealtimeEvent | null) => void;
 type Status = "connecting" | "live" | "offline";
 
 type RealtimeContextValue = {
@@ -70,9 +73,9 @@ function RealtimeChannelSubscription({
     let channel: RealtimeChannel | null = null;
     let cancelled = false;
 
-    const notify = (table: string | null) => {
+    const notify = (event: RealtimeEvent | null) => {
       for (const [listener, subscribed] of listeners.current) {
-        if (table === null || subscribed.has(table)) listener();
+        if (event === null || subscribed.has(event.table)) listener(event);
       }
     };
 
@@ -83,7 +86,10 @@ function RealtimeChannelSubscription({
       if (data.session) await supabase.realtime.setAuth(data.session.access_token);
       channel = supabase.channel(`crm:${userId}`);
       for (const table of tableList) {
-        channel.on("postgres_changes", { event: "*", schema: "public", table }, () => notify(table));
+        channel.on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
+          const row = (payload.eventType === "DELETE" ? payload.old : payload.new) as Record<string, unknown>;
+          notify({ table, row: row ?? {} });
+        });
       }
       channel.subscribe((state) => {
         if (state === "SUBSCRIBED") {

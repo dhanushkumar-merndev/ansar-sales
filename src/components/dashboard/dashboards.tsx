@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
-import { seriesColor } from "@/components/charts/chart";
+import { seriesColor, usePreloadCharts } from "@/components/charts/chart";
 import { pastPresets, RangePicker, type DayRange } from "@/components/common/range-picker";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
@@ -16,10 +16,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { categoryLabel } from "@/lib/constants";
+import { DASH_TASKS_PAGE_SIZE, dashKey, dashTasksKey, defaultDashRange } from "@/lib/dashboard-keys";
 import { formatCount, formatINR, formatINRCompact } from "@/lib/format";
+import type { Initial } from "@/lib/list-queries";
 import { fetchDashboard, fetchFollowUps } from "@/lib/queries";
 import { stageHex } from "@/lib/stages";
-import { addDays, formatCalendarDate, formatDayLabel, formatMonth, istToday } from "@/lib/time";
+import { formatCalendarDate, formatDayLabel, formatMonth } from "@/lib/time";
 
 /** Leads per pipeline stage, in pipeline order (only stages that have leads). */
 type StageCount = { id: string; name: string; kind: string; color: string; count: number };
@@ -30,6 +32,7 @@ type AdminData = {
   salespeople: { id: string; name: string; active: number; won: number; lost: number }[]; niches: { name: string; count: number }[];
 };
 type SalesData = { range: Range; cards: Cards; stages: StageCount[]; activity: { date: string; count: number }[] };
+export type { AdminData, SalesData };
 
 const rangeLabel = (r?: Range) => (r ? `${formatCalendarDate(r.from)} – ${formatCalendarDate(r.to)} (IST)` : "");
 const winRate = (c?: Cards) => {
@@ -40,7 +43,7 @@ const winRate = (c?: Cards) => {
 
 /** Defaults to the last 30 IST days, like the old picker. */
 function useDashRange() {
-  return useState<DayRange>(() => ({ from: addDays(istToday(), -29), to: istToday() }));
+  return useState<DayRange>(defaultDashRange);
 }
 
 function stageItems(stages: StageCount[]) {
@@ -48,12 +51,16 @@ function stageItems(stages: StageCount[]) {
   return stages.map((s) => ({ name: s.name, value: s.count, color: stageHex(s.color) }));
 }
 
-export function AdminDashboard() {
+export function AdminDashboard({ initial }: { initial?: Initial<AdminData> }) {
+  const profile = useProfile();
   const [range, setRange] = useDashRange();
+  usePreloadCharts();
   const { data, error, isFetching, isInitialLoading, refetch } = useLiveQuery({
-    queryKey: `dash-admin:${range.from}:${range.to}`,
+    queryKey: dashKey("admin", profile.id, range),
     fetcher: (s) => fetchDashboard<AdminData>("dashboard_admin", range, s),
     tables: ["leads", "follow_ups"],
+    keep: true,
+    initial,
   });
   const dayLabel = useCallback((d: string) => formatDayLabel(d), []);
   const c = data?.cards;
@@ -106,26 +113,31 @@ export function AdminDashboard() {
   );
 }
 
-export function SalesDashboard() {
+export function SalesDashboard({ initial }: { initial?: Initial<SalesData> }) {
   const profile = useProfile();
   const [range, setRange] = useDashRange();
   const [addOpen, setAddOpen] = useState(false);
+  usePreloadCharts();
   const dash = useLiveQuery({
-    queryKey: `dash-sales:${profile.id}:${range.from}:${range.to}`,
+    queryKey: dashKey("sales", profile.id, range),
     fetcher: (s) => fetchDashboard<SalesData>("dashboard_sales", range, s),
     tables: ["leads", "follow_ups", "lead_activities"],
+    keep: true,
+    initial,
   });
   const overdue = useLiveQuery({
-    queryKey: `dash-overdue:${profile.id}`,
-    fetcher: (s) => fetchFollowUps({ view: "overdue", assignee: null, q: "", page: 1, pageSize: 5 }, s),
+    queryKey: dashTasksKey("overdue", profile.id),
+    fetcher: (s) => fetchFollowUps({ view: "overdue", assignee: null, q: "", page: 1, pageSize: DASH_TASKS_PAGE_SIZE }, s),
     tables: ["follow_ups", "leads"],
     pollMs: 30_000,
+    keep: true,
   });
   const today = useLiveQuery({
-    queryKey: `dash-today:${profile.id}`,
-    fetcher: (s) => fetchFollowUps({ view: "today", assignee: null, q: "", page: 1, pageSize: 5 }, s),
+    queryKey: dashTasksKey("today", profile.id),
+    fetcher: (s) => fetchFollowUps({ view: "today", assignee: null, q: "", page: 1, pageSize: DASH_TASKS_PAGE_SIZE }, s),
     tables: ["follow_ups", "leads"],
     pollMs: 30_000,
+    keep: true,
   });
   const refreshTasks = () => { overdue.refetch(); today.refetch(); dash.refetch(); };
   const dayLabel = useCallback((d: string) => formatDayLabel(d), []);
@@ -186,6 +198,7 @@ export function SalesDashboard() {
 }
 
 export function FinanceDashboard() {
+  usePreloadCharts();
   const { data, error, isFetching, isInitialLoading, refetch } = useLiveQuery({
     queryKey: "dash-finance",
     fetcher: (s) => fetchDashboard<FinanceSummary>("dashboard_finance", 12, s),

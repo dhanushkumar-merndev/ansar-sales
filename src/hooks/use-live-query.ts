@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useOptionalRealtime } from "@/components/providers/realtime-provider";
+import { type RealtimeEvent, useOptionalRealtime } from "@/components/providers/realtime-provider";
 import { REALTIME_DEBOUNCE_MS } from "@/lib/constants";
 import { friendlyReadError } from "@/lib/errors";
 import { createRequestGate, isAbortError } from "@/lib/request-gate";
@@ -15,23 +15,76 @@ type Options<T> = {
   enabled?: boolean;
   /** Freshness fallback while the tab is visible (covers events RLS hides, e.g. reassignment away). */
   pollMs?: number;
+  /**
+   * Keep the last result for this key in memory, so coming back to the page shows it at once while it
+   * refreshes. Only for keys that include the user's id (sign-out clears it; a company switch reloads the app).
+   */
+  keep?: boolean;
+  /**
+   * The server's first read, streamed with the page: used on mount instead of a browser read when its key
+   * matches (null or a different key falls back to fetching).
+   */
+  initial?: Promise<{ key: string; data: T } | null>;
+  /** Realtime filter: return false for events that cannot affect this query (e.g. another lead's change). */
+  match?: (event: RealtimeEvent) => boolean;
 };
 
 const RETRY_DELAYS = [400, 1500];
+const KEEP_MAX_AGE_MS = 10 * 60_000;
+const KEEP_MAX_ENTRIES = 40;
+const kept = new Map<string, { data: unknown; at: number }>();
+
+function keptData<T>(key: string): T | undefined {
+  const hit = kept.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > KEEP_MAX_AGE_MS) {
+    kept.delete(key);
+    return undefined;
+  }
+  return hit.data as T;
+}
+
+function keep(key: string, data: unknown) {
+  kept.delete(key); // re-insert: the Map's order is least recently stored first
+  kept.set(key, { data, at: Date.now() });
+  if (kept.size > KEEP_MAX_ENTRIES) kept.delete(kept.keys().next().value!);
+}
+
+/**
+ * Realtime filter for one lead's queries: only that lead's row and rows pointing at it (lead_id). Rows
+ * without either column (other tables, or deletes that carry only the primary key) still match.
+ */
+export function forLead(leadId: string) {
+  return ({ table, row }: RealtimeEvent) => {
+    const id = table === "leads" ? row.id : row.lead_id;
+    return id === undefined || id === leadId;
+  };
+}
+
+/** Forget every kept result (sign-out). */
+export function clearKeptQueries() {
+  kept.clear();
+}
 
 /**
  * Fresh authorized reads with: newest-response-wins, abort of obsolete reads,
  * bounded retries, debounced Realtime refetch, refetch on focus/reconnect and a
  * slow polling fallback. Previous data stays visible while the next result loads.
  */
-export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true, pollMs = 60_000 }: Options<T>) {
-  const [data, setData] = useState<T | undefined>(undefined);
-  const [dataKey, setDataKey] = useState<string | null>(null);
+export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true, pollMs = 60_000, keep: keepResult = false, initial, match }: Options<T>) {
+  const [first] = useState(() => (keepResult ? keptData<T>(queryKey) : undefined));
+  const [data, setData] = useState<T | undefined>(first);
+  const [dataKey, setDataKey] = useState<string | null>(first === undefined ? null : queryKey);
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setIsFetching] = useState(false);
   const gate = useRef(createRequestGate());
   const fetcherRef = useRef(fetcher);
   const keyRef = useRef(queryKey);
+  const keepRef = useRef(keepResult);
+  const matchRef = useRef(match);
+  // Only the first mount may use the server's read; afterwards the browser reads.
+  const initialRef = useRef(initial);
+  const runs = useRef(0);
   const inFlight = useRef(false);
   const rerun = useRef(false);
   const lastRun = useRef(0);
@@ -42,6 +95,8 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
   useEffect(() => {
     fetcherRef.current = fetcher;
     keyRef.current = queryKey;
+    keepRef.current = keepResult;
+    matchRef.current = match;
   });
 
   const run = useCallback(async (reason: "key" | "event") => {
@@ -50,6 +105,7 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
       return;
     }
     const req = gate.current.begin();
+    runs.current++;
     const key = keyRef.current;
     inFlight.current = true;
     lastRun.current = Date.now();
@@ -58,6 +114,7 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
       try {
         const result = await fetcherRef.current(req.signal);
         if (!req.isLatest()) return;
+        if (keepRef.current) keep(key, result);
         setData(result);
         setDataKey(key);
         setError(null);
@@ -92,6 +149,35 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
     if (!enabled) return;
     inFlight.current = false;
     rerun.current = false;
+    // A kept result for the new key (e.g. back to page 1) shows at once; the read below refreshes it.
+    const hit = keepRef.current ? keptData<T>(queryKey) : undefined;
+    if (hit !== undefined) {
+      setData(hit);
+      setDataKey(queryKey);
+    }
+    const pending = initialRef.current;
+    initialRef.current = undefined;
+    if (pending && hit === undefined) {
+      let cancelled = false;
+      const runsBefore = runs.current;
+      lastRun.current = Date.now();
+      const fallback = () => {
+        if (!cancelled && runs.current === runsBefore) void run("key");
+      };
+      pending.then((r) => {
+        // Ignore it if the key changed or a newer read (e.g. after a Realtime event) already started.
+        if (cancelled || runs.current !== runsBefore) return;
+        if (!r || r.key !== keyRef.current) return fallback();
+        if (keepRef.current) keep(r.key, r.data);
+        setData(r.data);
+        setDataKey(r.key);
+        setError(null);
+        lastRun.current = Date.now();
+      }, fallback);
+      return () => {
+        cancelled = true;
+      };
+    }
     void run("key");
   }, [queryKey, enabled, run]);
 
@@ -100,7 +186,8 @@ export function useLiveQuery<T>({ queryKey, fetcher, tables = [], enabled = true
   useEffect(() => {
     if (!enabled || !tablesKey || !subscribe) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = subscribe(tablesKey.split(","), () => {
+    const unsubscribe = subscribe(tablesKey.split(","), (event) => {
+      if (event && matchRef.current && !matchRef.current(event)) return;
       clearTimeout(timer);
       timer = setTimeout(() => void run("event"), REALTIME_DEBOUNCE_MS);
     });

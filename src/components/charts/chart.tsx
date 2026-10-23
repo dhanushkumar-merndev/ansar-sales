@@ -1,15 +1,24 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const loadChart = () => import("./echart-core");
+
 /** Lazily loaded so ECharts never ships in the initial bundle or renders on the server. */
-export const EChart = dynamic(() => import("./echart-core"), {
+export const EChart = dynamic(loadChart, {
   ssr: false,
   loading: () => <Skeleton className="h-[260px] w-full" />,
 });
+
+/** Starts downloading ECharts on mount, so the charts don't wait for it after their data arrives. */
+export function usePreloadCharts() {
+  useEffect(() => {
+    void loadChart();
+  }, []);
+}
 
 // Validated categorical order (dataviz reference palette, dark steps; all six checks pass on #212121). Assigned by entity, never cycled.
 export const SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"] as const;

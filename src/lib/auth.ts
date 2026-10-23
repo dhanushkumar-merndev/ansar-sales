@@ -3,7 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { type CompanyBrand, toCompanyBrand } from "@/lib/companies";
 import { type AppRole, type CompanyFeature, homePathFor } from "@/lib/constants";
-import { hasAnyRole } from "@/lib/permissions";
+import { hasAnyRole, runsAdsForClients } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/server";
 
 export type CurrentProfile = {
@@ -126,6 +126,13 @@ export async function requireFeature(feature: CompanyFeature, roles?: AppRole[])
 export async function requireAds(roles: AppRole[]) {
   const profile = await requireProfile(roles);
   if (profile.features.includes("no_ads")) redirect(homePathFor(profile.role) === "/ads" ? "/settings" : homePathFor(profile.role));
+  return profile;
+}
+
+/** For the Ads → Clients pages: only in the agency ("ads_agency"); elsewhere back to the ads dashboard. */
+export async function requireAdsAgency(roles: AppRole[]) {
+  const profile = await requireAds(roles);
+  if (!runsAdsForClients(profile.features)) redirect("/ads");
   return profile;
 }
 

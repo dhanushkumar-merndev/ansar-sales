@@ -39,6 +39,11 @@ const NAV_ORDER: NavKey[] = [
   "reports", "ads", "ad-results", "automation", "users",
 ];
 
+/** The agency (Star Growth Hub): turns leads into ads clients and runs their ads. Other companies only see their own ads. */
+export function runsAdsForClients(features: readonly string[] = []) {
+  return features.includes("ads_agency") && !features.includes("no_ads");
+}
+
 export function navFor(roles: Roles, features: readonly string[] = []): NavKey[] {
   const list = typeof roles === "string" ? [roles] : roles;
   if (list.includes("client")) return [];

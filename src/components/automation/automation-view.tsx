@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import type { AdAccount } from "@/lib/ads";
+import { runsAdsForClients } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/client";
 import { formatRelative } from "@/lib/time";
 import { setWonToAdsClient } from "@/server/actions/ads";
@@ -113,7 +114,7 @@ export function AutomationView() {
               </Button>
             </CardFooter>
           </Card>
-          <WonToClientCard />
+          {runsAdsForClients(profile.features) ? <WonToClientCard /> : null}
         </div>
       )}
       {company ? <FacebookDialog open={open} onOpenChange={setOpen} company={company} adAccount={ownAds} onChanged={refetch} /> : null}

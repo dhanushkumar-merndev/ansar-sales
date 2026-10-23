@@ -31,7 +31,10 @@ export function LeadDownloadMenu() {
       if (error) throw error;
       return data;
     },
-    tables: ["leads"],
+    // A count over every active lead: not re-run on each lead change, only every few minutes,
+    // when the menu opens and after a download.
+    pollMs: 300_000,
+    keep: true,
   });
   const fresh = pending.data ?? null;
 
@@ -70,7 +73,7 @@ export function LeadDownloadMenu() {
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => open && pending.refetch()}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" disabled={busy}>
             {busy ? <Loader2 className="animate-spin" /> : <Download />} Download

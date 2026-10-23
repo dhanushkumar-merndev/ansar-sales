@@ -6,19 +6,19 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Button } from "@/components/ui/button";
-import { useLiveQuery } from "@/hooks/use-live-query";
-import { can } from "@/lib/permissions";
+import { forLead, useLiveQuery } from "@/hooks/use-live-query";
+import { can, runsAdsForClients } from "@/lib/permissions";
 import { createClient } from "@/lib/supabase/client";
 import { addLeadAsAdsClient } from "@/server/actions/ads";
 
 /**
- * On a lead of a company with ads (admins, ads managers, super admin): "Add as client" hands it to
+ * On a lead of the agency (admins, ads managers, super admin; "ads_agency"): "Add as client" hands it to
  * the ads team without marking it Won; once it is a client, the button opens the client instead.
  */
 export function LeadAdsClientButton({ leadId, leadName, onChanged }: { leadId: string; leadName: string; onChanged: () => void }) {
   const me = useProfile();
   // A super admin counts as admin here.
-  const allowed = can.useAds(me.roles) && !me.features.includes("no_ads") && !me.workspace;
+  const allowed = can.useAds(me.roles) && runsAdsForClients(me.features) && !me.workspace;
   const client = useLiveQuery({
     queryKey: `lead-ads-client:${me.id}:${me.company.id}:${leadId}`,
     fetcher: async (signal) => {
@@ -28,6 +28,7 @@ export function LeadAdsClientButton({ leadId, leadName, onChanged }: { leadId: s
     },
     // Marking the lead Won can also create the client.
     tables: ["leads"],
+    match: forLead(leadId),
     enabled: allowed,
   });
   if (!allowed || client.data === undefined) return null;

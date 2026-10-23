@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, FileSpreadsheet, Phone, Plus, Search, SlidersHorizontal, Tags, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarPlus, ChevronDown, FileSpreadsheet, Phone, Plus, Search, SlidersHorizontal, StickyNote, Tags, UserPlus } from "lucide-react";
 import { DueBadge, StatusBadge } from "@/components/common/badges";
 import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { DataPagination } from "@/components/common/data-pagination";
@@ -12,6 +12,9 @@ import { PageHeader } from "@/components/common/page-header";
 import { pastPresets, RangePicker } from "@/components/common/range-picker";
 import { PinButton, PinnedBadge, PinnedCount, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
+import { FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
+import { CallButton } from "@/components/leads/call-button";
+import { LeadNotesDialog } from "@/components/leads/call-notes";
 import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
@@ -32,10 +35,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useHiddenColumns } from "@/hooks/use-hidden-columns";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
-import { LEAD_TEMPERATURES, LEADS_PAGE_SIZE, SEARCH_DEBOUNCE_MS, TEMPERATURE_LABELS, type LeadTemperature } from "@/lib/constants";
-import { lastPage, parsePaging } from "@/lib/pagination";
+import { LEAD_TEMPERATURES, SEARCH_DEBOUNCE_MS, TEMPERATURE_LABELS } from "@/lib/constants";
+import { lastPage } from "@/lib/pagination";
+import { leadsQueryKey, parseLeadQuery, type Initial, type StarredPageResult } from "@/lib/list-queries";
 import { fetchLeads, type LeadQuery } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/time";
@@ -43,11 +48,11 @@ import type { LeadListItem, NicheOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { toggleLeadPin, toggleLeadStar } from "@/server/actions/stars";
 
-const SORTS = ["created_at", "updated_at", "name", "status", "next_follow_up"] as const;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const UUID_RE = /^[0-9a-f-]{36}$/i;
 
-export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
+/** The table's right-hand buttons; the column shows while any of them is on. */
+const ACTION_BUTTONS = ["call", "follow_up", "actions"] as const;
+
+export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOption[]; initial?: Initial<StarredPageResult<LeadListItem>> }) {
   const profile = useProfile();
   const { stages } = useStages();
   const isAdmin = profile.role === "admin";
@@ -55,31 +60,13 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
   const { params, set } = useUrlState();
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [notesFor, setNotesFor] = useState<{ id: string; name: string } | null>(null);
+  const [followUpFor, setFollowUpFor] = useState<string | null>(null);
+  const { hidden } = useHiddenColumns("leads");
+  const hiddenKey = [...hidden].sort().join(",");
 
   // Parse and sanitize URL state (the database validates again).
-  const query: LeadQuery = useMemo(() => {
-    const { page, pageSize } = parsePaging(params, LEADS_PAGE_SIZE);
-    const stage = params.get("stage");
-    const temp = params.get("temp");
-    const sort = params.get("sort");
-    const from = params.get("from");
-    const to = params.get("to");
-    return {
-      q: cleanSearch(params.get("q")),
-      stage: UUID_RE.test(stage ?? "") ? stage : null,
-      niche: UUID_RE.test(params.get("niche") ?? "") ? params.get("niche") : null,
-      owner: isAdmin && UUID_RE.test(params.get("owner") ?? "") ? params.get("owner") : null,
-      temperature: LEAD_TEMPERATURES.includes(temp as LeadTemperature) ? (temp as LeadTemperature) : null,
-      ...(from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to ? { from, to } : { from: null, to: null }),
-      overdue: params.get("overdue") === "1",
-      archived: isAdmin && params.get("archived") === "1",
-      starred: params.get("tab") === "starred",
-      sort: SORTS.includes(sort as (typeof SORTS)[number]) ? sort! : "created_at",
-      dir: params.get("dir") === "asc" ? "asc" : "desc",
-      page,
-      pageSize,
-    };
-  }, [params, isAdmin]);
+  const query: LeadQuery = useMemo(() => parseLeadQuery(params, isAdmin), [params, isAdmin]);
 
   // Immediate local input; URL (and the query) follow after a 300 ms debounce.
   const [searchInput, setSearchInput] = useState(query.q);
@@ -93,11 +80,13 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
     setSearchInput((cur) => (cleanSearch(cur) === query.q ? cur : query.q));
   }, [query.q]);
 
-  const queryKey = `leads:${profile.id}:${JSON.stringify(query)}`;
+  const queryKey = leadsQueryKey(profile.id, query);
   const { data, error, isFetching, isStale, isInitialLoading, refetch } = useLiveQuery({
     queryKey,
     fetcher: (signal) => fetchLeads(query, signal),
     tables: ["leads", "follow_ups", "niches", "lead_stars"],
+    keep: true,
+    initial,
   });
 
   // If the current page became empty (e.g. archive), move to the last valid page.
@@ -189,13 +178,33 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
           ),
       },
       { id: "created", header: function SortHeader() { return sortButton("Created", "created_at"); }, cell: ({ row }) => <span className="text-sm text-muted-foreground">{formatDate(row.original.created_at)}</span> },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        // Call, schedule a follow-up and read notes without opening the lead; each can be hidden in Settings.
+        cell: ({ row: { original: l } }) => (
+          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            {!l.archived_at && !hidden.has("call") ? <CallButton size="sm" variant="outline" leadId={l.id} phone={l.phone.replace(/\s/g, "")} leadName={l.name} onLogged={refetch} /> : null}
+            {!l.archived_at && !hidden.has("follow_up") ? (
+              <Button size="sm" variant="outline" onClick={() => setFollowUpFor(l.id)}><CalendarPlus /> Follow-up</Button>
+            ) : null}
+            {hidden.has("actions") ? null : (
+              <Button size="sm" variant="outline" onClick={() => setNotesFor({ id: l.id, name: l.name })}><StickyNote /> Notes</Button>
+            )}
+          </div>
+        ),
+      },
     );
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, query.sort, query.dir, refetch]);
+  }, [isAdmin, query.sort, query.dir, refetch, hiddenKey]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, manualSorting: true, getRowId: (r) => r.id });
+  const table = useReactTable({
+    data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), manualPagination: true, manualSorting: true, getRowId: (r) => r.id,
+    // The buttons column goes only when all three of its buttons are hidden.
+    state: { columnVisibility: { ...Object.fromEntries([...hidden].map((id) => [id, false])), actions: !ACTION_BUTTONS.every((b) => hidden.has(b)) } },
+  });
 
   const activeFilters = [query.stage, query.temperature, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
   const clearAll = () => {
@@ -355,7 +364,7 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
               <TableBody>
                 {table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
-                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || cell.column.id === "status" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || cell.column.id === "status" || cell.column.id === "actions" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0", cell.column.id === "actions" && "w-px text-right")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
                   </TableRow>
                 ))}
               </TableBody>
@@ -372,12 +381,12 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                       {l.company_name ? <p className="truncate text-sm text-muted-foreground">{l.company_name}</p> : null}
                       <p className="flex items-center gap-1 text-sm text-muted-foreground"><Phone className="size-3" />{l.phone}</p>
                     </div>
-                    <StatusBadge stageId={l.stage_id} status={l.status} />
+                    {hidden.has("status") ? null : <StatusBadge stageId={l.stage_id} status={l.status} />}
                   </div>
                   <div className={cn("mt-2 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground", "pr-[4.5rem]")}>
-                    <span>{l.niche.name}</span>
-                    {isAdmin ? <span>{l.owner.display_name}</span> : null}
-                    {l.next_follow_up_at ? (
+                    {hidden.has("niche") ? null : <span>{l.niche.name}</span>}
+                    {isAdmin && !hidden.has("owner") ? <span>{l.owner.display_name}</span> : null}
+                    {l.next_follow_up_at && !hidden.has("next") ? (
                       <span className={cn(l.overdue && "font-medium text-red-700")}>
                         {l.overdue ? "Overdue · " : "Next · "}{formatDateTime(l.next_follow_up_at)}
                       </span>
@@ -385,11 +394,20 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
                   </div>
                   <div className="mt-2 h-7" aria-hidden />
                 </Link>
-                <div className="absolute bottom-2.5 left-3">
-                  {l.archived_at ? <TemperatureBadge value={l.temperature} /> : <TemperatureSelect leadId={l.id} value={l.temperature} onChanged={refetch} />}
-                </div>
+                {hidden.has("temperature") ? null : (
+                  <div className="absolute bottom-2.5 left-3">
+                    {l.archived_at ? <TemperatureBadge value={l.temperature} /> : <TemperatureSelect leadId={l.id} value={l.temperature} onChanged={refetch} />}
+                  </div>
+                )}
                 {/* Outside the link: buttons inside an anchor are invalid and would navigate. */}
                 <div className="absolute right-1.5 bottom-1.5 flex items-center">
+                  {!l.archived_at && !hidden.has("call") ? <CallButton size="icon-sm" variant="ghost" iconOnly leadId={l.id} phone={l.phone.replace(/\s/g, "")} leadName={l.name} onLogged={refetch} /> : null}
+                  {!l.archived_at && !hidden.has("follow_up") ? (
+                    <Button size="icon-sm" variant="ghost" aria-label={`Schedule a follow-up for ${l.name}`} onClick={() => setFollowUpFor(l.id)}><CalendarPlus /></Button>
+                  ) : null}
+                  {hidden.has("actions") ? null : (
+                    <Button size="icon-sm" variant="ghost" aria-label={`Notes for ${l.name}`} onClick={() => setNotesFor({ id: l.id, name: l.name })}><StickyNote /></Button>
+                  )}
                   <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />
                   <StarButton id={l.id} starred={l.starred} action={toggleLeadStar} onChanged={refetch} />
                 </div>
@@ -410,6 +428,8 @@ export function LeadsView({ initialNiches }: { initialNiches: NicheOption[] }) {
       )}
 
       <LeadFormDialog open={createOpen} onOpenChange={setCreateOpen} initialNiches={initialNiches} onSaved={() => refetch()} />
+      <FollowUpDialog open={!!followUpFor} onOpenChange={(o) => !o && setFollowUpFor(null)} leadId={followUpFor ?? undefined} onDone={refetch} />
+      {notesFor ? <LeadNotesDialog leadId={notesFor.id} leadName={notesFor.name} open onOpenChange={(o) => !o && setNotesFor(null)} /> : null}
       <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} initialNiches={initialNiches} onImported={() => refetch()} />
     </>
   );

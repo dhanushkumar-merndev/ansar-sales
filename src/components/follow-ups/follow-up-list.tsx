@@ -7,6 +7,7 @@ import { DueBadge, ReminderBadge, StatusBadge } from "@/components/common/badges
 import { PinButton, PinnedBadge, StarButton } from "@/components/common/star-pin-buttons";
 import { CompleteFollowUpDialog, FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { Button } from "@/components/ui/button";
+import { useHiddenColumns } from "@/hooks/use-hidden-columns";
 import { formatDateTime, formatRelative } from "@/lib/time";
 import type { FollowUpListItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import { toggleFollowUpPin, toggleFollowUpStar } from "@/server/actions/stars";
 export function FollowUpList({ items, showAssignee, onChanged }: { items: FollowUpListItem[]; showAssignee?: boolean; onChanged: () => void }) {
   const [completing, setCompleting] = useState<FollowUpListItem | null>(null);
   const [rescheduling, setRescheduling] = useState<FollowUpListItem | null>(null);
+  const { hidden } = useHiddenColumns("follow_ups");
   return (
     <>
       <ul className="divide-y rounded-lg border bg-card">
@@ -24,7 +26,7 @@ export function FollowUpList({ items, showAssignee, onChanged }: { items: Follow
             <div className="min-w-0 space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
                 <Link href={`/leads/${f.lead.id}`} className="font-medium hover:underline">{f.lead.name}</Link>
-                <StatusBadge stageId={f.lead.stage_id} status={f.lead.status} />
+                {hidden.has("stage") ? null : <StatusBadge stageId={f.lead.stage_id} status={f.lead.status} />}
                 <DueBadge overdue={f.overdue} state={f.state} />
                 {f.pinned_at ? <PinnedBadge /> : null}
               </div>
@@ -33,11 +35,13 @@ export function FollowUpList({ items, showAssignee, onChanged }: { items: Follow
                 <span className={cn(f.overdue && "font-medium text-red-700")}>
                   {f.state === "completed" && f.completed_at ? `Completed ${formatDateTime(f.completed_at)}` : `${formatDateTime(f.due_at)} · ${formatRelative(f.due_at)}`}
                 </span>
-                <a href={`tel:${f.lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1 hover:underline"><Phone className="size-3" />{f.lead.phone}</a>
-                {showAssignee ? <span>{f.assignee.display_name}</span> : null}
+                {hidden.has("phone") ? null : (
+                  <a href={`tel:${f.lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1 hover:underline"><Phone className="size-3" />{f.lead.phone}</a>
+                )}
+                {showAssignee && !hidden.has("assignee") ? <span>{f.assignee.display_name}</span> : null}
               </p>
-              {f.outcome ? <p className="text-xs text-muted-foreground">Outcome: {f.outcome}</p> : null}
-              {f.state === "pending" ? <ReminderBadge reminder={f.reminder} /> : null}
+              {f.outcome && !hidden.has("outcome") ? <p className="text-xs text-muted-foreground">Outcome: {f.outcome}</p> : null}
+              {f.state === "pending" && !hidden.has("reminder") ? <ReminderBadge reminder={f.reminder} /> : null}
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {f.state === "pending" ? (

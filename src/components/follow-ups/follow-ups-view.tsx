@@ -17,9 +17,11 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
-import { lastPage, parsePaging } from "@/lib/pagination";
+import { followUpsQueryKey, parseFollowUpQuery, type Initial, type StarredPageResult } from "@/lib/list-queries";
+import { lastPage } from "@/lib/pagination";
 import { fetchFollowUps, type FollowUpView } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
+import type { FollowUpListItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const VIEWS: { value: FollowUpView; label: string }[] = [
@@ -31,20 +33,11 @@ const VIEWS: { value: FollowUpView; label: string }[] = [
   { value: "starred", label: "Starred" },
 ];
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-export function FollowUpsView() {
+export function FollowUpsView({ initial }: { initial?: Initial<StarredPageResult<FollowUpListItem>> }) {
   const profile = useProfile();
   const isAdmin = profile.role === "admin";
   const { params, set } = useUrlState();
-  const query = useMemo(() => {
-    const view = VIEWS.some((v) => v.value === params.get("view")) ? (params.get("view") as FollowUpView) : "today";
-    const assignee = isAdmin && /^[0-9a-f-]{36}$/i.test(params.get("assignee") ?? "") ? params.get("assignee") : null;
-    const from = params.get("from");
-    const to = params.get("to");
-    const range = from && to && DATE_RE.test(from) && DATE_RE.test(to) && from <= to ? { from, to } : { from: null, to: null };
-    return { view, assignee, q: cleanSearch(params.get("q")), ...range, ...parsePaging(params) };
-  }, [params, isAdmin]);
+  const query = useMemo(() => parseFollowUpQuery(params, isAdmin), [params, isAdmin]);
 
   const [input, setInput] = useState(query.q);
   const debounced = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
@@ -54,10 +47,12 @@ export function FollowUpsView() {
   }, [debounced]);
 
   const { data, error, isFetching, isInitialLoading, isStale, refetch } = useLiveQuery({
-    queryKey: `follow-ups:${profile.id}:${JSON.stringify(query)}`,
+    queryKey: followUpsQueryKey(profile.id, query),
     fetcher: (s) => fetchFollowUps(query, s),
     tables: ["follow_ups", "leads", "follow_up_stars"],
     pollMs: 30_000, // overdue status changes with time
+    keep: true,
+    initial,
   });
   useEffect(() => {
     if (data && !isStale && data.items.length === 0 && data.total > 0 && query.page > 1) set({ page: String(lastPage(data.total, query.pageSize)) }, { replace: true });

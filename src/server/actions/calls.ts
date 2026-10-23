@@ -28,3 +28,13 @@ export async function setCallOutcome(input: unknown) {
     return { ok: true, data: undefined };
   });
 }
+
+/** The caller's own call, within a day: records (or corrects) how long it lasted. */
+export async function setCallDuration(input: unknown) {
+  const schema = z.object({ activityId: z.uuid(), seconds: z.number().int().min(0).max(86400) });
+  return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_call_duration", { p_activity_id: d.activityId, p_seconds: d.seconds });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}

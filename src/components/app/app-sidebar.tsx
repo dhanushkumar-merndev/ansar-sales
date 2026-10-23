@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { clearKeptQueries } from "@/hooks/use-live-query";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar,
 } from "@/components/ui/sidebar";
@@ -108,7 +109,7 @@ export function AppSidebar() {
                 <DropdownMenuItem asChild>
                   <Link href="/settings"><Settings /> Settings</Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => startTransition(() => signOut())}>
+                <DropdownMenuItem onSelect={() => { clearKeptQueries(); startTransition(() => signOut()); }}>
                   <LogOut /> Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>

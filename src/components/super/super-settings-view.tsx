@@ -101,6 +101,25 @@ function AdsSwitch({ company, onChanged }: { company: { id: string; name: string
   );
 }
 
+/** "Runs ads for clients" (the agency, Star Growth Hub): leads become ads clients; elsewhere a company only sees its own ads. */
+function AgencySwitch({ company, onChanged }: { company: { id: string; name: string; features?: string[] }; onChanged: () => void }) {
+  const [pending, start] = useTransition();
+  const on = (company.features ?? []).includes("ads_agency");
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+      {pending ? <Loader2 className="size-4 animate-spin" /> : (
+        <Checkbox checked={on} aria-label={`Runs ads for clients: ${company.name}`} onCheckedChange={(v) => start(async () => {
+          const res = await setCompanyFeature({ companyId: company.id, feature: "ads_agency", enabled: v === true });
+          if (!res.ok) return void toast.error(res.error);
+          toast.success(v === true ? `${company.name} now runs ads for clients` : `${company.name} no longer has ads clients`);
+          onChanged();
+        })} />
+      )}
+      <span className="text-muted-foreground">Runs ads for clients</span>
+    </label>
+  );
+}
+
 function CompaniesTab() {
   const me = useProfile();
   const companies = useLiveQuery({ queryKey: "super-companies", fetcher: fetchCompanies, tables: ["companies", "profiles"] });
@@ -166,6 +185,9 @@ function CompaniesTab() {
                   <div className="flex flex-col gap-1">
                     <ProjectsSwitch company={c} onChanged={() => { void companies.refetch(); if (c.id === me.company.id) window.location.reload(); }} />
                     <AdsSwitch company={c} onChanged={() => { void companies.refetch(); if (c.id === me.company.id) window.location.reload(); }} />
+                    {(c.features ?? []).includes("no_ads") ? null : (
+                      <AgencySwitch company={c} onChanged={() => { void companies.refetch(); if (c.id === me.company.id) window.location.reload(); }} />
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(c.created_at)}</TableCell>

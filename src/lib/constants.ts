@@ -26,7 +26,8 @@ export const isProjectRole = (r: AppRole): r is ProjectRole => (PROJECT_ROLES as
 
 /** Optional modules a super admin switches on per company. */
 /** "no_ads": the company runs no ads of its own (Star Growth Hub does them), so Ads and Automation are off. */
-export const COMPANY_FEATURES = ["projects", "no_ads"] as const;
+/** "ads_agency": the company runs ads for clients (Star Growth Hub): "Add as client", Ads → Clients, Won → client. */
+export const COMPANY_FEATURES = ["projects", "no_ads", "ads_agency"] as const;
 /** "client_workspace": an ads client's own CRM (set by the database when it is created, never switched by hand). */
 export type CompanyFeature = (typeof COMPANY_FEATURES)[number] | "client_workspace";
 export const LEAD_OUTCOMES = Constants.public.Enums.lead_outcome;

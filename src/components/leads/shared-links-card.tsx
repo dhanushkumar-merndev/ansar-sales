@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollBox } from "@/components/common/scroll-box";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLiveQuery } from "@/hooks/use-live-query";
+import { forLead, useLiveQuery } from "@/hooks/use-live-query";
 import { shareUrl, whatsappUrl } from "@/lib/library";
 import { fetchLeadShareSummary, fetchShareEvents, signLibraryUrls, type ShareEvent, type ShareSummary } from "@/lib/library-queries";
 import { formatDateTime, formatRelative } from "@/lib/time";
@@ -42,11 +42,13 @@ export function SharedLinksCard({ leadId, leadName, phone, profileId, canEdit, o
     queryKey: `share-summary:${profileId}:${leadId}`,
     fetcher: (s) => fetchLeadShareSummary(leadId, s),
     tables: ["lead_shares", "share_events", "library_files", "leads"],
+    match: forLead(leadId),
   });
   const events = useLiveQuery({
     queryKey: `share-events:${profileId}:${leadId}:${limit}`,
     fetcher: (s) => fetchShareEvents(leadId, limit, s),
     tables: ["share_events", "leads"],
+    match: forLead(leadId),
   });
   const thumbPaths = (summary.data?.files ?? []).map((f) => f.thumb_path).filter((p): p is string => !!p);
   const thumbs = useLiveQuery({

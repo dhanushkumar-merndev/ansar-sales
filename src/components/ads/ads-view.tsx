@@ -30,13 +30,18 @@ import { createClient } from "@/lib/supabase/client";
 import { hasAnyRole } from "@/lib/permissions";
 import { cleanSearch } from "@/lib/search";
 import { addDays, istToday } from "@/lib/time";
+import { runsAdsForClients } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { archiveAdCategory, deleteAdAccountHistory, saveAdCategory, setAdCategoryDashboard, setCampaignCategory } from "@/server/actions/ads";
 
-/** Dashboard / Our company / Clients switch shown on every ads page. */
+/** Dashboard / Our company / Clients switch shown on every ads page (Clients only in the agency). */
 export function AdsTabs() {
   const pathname = usePathname();
-  const tabs = [{ href: "/ads", label: "Ad account" }, { href: "/ads/companies", label: "Our company" }, { href: "/ads/clients", label: "Clients" }];
+  const { features } = useProfile();
+  const tabs = [
+    { href: "/ads", label: "Ad account" }, { href: "/ads/companies", label: "Our company" },
+    ...(runsAdsForClients(features) ? [{ href: "/ads/clients", label: "Clients" }] : []),
+  ];
   return (
     <nav className="mb-5 inline-flex rounded-lg border p-0.5 text-sm" aria-label="Ads sections">
       {tabs.map((t) => {

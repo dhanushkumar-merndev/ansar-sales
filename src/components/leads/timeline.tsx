@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, FolderKanban, Hand, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, UserRoundCheck, ArrowRightLeft } from "lucide-react";
+import { ArchiveRestore, Archive, CalendarCheck, CalendarClock, CalendarX, Eye, FolderKanban, Hand, Link2Off, Pencil, PhoneCall, Send, Sparkles, StickyNote, Timer, UserRoundCheck, ArrowRightLeft } from "lucide-react";
 import { parseFormAnswers } from "@/lib/form-answers";
 import { CALL_OUTCOMES, type CallOutcome } from "@/lib/library";
 import type { Activity } from "@/lib/queries";
-import { formatDateTime } from "@/lib/time";
+import { formatDateTime, formatDuration } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -35,7 +35,7 @@ const status = (s: unknown) => String(s ?? "—");
 const dt = (s: unknown) => (typeof s === "string" ? formatDateTime(s) : "—");
 
 /** Turns an activity row into a readable sentence (never raw JSON). */
-function describe(a: Activity): { title: string; detail?: React.ReactNode } {
+function describe(a: Activity, callAction?: React.ReactNode): { title: string; detail?: React.ReactNode } {
   const m = a.meta ?? {};
   switch (a.type) {
     case "lead_created":
@@ -98,10 +98,21 @@ function describe(a: Activity): { title: string; detail?: React.ReactNode } {
       return { title: "cancelled a follow-up", detail: String(m.task ?? "") };
     case "call_logged": {
       const outcome = CALL_OUTCOMES[m.outcome as CallOutcome];
+      const talked = typeof m.duration_seconds === "number" ? m.duration_seconds : null;
+      const measured = typeof m.duration_measured_seconds === "number" ? m.duration_measured_seconds : null;
       return {
         title: "called the lead",
-        detail: outcome || a.body ? (
+        detail: outcome || a.body || talked !== null || callAction ? (
           <>
+            {talked !== null ? (
+              <span className="mb-0.5 flex flex-wrap items-center gap-1">
+                <Timer className="size-3.5" aria-hidden />Talked <span className="font-medium text-foreground">{formatDuration(talked)}</span>
+                {m.duration_edited_at ? (
+                  <span title={`Edited ${dt(m.duration_edited_at)}`}>· edited{measured !== null ? `, was ${formatDuration(measured)}` : ""}</span>
+                ) : null}
+                {callAction}
+              </span>
+            ) : callAction ? <span className="mb-0.5 flex items-center gap-1"><Timer className="size-3.5" aria-hidden />{callAction}</span> : null}
             {outcome ? <span>Outcome: <span className="font-medium text-foreground">{outcome}</span></span> : null}
             {a.body ? <p className="mt-0.5 whitespace-pre-wrap text-foreground">{a.body}</p> : null}
           </>
@@ -133,12 +144,14 @@ function describe(a: Activity): { title: string; detail?: React.ReactNode } {
   }
 }
 
-export function Timeline({ items, renderNoteActions }: { items: Activity[]; renderNoteActions?: (a: Activity) => React.ReactNode }) {
+export function Timeline({ items, renderNoteActions, renderCallActions }: {
+  items: Activity[]; renderNoteActions?: (a: Activity) => React.ReactNode; renderCallActions?: (a: Activity) => React.ReactNode;
+}) {
   return (
     <ol className="relative space-y-0">
       {items.map((a, i) => {
         const Icon = ICONS[a.type] ?? Sparkles;
-        const { title, detail } = describe(a);
+        const { title, detail } = describe(a, a.type === "call_logged" ? renderCallActions?.(a) : undefined);
         const isNote = a.type === "note";
         return (
           <li key={a.id} className="relative flex gap-3 pb-5 last:pb-0">

@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { NotificationsCard } from "@/components/settings/notifications-card";
 import { PipelineSettings } from "@/components/settings/pipeline-settings";
+import { TableColumnsCard } from "@/components/settings/table-columns-card";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { useLiveQuery } from "@/hooks/use-live-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useUrlState } from "@/hooks/use-url-state";
 import { rolesLabel, SUPER_ADMIN_LABEL } from "@/lib/constants";
+import { can } from "@/lib/permissions";
 import { fetchTelegramStatus } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
 import { changePassword } from "@/server/actions/auth";
@@ -167,9 +169,10 @@ function AccountSettings() {
           <PasswordCard />
         </div>
 
-        {/* Right Column: Telegram */}
+        {/* Right Column: Telegram, table columns */}
         <div className="space-y-6">
           <TelegramCard />
+          {can.useLeads(profile.roles) ? <TableColumnsCard /> : null}
         </div>
       </div>
   );

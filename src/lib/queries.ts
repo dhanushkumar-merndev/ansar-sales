@@ -5,11 +5,11 @@
 import type { AppNotificationPage } from "@/lib/app-notifications";
 import type { AssignableRole, ExpenseCategory, LeadOutcome, LeadTemperature, PaymentMode, ReminderState } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
+import { followUpListArgs, leadListArgs, unwrapStarredPage, type FollowUpQuery, type LeadQuery, type StarredPageResult } from "@/lib/list-queries";
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
 import { cleanSearch, escapeLike } from "@/lib/search";
 import type { StageColor } from "@/lib/stages";
 import { createClient } from "@/lib/supabase/client";
-import { addDays, istDayStartUtc } from "@/lib/time";
 import type { FollowUpListItem, LeadListItem, NicheOption, StaffOption, UserListItem } from "@/lib/types";
 
 const sb = () => createClient();
@@ -19,61 +19,16 @@ function unwrapPage<T>(data: Json | null, page: number, pageSize: number): PageR
   return toPageResult(r.items, Number(r.total), page, pageSize);
 }
 
-/** A page from a list that supports stars, plus how many of the user's items are pinned (max 10). */
-export type StarredPageResult<T> = PageResult<T> & { pinnedCount: number };
-
-function unwrapStarredPage<T>(data: Json | null, page: number, pageSize: number): StarredPageResult<T> {
-  const pinned = Number((data as { pinned_count?: number } | null)?.pinned_count ?? 0);
-  return { ...unwrapPage<T>(data, page, pageSize), pinnedCount: pinned };
-}
-
-export type LeadQuery = {
-  /** Pipeline stage id. */
-  q: string; stage: string | null; niche: string | null; owner: string | null; temperature: LeadTemperature | null;
-  from: string | null; to: string | null; overdue: boolean; archived: boolean; starred: boolean;
-  sort: string; dir: "asc" | "desc"; page: number; pageSize: number;
-};
+export type { FollowUpView, LeadQuery, StarredPageResult } from "@/lib/list-queries";
 
 export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<StarredPageResult<LeadListItem>> {
-  const { data, error } = await sb()
-    .rpc("list_leads", {
-      p_search: cleanSearch(p.q) || undefined,
-      p_stage_ids: p.stage ? [p.stage] : undefined,
-      p_niche_id: p.niche ?? undefined,
-      p_owner_id: p.owner ?? undefined,
-      p_created_from: p.from ? istDayStartUtc(p.from) : undefined,
-      p_created_to: p.to ? istDayStartUtc(addDays(p.to, 1)) : undefined,
-      p_overdue_only: p.overdue,
-      p_archived: p.archived,
-      p_sort: p.sort,
-      p_dir: p.dir,
-      p_limit: p.pageSize,
-      p_offset: (p.page - 1) * p.pageSize,
-      p_starred_only: p.starred,
-      p_temperature: p.temperature ?? undefined,
-    })
-    .abortSignal(signal);
+  const { data, error } = await sb().rpc("list_leads", leadListArgs(p)).abortSignal(signal);
   if (error) throw error;
   return unwrapStarredPage<LeadListItem>(data, p.page, p.pageSize);
 }
 
-export type FollowUpView = "overdue" | "today" | "upcoming" | "completed" | "cancelled" | "starred";
-
-export async function fetchFollowUps(
-  p: { view: FollowUpView; assignee: string | null; q: string; from?: string | null; to?: string | null; page: number; pageSize: number },
-  signal: AbortSignal,
-): Promise<StarredPageResult<FollowUpListItem>> {
-  const { data, error } = await sb()
-    .rpc("list_follow_ups", {
-      p_view: p.view,
-      p_assignee_id: p.assignee ?? undefined,
-      p_search: cleanSearch(p.q) || undefined,
-      p_limit: p.pageSize,
-      p_offset: (p.page - 1) * p.pageSize,
-      p_due_from: p.from ? istDayStartUtc(p.from) : undefined,
-      p_due_to: p.to ? istDayStartUtc(addDays(p.to, 1)) : undefined,
-    })
-    .abortSignal(signal);
+export async function fetchFollowUps(p: FollowUpQuery, signal: AbortSignal): Promise<StarredPageResult<FollowUpListItem>> {
+  const { data, error } = await sb().rpc("list_follow_ups", followUpListArgs(p)).abortSignal(signal);
   if (error) throw error;
   return unwrapStarredPage<FollowUpListItem>(data, p.page, p.pageSize);
 }

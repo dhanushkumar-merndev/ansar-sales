@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, ArrowDownUp, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, UserRoundCog, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowDownUp, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, StickyNote, UserRoundCog, X } from "lucide-react";
 import { toast } from "sonner";
 import { LeadAdsClientButton } from "@/components/ads/lead-ads-client-button";
 import { DueBadge, ReminderBadge, StatusBadge } from "@/components/common/badges";
@@ -11,6 +11,7 @@ import { PinButton, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { CompleteFollowUpDialog, FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { CallButton, WhatsAppButton } from "@/components/leads/call-button";
+import { LeadNotesDialog } from "@/components/leads/call-notes";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
 import { LeadProjectActions } from "@/components/projects/lead-project-actions";
 import { ShareFilesDialog } from "@/components/leads/share-files-dialog";
@@ -28,30 +29,36 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useLiveQuery } from "@/hooks/use-live-query";
+import { forLead, useLiveQuery } from "@/hooks/use-live-query";
 import { fetchLead, fetchLeadFollowUps, fetchTimeline, type Activity, type LeadFollowUp } from "@/lib/queries";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/time";
 import type { NicheOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { setCallDuration } from "@/server/actions/calls";
 import { cancelFollowUp } from "@/server/actions/follow-ups";
 import { addNote, assignLead, correctNote, setLeadArchived, setLeadStage } from "@/server/actions/leads";
 import { toggleLeadPin, toggleLeadStar } from "@/server/actions/stars";
 
 const TIMELINE_PAGE = 20;
 const TIMELINE_MAX = 500;
+/** Talk time can be corrected for a day after the call (set_call_duration enforces it too). */
+const CALL_EDIT_MS = 24 * 60 * 60 * 1000;
 
 export function LeadDetailView({ leadId, initialNiches }: { leadId: string; initialNiches: NicheOption[] }) {
   const profile = useProfile();
   const isAdmin = profile.role === "admin";
   const [timelineLimit, setTimelineLimit] = useState(TIMELINE_PAGE);
 
-  const lead = useLiveQuery({ queryKey: `lead:${profile.id}:${leadId}`, fetcher: (s) => fetchLead(leadId, s), tables: ["leads", "niches", "lead_stars"] });
-  const followUps = useLiveQuery({ queryKey: `lead-fu:${profile.id}:${leadId}`, fetcher: (s) => fetchLeadFollowUps(leadId, s), tables: ["follow_ups", "leads"] });
+  const lead = useLiveQuery({ queryKey: `lead:${profile.id}:${leadId}`, fetcher: (s) => fetchLead(leadId, s), tables: ["leads", "niches", "lead_stars"], match: forLead(leadId), keep: true });
+  const followUps = useLiveQuery({ queryKey: `lead-fu:${profile.id}:${leadId}`, fetcher: (s) => fetchLeadFollowUps(leadId, s), tables: ["follow_ups", "leads"], match: forLead(leadId), keep: true });
   const timeline = useLiveQuery({
     queryKey: `timeline:${profile.id}:${leadId}:${timelineLimit}`,
     fetcher: (s) => fetchTimeline(leadId, timelineLimit, s),
     tables: ["lead_activities", "leads"],
+    match: forLead(leadId),
+    keep: true,
   });
 
   const [editOpen, setEditOpen] = useState(false);
@@ -61,6 +68,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
   const [completing, setCompleting] = useState<LeadFollowUp | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
   const [timelineFilter, setTimelineFilter] = useState<string>("all");
 
@@ -248,10 +256,13 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         {/* On wide screens Activity fills the column, so it ends level with the left cards. */}
         <div className="flex flex-col gap-5">
           {canEdit ? <NoteComposer leadId={l.id} onAdded={timeline.refetch} /> : null}
-          <Card className="lg:min-h-0 lg:flex-1">
-            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
               <CardTitle className="text-base">Activity</CardTitle>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button variant="outline" size="xs" className="h-7 gap-1 text-xs" onClick={() => setNotesOpen(true)}>
+                  <StickyNote className="size-3" /> All notes
+                </Button>
                 <Select value={timelineFilter} onValueChange={setTimelineFilter}>
                   <SelectTrigger className="h-7 w-[115px] text-xs" aria-label="Filter activity type">
                     <SelectValue />
@@ -276,13 +287,14 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+            <CardContent>
               {timeline.isInitialLoading ? (
                 <ListSkeleton rows={4} />
               ) : timeline.error && !timeline.data ? (
                 <ErrorState message={timeline.error} onRetry={timeline.refetch} />
               ) : (
-                <ScrollBox label="Activity history" className="h-[380px] sm:h-[420px] lg:h-0 lg:min-h-[420px] lg:flex-1">
+                // A fixed height: long histories scroll inside the card instead of stretching the page.
+                <ScrollBox label="Activity history" className="h-[min(70svh,640px)] min-h-[360px]">
                   {displayedTimeline.length === 0 ? (
                     <p className="py-16 text-center text-xs text-muted-foreground">
                       No matching activity found.
@@ -291,6 +303,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
                     <Timeline
                       items={displayedTimeline}
                       renderNoteActions={(a) => (canEdit && (a.actor_id === profile.id || isAdmin) ? <CorrectNote note={a} onDone={timeline.refetch} /> : null)}
+                      renderCallActions={(a) => (canEdit && a.actor_id === profile.id ? <EditTalkTime call={a} onDone={timeline.refetch} /> : null)}
                     />
                   )}
                   {timeline.data?.hasMore && timelineLimit < TIMELINE_MAX ? (
@@ -323,6 +336,7 @@ export function LeadDetailView({ leadId, initialNiches }: { leadId: string; init
         onDone={refreshAll}
       />
       {isAdmin ? <AssignDialog open={assignOpen} onOpenChange={setAssignOpen} leadId={l.id} currentOwner={l.owner_id} onDone={refreshAll} /> : null}
+      <LeadNotesDialog leadId={l.id} leadName={l.name} open={notesOpen} onOpenChange={setNotesOpen} />
       {canEdit ? <ShareFilesDialog open={shareOpen} onOpenChange={setShareOpen} leadId={l.id} leadName={l.name} phone={l.phone_normalized} onShared={timeline.refetch} /> : null}
     </>
   );
@@ -426,6 +440,65 @@ function CorrectNote({ note, onDone }: { note: Activity; onDone: () => void }) {
                 const r = await correctNote({ noteId: note.id, body });
                 if (!r.ok) return void toast.error(r.error);
                 toast.success("Note corrected");
+                setOpen(false);
+                onDone();
+              })}
+            >
+              {pending && <Loader2 className="animate-spin" />}Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Pencil beside the talk time of the person's own call; editable for a day after the call, as the database allows. */
+function EditTalkTime({ call, onDone }: { call: Activity; onDone: () => void }) {
+  const current = typeof call.meta?.duration_seconds === "number" ? call.meta.duration_seconds : null;
+  const [now] = useState(() => Date.now());
+  const [open, setOpen] = useState(false);
+  const [minutes, setMinutes] = useState("");
+  const [seconds, setSeconds] = useState("");
+  const [pending, start] = useTransition();
+  const total = (Number(minutes) || 0) * 60 + (Number(seconds) || 0);
+  const valid = (minutes !== "" || seconds !== "") && total <= 86400;
+  if (now - new Date(call.created_at).getTime() >= CALL_EDIT_MS) return null;
+  const openEditor = () => {
+    setMinutes(current === null ? "" : String(Math.floor(current / 60)));
+    setSeconds(current === null ? "" : String(current % 60));
+    setOpen(true);
+  };
+  return (
+    <>
+      {current === null ? (
+        <Button variant="link" size="xs" className="h-auto px-0 text-muted-foreground" onClick={openEditor}>Add talk time</Button>
+      ) : (
+        <Button variant="ghost" size="icon-xs" className="size-5 text-muted-foreground hover:text-foreground" aria-label="Edit talk time" title="Edit talk time" onClick={openEditor}>
+          <Pencil className="size-3" />
+        </Button>
+      )}
+      <Dialog open={open} onOpenChange={(o) => !pending && setOpen(o)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Talk time</DialogTitle>
+            <DialogDescription>How long the call lasted. The timeline shows that it was edited and the measured time.</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2">
+            <Input inputMode="numeric" className="w-20" aria-label="Minutes" value={minutes} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, "").slice(0, 4))} />
+            <span className="text-sm text-muted-foreground">min</span>
+            <Input inputMode="numeric" className="w-20" aria-label="Seconds" value={seconds} onChange={(e) => setSeconds(e.target.value.replace(/\D/g, "").slice(0, 2))} />
+            <span className="text-sm text-muted-foreground">s</span>
+          </div>
+          {total > 86400 ? <p className="text-xs text-destructive">At most 24 hours.</p> : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>Cancel</Button>
+            <Button
+              disabled={pending || !valid}
+              onClick={() => start(async () => {
+                const r = await setCallDuration({ activityId: call.id, seconds: total });
+                if (!r.ok) return void toast.error(r.error);
+                toast.success("Talk time saved");
                 setOpen(false);
                 onDone();
               })}

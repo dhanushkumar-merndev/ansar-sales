@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 // Throwaway company with ~3,000 leads and ~6,000 follow-ups for timing the Dashboard, Leads and Follow-ups pages.
 // Usage: pnpm perf:sandbox --setup --logins <file>   create "ZZ Perf Test", its perf_* logins and the data
+//        pnpm perf:sandbox --setup --resume --logins <file>   continue after a failed batch (same file)
 //        pnpm perf:sandbox --clean                   delete all of it, the logins and the company again
 //
 // Real companies are never written to: everything is scoped to the ZZ Perf Test company and the perf_* users.
 // Leads go through import_leads (one summary alert per --batch to super admins, as with an Excel import).
 // The passwords are written only to the --logins file, which must be outside the repo.
 import { randomBytes } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 
 const { values } = parseArgs({
   options: {
-    setup: { type: "boolean", default: false }, clean: { type: "boolean", default: false }, logins: { type: "string" },
+    setup: { type: "boolean", default: false }, resume: { type: "boolean", default: false }, clean: { type: "boolean", default: false }, logins: { type: "string" },
     leads: { type: "string", default: "3000" }, batch: { type: "string", default: "400" },
   },
 });
@@ -97,26 +98,9 @@ async function signIn(username, password) {
 
 async function setup() {
   if (!values.logins) throw new Error("--logins <file outside the repo> is required for --setup.");
-  if ((await perfCompany()) || (await perfProfiles()).length) throw new Error(`${COMPANY} or perf_* users already exist. Run --clean first.`);
   const before = await snapshot(null);
-
-  // finance_group_id and the default pipeline stages are filled in by the companies triggers.
-  const company = await must("create company", sb.from("companies").insert({ name: COMPANY }).select("id").single());
-  console.log(`Created company ${COMPANY} (${company.id}).`);
-
-  const logins = { company: COMPANY, companyId: company.id, users: {} };
-  for (const u of USERS) {
-    const password = `Perf-${randomBytes(12).toString("base64url")}`;
-    const { data, error } = await sb.auth.admin.createUser({
-      email: `${u.username}@${domain}`, password, email_confirm: true,
-      app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role, crm_company_id: company.id },
-    });
-    if (error || !data.user) throw new Error(`create ${u.username}: ${error?.message}`);
-    logins.users[u.key] = { id: data.user.id, username: u.username, password };
-  }
-  writeFileSync(values.logins, JSON.stringify(logins, null, 2), { mode: 0o600 });
-  console.log(`Created ${USERS.length} logins (passwords in ${values.logins}).`);
-
+  const logins = values.resume ? JSON.parse(readFileSync(values.logins, "utf8")) : await createCompanyAndLogins();
+  const company = { id: logins.companyId };
   const admin = await signIn("perf_admin", logins.users.admin.password);
   const stages = await must("stages", sb.from("pipeline_stages").select("id, kind").eq("company_id", company.id).order("position"));
   const open = stages.filter((s) => s.kind !== "won" && s.kind !== "lost");
@@ -138,8 +122,15 @@ async function setup() {
       note: i % 2 === 0 ? `Perf test note for lead ${n}.` : undefined,
     };
   });
+  // On --resume, keep the leads already imported and continue after them.
   const leadIds = [];
-  for (const [b, batch] of chunk(rows, BATCH).entries()) {
+  for (let from = 0; ; from += 1000) {
+    const page = await must("leads", sb.from("leads").select("id").eq("company_id", company.id).order("created_at").order("id").range(from, from + 999));
+    leadIds.push(...page.map((r) => r.id));
+    if (page.length < 1000) break;
+  }
+  if (leadIds.length && !values.resume) throw new Error("The new company already has leads.");
+  for (const [b, batch] of chunk(rows.slice(leadIds.length), BATCH).entries()) {
     const started = Date.now();
     const result = await must(`import batch ${b + 1}`, admin.rpc("import_leads", { p_rows: batch, p_allow_duplicates: true }));
     const failed = result.filter((r) => r.error);
@@ -183,6 +174,26 @@ async function setup() {
 
   console.log("\nCounts before → after (other companies must not change; super admins get the import summaries):");
   printDiff(before, await snapshot(company.id));
+}
+
+async function createCompanyAndLogins() {
+  if ((await perfCompany()) || (await perfProfiles()).length) throw new Error(`${COMPANY} or perf_* users already exist. Run --clean first.`);
+  // finance_group_id and the default pipeline stages are filled in by the companies triggers.
+  const company = await must("create company", sb.from("companies").insert({ name: COMPANY }).select("id").single());
+  console.log(`Created company ${COMPANY} (${company.id}).`);
+  const logins = { company: COMPANY, companyId: company.id, users: {} };
+  for (const u of USERS) {
+    const password = `Perf-${randomBytes(12).toString("base64url")}`;
+    const { data, error } = await sb.auth.admin.createUser({
+      email: `${u.username}@${domain}`, password, email_confirm: true,
+      app_metadata: { crm_username: u.username, crm_display_name: u.displayName, crm_role: u.role, crm_company_id: company.id },
+    });
+    if (error || !data.user) throw new Error(`create ${u.username}: ${error?.message}`);
+    logins.users[u.key] = { id: data.user.id, username: u.username, password };
+  }
+  writeFileSync(values.logins, JSON.stringify(logins, null, 2), { mode: 0o600 });
+  console.log(`Created ${USERS.length} logins (passwords in ${values.logins}).`);
+  return logins;
 }
 
 async function clean() {
