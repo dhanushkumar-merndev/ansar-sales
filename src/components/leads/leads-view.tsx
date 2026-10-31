@@ -15,6 +15,7 @@ import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/compo
 import { FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { CallButton } from "@/components/leads/call-button";
 import { LeadNotesDialog } from "@/components/leads/call-notes";
+import { SlNo, useSlRange } from "@/components/leads/lead-range-summary";
 import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
@@ -80,6 +81,9 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
   // Admin, Starred tab: another user's stars and pins, shown read-only.
   const viewingOther = !!query.by && query.by !== profile.id;
   const staff = useLiveQuery({ queryKey: "staff", fetcher: fetchStaff, tables: ["profiles"], pollMs: 0, enabled: viewingOther });
+  // Sl No: the lead's position in this filtered, sorted list; double-click two of them for a range summary.
+  const sl = useSlRange(query);
+  const slOf = (index: number) => (query.page - 1) * query.pageSize + index + 1;
   const otherName = viewingOther ? (staff.data?.find((s) => s.id === query.by)?.display_name ?? "This person") : "";
 
   // Immediate local input; URL (and the query) follow after a 300 ms debounce.
@@ -130,6 +134,14 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
       </button>
     );
     const cols: ColumnDef<LeadListItem>[] = [
+      {
+        id: "sl_no",
+        header: () => <span className="block text-right text-xs">Sl No</span>,
+        cell: ({ row }) => {
+          const n = (query.page - 1) * query.pageSize + row.index + 1;
+          return <SlNo sl={n} range={sl} query={query} />;
+        },
+      },
       {
         id: "star",
         header: () => <span className="sr-only">Star</span>,
@@ -213,7 +225,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
     );
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, query.sort, query.dir, refetch, hiddenKey, viewingOther, otherName]);
+  }, [isAdmin, query.sort, query.dir, query.page, query.pageSize, queryKey, refetch, hiddenKey, viewingOther, otherName, sl.anchor, sl.range?.[0], sl.range?.[1], sl.openAt]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
@@ -393,8 +405,8 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
               </TableHeader>
               <TableBody>
                 {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} {...leadIntent(row.id)} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
-                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "star" || cell.column.id === "temperature" || cell.column.id === "status" || cell.column.id === "actions" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0", cell.column.id === "actions" && "w-px text-right")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
+                  <TableRow key={row.id} {...leadIntent(row.id)} className={cn("cursor-pointer", row.original.pinned_at && "bg-muted/40", sl.inRange(slOf(row.index)) && "bg-red-500/[0.07] shadow-[inset_3px_0_0_0_rgb(239_68_68/0.6)]")} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,[data-no-row-click]")) router.push(`/leads/${row.id}`); }}>
+                    {row.getVisibleCells().map((cell) => <TableCell key={cell.id} data-no-row-click={cell.column.id === "sl_no" || cell.column.id === "star" || cell.column.id === "temperature" || cell.column.id === "status" || cell.column.id === "actions" || undefined} className={cn("py-2.5", cell.column.id === "star" && "w-px cursor-default pr-0", cell.column.id === "sl_no" && "w-px cursor-default pr-0", cell.column.id === "actions" && "w-px text-right")}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}
                   </TableRow>
                 ))}
               </TableBody>
@@ -402,9 +414,9 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
           </Card>}
           {/* Mobile cards */}
           {isMobile ? <ul className="space-y-2 md:hidden">
-            {data?.items.map((l) => (
+            {data?.items.map((l, i) => (
               <li key={l.id} className="relative">
-                <Link href={`/leads/${l.id}`} {...leadIntent(l.id)} className={cn("block rounded-lg border bg-card p-3 active:bg-muted", l.pinned_at && "bg-muted/40")}>
+                <Link href={`/leads/${l.id}`} {...leadIntent(l.id)} className={cn("block rounded-lg border bg-card p-3 active:bg-muted", l.pinned_at && "bg-muted/40", !hidden.has("sl_no") && "pl-12", sl.inRange(slOf(i)) && "border-red-500/50 bg-red-500/[0.07]")}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium"><span className="truncate">{l.name}</span>{l.pinned_at ? <PinnedBadge /> : null}</p>
@@ -428,6 +440,9 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
                   <div className="absolute bottom-2.5 left-3">
                     {l.archived_at ? <TemperatureBadge value={l.temperature} /> : <TemperatureSelect leadId={l.id} value={l.temperature} onChanged={refetch} />}
                   </div>
+                )}
+                {hidden.has("sl_no") ? null : (
+                  <span className="absolute top-2.5 left-1.5"><SlNo sl={slOf(i)} range={sl} query={query} side="bottom" className="min-w-9 text-center" /></span>
                 )}
                 {/* Outside the link: buttons inside an anchor are invalid and would navigate. */}
                 <div className="absolute right-1.5 bottom-1.5 flex items-center">

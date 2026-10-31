@@ -4756,6 +4756,26 @@ export type Database = {
           role: Database["public"]["Enums"]["app_role"]
         }[]
       }
+      lead_range_summary: {
+        Args: {
+          p_search?: string
+          p_stage_ids?: string[]
+          p_niche_id?: string
+          p_owner_id?: string
+          p_created_from?: string
+          p_created_to?: string
+          p_overdue_only?: boolean
+          p_archived?: boolean
+          p_sort?: string
+          p_dir?: string
+          p_starred_only?: boolean
+          p_temperature?: Database["public"]["Enums"]["lead_temperature"] | null
+          p_starred_by?: string
+          p_from: number
+          p_to: number
+        }
+        Returns: Json
+      }
       list_leads: {
         Args: {
           p_search?: string

@@ -1,6 +1,7 @@
 /** Columns a person can hide on their lists (Settings → Table columns). Lead name, star and pin always show. */
 export const TABLE_COLUMNS = {
   leads: [
+    { id: "sl_no", label: "Sl No" },
     { id: "temperature", label: "Temperature" },
     { id: "status", label: "Stage" },
     { id: "niche", label: "Niche" },

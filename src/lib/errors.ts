@@ -59,6 +59,7 @@ const MESSAGES: Record<string, string> = {
   invalid_outcome: "Choose how the call went.",
   call_outcome_closed: "Calls can only be changed within 24 hours.",
   invalid_stage: "That status isn't in this company's pipeline. Refresh and pick again.",
+  invalid_sl_range: "Pick a range of up to 10,000 rows.",
   note_too_long: "The note is too long.",
   file_not_archived: "Archive the file before deleting it permanently.",
   folder_has_subfolders: "Archive the subfolders inside this folder first.",

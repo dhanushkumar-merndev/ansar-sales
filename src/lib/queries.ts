@@ -3,7 +3,7 @@
 // Read queries run in the browser as the signed-in user: RLS decides what is returned.
 // Every list is server-filtered, server-paginated and abortable.
 import type { AppNotificationPage } from "@/lib/app-notifications";
-import type { AssignableRole, ExpenseCategory, PaymentMode } from "@/lib/constants";
+import type { AssignableRole, ExpenseCategory, LeadOutcome, LeadTemperature, PaymentMode } from "@/lib/constants";
 import type { Json } from "@/lib/database.types";
 import { type Activity, readLead, readLeadFollowUps, readTimeline } from "@/lib/lead-queries";
 import { followUpListArgs, leadListArgs, unwrapStarredPage, type FollowUpQuery, type LeadQuery, type StarredPageResult } from "@/lib/list-queries";
@@ -26,6 +26,21 @@ export async function fetchLeads(p: LeadQuery, signal: AbortSignal): Promise<Sta
   const { data, error } = await sb().rpc("list_leads", leadListArgs(p)).abortSignal(signal);
   if (error) throw error;
   return unwrapStarredPage<LeadListItem>(data, p.page, p.pageSize);
+}
+
+export type LeadRangeSummary = {
+  from: number; to: number; count: number;
+  stages: { id: string; name: string; kind: LeadOutcome; color: StageColor; count: number }[];
+  temperatures: Record<LeadTemperature | "none", number>;
+};
+
+/** Sl No from..to of the list as filtered and sorted now, counted by stage and temperature (in the database). */
+export async function fetchLeadRangeSummary(p: LeadQuery, from: number, to: number, signal: AbortSignal): Promise<LeadRangeSummary> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the range replaces the page
+  const { p_limit, p_offset, ...filters } = leadListArgs(p);
+  const { data, error } = await sb().rpc("lead_range_summary", { ...filters, p_from: from, p_to: to }).abortSignal(signal);
+  if (error) throw error;
+  return data as unknown as LeadRangeSummary;
 }
 
 export async function fetchFollowUps(p: FollowUpQuery, signal: AbortSignal): Promise<StarredPageResult<FollowUpListItem>> {
