@@ -97,7 +97,7 @@ export function WhatsAppCard({ status, businessNumber, onLinking }: { status: St
                   onClick={() => startTest(async () => {
                     const r = await sendTestNotification();
                     if (!r.ok) return void toast.error(r.error);
-                    toast.success(wa?.window_until ? "Test message queued. It should arrive within about a minute." : "Test queued. It arrives once you send the CRM any message on WhatsApp.");
+                    toast.success(wa?.window_until ? "Test message queued. It should arrive in a few seconds." : "Test queued. It arrives once you send the CRM any message on WhatsApp.");
                   })}
                 >
                   {testing ? <Loader2 className="animate-spin" /> : <BellRing />} Send test message

@@ -54,7 +54,7 @@ export async function markNotificationsRead(input: unknown) {
   });
 }
 
-/** Queues a test message to the signed-in user's Telegram (delivered by the worker within about a minute). */
+/** Queues a test message to the signed-in user's Telegram (delivered by the worker within seconds). */
 export async function sendTestNotification() {
   return runAction(ALL, z.undefined(), undefined, async (_d, { supabase }) => {
     const { error } = await supabase.rpc("send_test_notification");

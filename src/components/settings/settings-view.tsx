@@ -241,7 +241,7 @@ function TelegramCard({ status, active, onLinking }: { status: TelegramStatus; a
             <Badge variant="outline">Not connected</Badge>
           )}
         </CardTitle>
-        <CardDescription>Get a private Telegram message when a follow-up assigned to you is due (usually within about a minute).</CardDescription>
+        <CardDescription>Get a private Telegram message when a follow-up assigned to you is due (usually within 15 seconds).</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {status.isInitialLoading ? <Skeleton className="h-9 w-48" /> : (
@@ -274,7 +274,7 @@ function TelegramCard({ status, active, onLinking }: { status: TelegramStatus; a
                   onClick={() => startTest(async () => {
                     const r = await sendTestNotification();
                     if (!r.ok) return void toast.error(r.error);
-                    toast.success("Test message queued. It should arrive within about a minute.");
+                    toast.success("Test message queued. It should arrive in a few seconds.");
                   })}
                 >
                   {testing ? <Loader2 className="animate-spin" /> : <BellRing />} Send test message
