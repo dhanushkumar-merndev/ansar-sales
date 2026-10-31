@@ -121,7 +121,9 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !pending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-lg">
+      {/* grid-cols-1 = minmax(0,1fr): wide content can't push the dialog past its border.
+          The body scrolls between a fixed header and footer on short screens. */}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{created ? "Link ready" : "Share files on WhatsApp"}</DialogTitle>
           <DialogDescription>
@@ -142,7 +144,7 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
             <p className="text-sm text-muted-foreground">{created.expiresAt ? `Expires ${formatDateTime(created.expiresAt)}.` : "This link never expires."} You can revoke it from the lead page.</p>
           </div>
         ) : (
-          <div className="min-w-0 space-y-3">
+          <div className="-mx-1 min-w-0 space-y-3 overflow-y-auto px-1 pb-1">
             <div className="flex items-end gap-2">
               <Field className="min-w-0 flex-1">
                 <FieldLabel htmlFor="share-template">Template</FieldLabel>
@@ -168,25 +170,24 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
 
             <LibraryFilePicker enabled={open && !created} selected={selected} onChange={(next) => { setSelected(next); }} included={included} />
 
-            <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
-              <Field>
-                <FieldLabel htmlFor="share-expiry">{hasLink ? "Reset expiry to" : "Link expires"}</FieldLabel>
-                <Select value={expiry} onValueChange={(v) => setExpiry(v as ShareExpiry)}>
-                  <SelectTrigger id="share-expiry" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(SHARE_EXPIRY) as ShareExpiry[]).map((k) => <SelectItem key={k} value={k}>{k === "never" ? "Never" : `In ${SHARE_EXPIRY[k]}`}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="share-message">WhatsApp message</FieldLabel>
-                <Textarea id="share-message" rows={2} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} />
-              </Field>
-            </div>
+            <Field>
+              <FieldLabel htmlFor="share-message">WhatsApp message</FieldLabel>
+              {/* Long template messages scroll inside the box instead of stretching the dialog. */}
+              <Textarea id="share-message" rows={4} maxLength={1000} value={message} onChange={(e) => setMessage(e.target.value)} className="max-h-48 resize-y" />
+            </Field>
+            <Field className="sm:max-w-52">
+              <FieldLabel htmlFor="share-expiry">{hasLink ? "Reset expiry to" : "Link expires"}</FieldLabel>
+              <Select value={expiry} onValueChange={(v) => setExpiry(v as ShareExpiry)}>
+                <SelectTrigger id="share-expiry" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(SHARE_EXPIRY) as ShareExpiry[]).map((k) => <SelectItem key={k} value={k}>{k === "never" ? "Never" : `In ${SHARE_EXPIRY[k]}`}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="sm:flex-wrap">
           {created ? (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}><Check /> Done</Button>
