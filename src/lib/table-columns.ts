@@ -5,6 +5,7 @@ export const TABLE_COLUMNS = {
     { id: "temperature", label: "Temperature" },
     { id: "status", label: "Stage" },
     { id: "niche", label: "Niche" },
+    { id: "source", label: "Source" },
     { id: "owner", label: "Owner", adminOnly: true },
     { id: "next", label: "Next follow-up" },
     { id: "created", label: "Created" },

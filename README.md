@@ -142,6 +142,40 @@ Inspect the queue:
 select kind, state, attempts, last_error, created_at from telegram_notifications order by created_at desc limit 20;
 ```
 
+### WhatsApp alerts (optional, free)
+
+WhatsApp is a second channel next to Telegram (migration `…5800`). Each person has **one active channel**: linking one makes it active, and if both are linked they pick in **Settings → Alerts go to**. The per-type switches apply to whichever is active.
+
+**Why it's free.** WhatsApp only allows free-form business messages for **24 hours after the person last wrote** to the business number, and those are free (Meta per-message pricing, checked 2026-10; recheck before going live). So:
+- About an hour before someone's window closes, the worker sends one free message with a **Keep alerts on** button. Any tap or message renews the window.
+- If the window closes anyway, alerts are **held**, not sent. The bell shows *WhatsApp alerts paused*, the follow-up shows *Reminder waiting for WhatsApp*, and everything held goes out as soon as they send anything. Alerts held for 3 days are dropped.
+- Nothing paid is ever sent unless you set `WHATSAPP_REOPEN_TEMPLATE` (one approved utility template, no variables, with a quick-reply button, sent once per closed window to people with alerts waiting).
+
+**Cost on Supabase/Vercel.** Everything runs on Supabase: sending is the existing `reminder-worker` (still called only when something is due, now also when a nudge is due), and Meta's webhook is the Edge Function `whatsapp-webhook` (it also receives a delivery report for each message sent). Vercel only serves the Settings buttons.
+
+**Meta setup (a new Meta app used only for WhatsApp):**
+1. developers.facebook.com → **Create app** → type **Business** → add the **WhatsApp** product.
+2. Add a phone number that isn't on the WhatsApp app, verify it and set its display name.
+3. Business settings → **System users** → add one with the **Admin** role, assign it the app and the WhatsApp account, and generate a **never-expiring** token with `whatsapp_business_messaging` and `whatsapp_business_management`. That's `WHATSAPP_ACCESS_TOKEN`.
+4. Copy the **Phone number ID** (WhatsApp → API setup) → `WHATSAPP_PHONE_NUMBER_ID`, and the **App secret** (App settings → Basic) → `WHATSAPP_APP_SECRET`. Make a random `WHATSAPP_VERIFY_TOKEN` (`openssl rand -hex 32`).
+5. Set the Edge Function secrets (see `supabase/functions/.env.example`) and deploy:
+   ```bash
+   pnpm dlx supabase secrets set --env-file supabase/functions/.env
+   pnpm dlx supabase functions deploy reminder-worker --no-verify-jwt
+   pnpm dlx supabase functions deploy whatsapp-webhook --no-verify-jwt
+   ```
+6. WhatsApp → **Configuration** → Webhook: URL `https://<project-ref>.supabase.co/functions/v1/whatsapp-webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`, then subscribe to **messages**. (Super settings → WhatsApp shows the exact URL.)
+7. In Vercel set `WHATSAPP_BUSINESS_NUMBER` (digits with country code). Without it, *Connect WhatsApp* stays hidden.
+8. Switch the Meta app to **Live** (in development mode only test numbers receive messages) and complete business verification for higher limits.
+
+**Connect a user:** **Settings → Connect WhatsApp** opens WhatsApp (QR code on a computer) with `Link my CRM: <code>` typed in. Sending it links that number; the code works once for 10 minutes and only its hash is stored. The number is never typed into the CRM, and Settings shows it masked.
+
+**Verify:** connect, then **Send test message**; schedule a follow-up 2 minutes ahead and close the browser; check **Super settings → WhatsApp**, or:
+```sql
+select channel, state, attempts, last_error, sent_at from reminder_deliveries order by created_at desc limit 5;
+select kind, channel, state, last_error from telegram_notifications order by created_at desc limit 10;
+```
+
 ---
 
 ## 3. Deploy to Vercel
@@ -292,6 +326,7 @@ Everything listed in §1–§3 that needs your accounts or secrets:
 The following have **not** been run against a live Supabase/Telegram/Vercel environment. Verify them after provisioning:
 - Realtime cross-session updates (an open admin dashboard updating when sales creates a lead)
 - Real Telegram delivery
+- Real WhatsApp delivery (Meta app, webhook and Edge Function secrets not set up yet)
 - Opening share links on a phone through WhatsApp
 - Cron invocation
 - Auth rate limits

@@ -28,6 +28,8 @@ export async function createLead(input: unknown) {
       p_follow_up_at: d.followUpAt,
       p_follow_up_task: d.followUpTask,
       p_allow_duplicate: d.allowDuplicate,
+      p_source_id: d.source?.id,
+      p_new_source: d.source?.id ? undefined : d.source?.newName,
     });
     if (error) return dbError(error);
     if (!d.niche.id) updateTag(nichesTag(profile.company.id));
@@ -48,6 +50,7 @@ export async function importLeads(input: unknown) {
         niche_id: r.niche.id, new_niche: r.niche.id ? undefined : r.niche.newName, stage_id: r.stageId,
         // Ignored by the database for Sales, as when adding one lead.
         owner_id: profile.role === "admin" ? r.ownerId : undefined, note: r.note,
+        source_id: r.source?.id, new_source: r.source?.id ? undefined : r.source?.newName,
       })),
       p_allow_duplicates: d.allowDuplicates,
     });
@@ -71,6 +74,10 @@ export async function updateLead(input: unknown) {
       p_niche_id: d.niche.id,
       p_new_niche: d.niche.id ? undefined : d.niche.newName,
       p_allow_duplicate: d.allowDuplicate,
+      // The form always sends the source: none clears it.
+      p_set_source: true,
+      p_source_id: d.source?.id,
+      p_new_source: d.source?.id ? undefined : d.source?.newName,
     });
     if (error) return dbError(error);
     if (!d.niche.id) updateTag(nichesTag(profile.company.id));

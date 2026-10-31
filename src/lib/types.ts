@@ -12,6 +12,8 @@ export type LeadListItem = {
   stage_id: string;
   temperature: LeadTemperature | null;
   source: "manual" | "facebook";
+  /** The lead's picked source (Website, Referral, …), if any. */
+  source_name: string | null;
   niche: NicheOption;
   owner: { id: string; display_name: string };
   next_follow_up_at: string | null;

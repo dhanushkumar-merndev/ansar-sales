@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { BellRing, CheckCircle2, ExternalLink, Loader2, QrCode, Send, Unplug } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { NotificationsCard } from "@/components/settings/notifications-card";
 import { PipelineSettings } from "@/components/settings/pipeline-settings";
 import { TableColumnsCard } from "@/components/settings/table-columns-card";
+import { ChannelPicker, WhatsAppCard } from "@/components/settings/whatsapp-card";
 import { useProfile } from "@/components/providers/profile-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,12 +24,13 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useUrlState } from "@/hooks/use-url-state";
 import { rolesLabel, SUPER_ADMIN_LABEL } from "@/lib/constants";
 import { can } from "@/lib/permissions";
-import { fetchTelegramStatus } from "@/lib/queries";
+import { fetchNotifyChannels, fetchTelegramStatus } from "@/lib/queries";
 import { formatDateTime } from "@/lib/time";
 import { changePassword } from "@/server/actions/auth";
 import { createTelegramLink, disconnectTelegram, sendTestNotification } from "@/server/actions/telegram";
 
-export function SettingsView() {
+/** `whatsappNumber`: the CRM's WhatsApp business number (digits), or null when WhatsApp isn't set up. */
+export function SettingsView({ whatsappNumber = null }: { whatsappNumber?: string | null }) {
   const profile = useProfile();
   const { params, set } = useUrlState();
   const isAdmin = profile.role === "admin";
@@ -39,19 +41,19 @@ export function SettingsView() {
         title="Settings"
         description={tab === "pipeline"
           ? `Lead stages of ${profile.company.name}.`
-          : "Your account credentials, workspace profile and Telegram reminder integration."}
+          : `Your account credentials, workspace profile and ${whatsappNumber ? "Telegram / WhatsApp alerts" : "Telegram reminder integration"}.`}
       />
       {isAdmin ? (
         <Tabs value={tab} onValueChange={(v) => set({ tab: v === "pipeline" ? "pipeline" : null })}>
           <TabsList><TabsTrigger value="account">Account</TabsTrigger><TabsTrigger value="pipeline">Pipeline</TabsTrigger></TabsList>
         </Tabs>
       ) : null}
-      {tab === "pipeline" ? <PipelineSettings /> : <AccountSettings />}
+      {tab === "pipeline" ? <PipelineSettings /> : <AccountSettings whatsappNumber={whatsappNumber} />}
     </div>
   );
 }
 
-function AccountSettings() {
+function AccountSettings({ whatsappNumber }: { whatsappNumber: string | null }) {
   const profile = useProfile();
   return (
       <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2 items-start">
@@ -169,27 +171,61 @@ function AccountSettings() {
           <PasswordCard />
         </div>
 
-        {/* Right Column: Telegram, table columns */}
+        {/* Right Column: alerts on the phone (Telegram / WhatsApp), table columns */}
         <div className="space-y-6">
-          <TelegramCard />
+          <PhoneAlerts whatsappNumber={whatsappNumber} />
           {can.useLeads(profile.roles) ? <TableColumnsCard /> : null}
         </div>
       </div>
   );
 }
 
-function TelegramCard() {
+/**
+ * Alerts on the phone: Telegram and (when set up) WhatsApp. One of them is active at a time; the per-type
+ * switches below apply to whichever it is.
+ */
+function PhoneAlerts({ whatsappNumber }: { whatsappNumber: string | null }) {
+  const profile = useProfile();
+  const [tgLinking, setTgLinking] = useState(false);
+  const [waLinking, setWaLinking] = useState(false);
+  // Neither connection is published over Realtime; poll briefly while a link is outstanding.
+  const telegram = useLiveQuery({ queryKey: "telegram-status", fetcher: fetchTelegramStatus, pollMs: tgLinking ? 4000 : 60_000 });
+  const channels = useLiveQuery({ queryKey: `notify-channels:${profile.id}`, fetcher: fetchNotifyChannels, pollMs: waLinking ? 3000 : 60_000 });
+  const tgConnected = telegram.data?.status === "connected";
+  const waConnected = channels.data?.whatsapp?.status === "connected";
+  const active = channels.data?.active ?? "telegram";
+  // Linking either one makes it the active channel: read the other side again when a connection changes.
+  const refetchChannels = channels.refetch;
+  const tgConnectedAt = telegram.data?.connected_at ?? null;
+  useEffect(() => { void refetchChannels(); }, [tgConnectedAt, refetchChannels]);
+  const refetchTelegram = telegram.refetch;
+  const waConnectedAt = channels.data?.whatsapp?.connected_at ?? null;
+  useEffect(() => { void refetchTelegram(); }, [waConnectedAt, refetchTelegram]);
+
+  const activeReady = active === "whatsapp" ? waConnected : tgConnected;
+  return (
+    <>
+      {whatsappNumber && tgConnected && waConnected ? <ChannelPicker active={active} onChanged={() => { void channels.refetch(); }} /> : null}
+      <TelegramCard status={telegram} active={active === "telegram" || !whatsappNumber} onLinking={setTgLinking} />
+      {whatsappNumber ? <WhatsAppCard status={channels} businessNumber={whatsappNumber} onLinking={setWaLinking} /> : null}
+      <NotificationsCard connected={activeReady} channel={active === "whatsapp" && whatsappNumber ? "WhatsApp" : "Telegram"} />
+    </>
+  );
+}
+
+type TelegramStatus = { data: Awaited<ReturnType<typeof fetchTelegramStatus>> | undefined; isInitialLoading: boolean; refetch: () => unknown };
+
+function TelegramCard({ status, active, onLinking }: { status: TelegramStatus; active: boolean; onLinking: (pending: boolean) => void }) {
   const [pending, start] = useTransition();
   const [testing, startTest] = useTransition();
   const isMobile = useIsMobile();
   const [link, setLink] = useState<{ url: string; previousConnectedAt: string | null } | null>(null);
-  // Telegram connection is not published over Realtime; poll briefly while a link is outstanding.
-  const status = useLiveQuery({ queryKey: "telegram-status", fetcher: fetchTelegramStatus, pollMs: link ? 4000 : 60_000 });
   const conn = status.data;
   const connected = conn?.status === "connected";
   // The link is done once the connection changes after it was created (also covers Reconnect).
   const linkUsed = !!link && connected && conn?.connected_at !== link.previousConnectedAt;
   const pendingLink = link && !linkUsed ? link.url : null;
+  useEffect(() => onLinking(!!pendingLink), [pendingLink, onLinking]);
 
   return (
     <>
@@ -231,7 +267,7 @@ function TelegramCard() {
                 {pending ? <Loader2 className="animate-spin" /> : <Send />}
                 {connected ? "Reconnect Telegram" : "Connect Telegram"}
               </Button>
-              {connected ? (
+              {connected && active ? (
                 <Button
                   variant="outline"
                   disabled={testing}
@@ -284,7 +320,6 @@ function TelegramCard() {
         )}
       </CardContent>
     </Card>
-    <NotificationsCard connected={connected} />
     </>
   );
 }

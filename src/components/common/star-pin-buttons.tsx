@@ -9,7 +9,7 @@ import type { ActionResult } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
 /** Max pins per list; the database enforces the same limit. */
-export const MAX_PINS = 10;
+export const MAX_PINS = 50;
 
 type ToggleAction = (input: { id: string; on: boolean }) => Promise<ActionResult<unknown>>;
 

@@ -35,7 +35,9 @@ export function unwrapStarredPage<T>(data: Json | null, page: number, pageSize: 
 
 export type LeadQuery = {
   /** Pipeline stage id. */
-  q: string; stage: string | null; niche: string | null; owner: string | null; temperature: LeadTemperature | null;
+  q: string; stage: string | null; niche: string | null;
+  /** A lead source id, or "facebook". */
+  source: string | null; owner: string | null; temperature: LeadTemperature | null;
   from: string | null; to: string | null; overdue: boolean; archived: boolean; starred: boolean;
   /** Admin only, Starred tab: whose stars and pins to show (null = mine). */
   by: string | null;
@@ -52,6 +54,7 @@ export function parseLeadQuery(params: Params, isAdmin: boolean): LeadQuery {
     q: cleanSearch(params.get("q")),
     stage: UUID_RE.test(stage ?? "") ? stage : null,
     niche: UUID_RE.test(params.get("niche") ?? "") ? params.get("niche") : null,
+    source: params.get("source") === "facebook" || UUID_RE.test(params.get("source") ?? "") ? params.get("source") : null,
     owner: isAdmin && UUID_RE.test(params.get("owner") ?? "") ? params.get("owner") : null,
     temperature: LEAD_TEMPERATURES.includes(temp as LeadTemperature) ? (temp as LeadTemperature) : null,
     ...dayRange(params),
@@ -85,6 +88,7 @@ export function leadListArgs(p: LeadQuery) {
     p_starred_only: p.starred,
     p_temperature: p.temperature ?? undefined,
     p_starred_by: p.by ?? undefined,
+    p_source: p.source ?? undefined,
   };
 }
 

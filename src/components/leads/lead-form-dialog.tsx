@@ -32,6 +32,8 @@ const formSchema = z
     phone: z.string().trim().min(1, "Phone is required").refine((v) => normalizePhone(v) !== null, "Enter a valid phone number (use +code for other countries)"),
     email: z.union([z.literal(""), z.email("Enter a valid email")]),
     niche: z.custom<NicheValue>((v) => v !== null && v !== undefined, "Choose or create a niche"),
+    /** Optional: a saved source, a new one, or none. */
+    source: z.custom<NicheValue>(),
     /** "" = the company's first stage. */
     stageId: z.string(),
     ownerId: z.string().nullable(),
@@ -44,7 +46,9 @@ const formSchema = z
 
 type FormValues = z.infer<typeof formSchema>;
 
-export type EditableLead = { id: string; version: number; name: string; company_name: string | null; phone: string; email: string | null; niche: NicheOption };
+export type EditableLead = {
+  id: string; version: number; name: string; company_name: string | null; phone: string; email: string | null; niche: NicheOption; source: NicheOption | null;
+};
 
 export function LeadFormDialog({
   open, onOpenChange, initialNiches, lead, latestVersion, onSaved,
@@ -70,6 +74,7 @@ export function LeadFormDialog({
     phone: lead?.phone ?? "",
     email: lead?.email ?? "",
     niche: lead ? { id: lead.niche.id, label: lead.niche.name } : null,
+    source: lead?.source ? { id: lead.source.id, label: lead.source.name } : null,
     stageId: "",
     ownerId: null,
     note: "",
@@ -130,12 +135,13 @@ export function LeadFormDialog({
   const submit = (values: FormValues, allowDuplicate = false) =>
     start(async () => {
       const niche = values.niche!.id ? { id: values.niche!.id } : { newName: values.niche!.newName };
+      const source = values.source ? (values.source.id ? { id: values.source.id } : { newName: values.source.newName }) : null;
       const result = isEdit
         ? await updateLead({
-            id: lead!.id, version: lead!.version, name: values.name, companyName: values.companyName, phone: values.phone, email: values.email, niche, allowDuplicate,
+            id: lead!.id, version: lead!.version, name: values.name, companyName: values.companyName, phone: values.phone, email: values.email, niche, source, allowDuplicate,
           })
         : await createLead({
-            name: values.name, companyName: values.companyName, phone: values.phone, email: values.email, niche, stageId: values.stageId || undefined,
+            name: values.name, companyName: values.companyName, phone: values.phone, email: values.email, niche, source, stageId: values.stageId || undefined,
             ownerId: values.ownerId ?? undefined, note: values.note,
             followUpAt: values.scheduleFollowUp ? istToUtcIso(values.followUp.date, values.followUp.time) : undefined,
             followUpTask: values.scheduleFollowUp ? values.followUpTask : undefined,
@@ -207,16 +213,29 @@ export function LeadFormDialog({
                 {phoneWarning.visibleLeadId ? <> — <Link className="underline" href={`/leads/${phoneWarning.visibleLeadId}`}>open it</Link></> : " (owned by another user)"}.
               </p>
             ) : null}
-            <Field data-invalid={!!errors.niche}>
-              <FieldLabel htmlFor="lead-niche">Niche</FieldLabel>
-              <Controller
-                control={control}
-                name="niche"
-                render={({ field }) => (
-                  <NicheCombobox id="lead-niche" value={field.value} onChange={field.onChange} initialOptions={initialNiches} invalid={!!errors.niche} />
-                )}
-              />
-            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field data-invalid={!!errors.niche}>
+                <FieldLabel htmlFor="lead-niche">Niche</FieldLabel>
+                <Controller
+                  control={control}
+                  name="niche"
+                  render={({ field }) => (
+                    <NicheCombobox id="lead-niche" value={field.value} onChange={field.onChange} initialOptions={initialNiches} invalid={!!errors.niche} />
+                  )}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="lead-source">Source <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
+                <Controller
+                  control={control}
+                  name="source"
+                  render={({ field }) => (
+                    <NicheCombobox id="lead-source" kind="source" clearable value={field.value ?? null} onChange={field.onChange} initialOptions={[]}
+                      placeholder="e.g. Website, Referral" />
+                  )}
+                />
+              </Field>
+            </div>
             {!isEdit ? (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">

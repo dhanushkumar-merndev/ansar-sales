@@ -45,7 +45,7 @@ import { LEAD_TEMPERATURES, SEARCH_DEBOUNCE_MS, TEMPERATURE_LABELS } from "@/lib
 import { rememberLeadsList } from "@/lib/leads-return";
 import { lastPage } from "@/lib/pagination";
 import { leadsQueryKey, parseLeadQuery, type Initial, type StarredPageResult } from "@/lib/list-queries";
-import { fetchLeads, fetchStaff, type LeadQuery } from "@/lib/queries";
+import { fetchLeads, fetchSourceOptions, fetchStaff, type LeadQuery } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/time";
 import type { LeadListItem, NicheOption } from "@/lib/types";
@@ -83,6 +83,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
   const staff = useLiveQuery({ queryKey: "staff", fetcher: fetchStaff, tables: ["profiles"], pollMs: 0, enabled: viewingOther });
   // Sl No: the lead's position in this filtered, sorted list; double-click two of them for a range summary.
   const sl = useSlRange(query);
+  const sources = useLiveQuery({ queryKey: "lead-sources", fetcher: fetchSourceOptions, tables: ["lead_sources"], pollMs: 0, keep: true });
   const slOf = (index: number) => (query.page - 1) * query.pageSize + index + 1;
   const otherName = viewingOther ? (staff.data?.find((s) => s.id === query.by)?.display_name ?? "This person") : "";
 
@@ -187,6 +188,11 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
         ),
       },
       { id: "niche", header: "Niche", cell: ({ row }) => <span className="text-sm">{row.original.niche.name}</span> },
+      {
+        id: "source",
+        header: "Source",
+        cell: ({ row: { original: l } }) => <span className="text-sm">{l.source_name ?? (l.source === "facebook" ? "Facebook" : <span className="text-muted-foreground">—</span>)}</span>,
+      },
     ];
     if (isAdmin) cols.push({ id: "owner", header: "Owner", cell: ({ row }) => <span className="text-sm">{row.original.owner.display_name}</span> });
     cols.push(
@@ -234,10 +240,10 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
     state: { columnVisibility: { ...Object.fromEntries([...hidden].map((id) => [id, false])), actions: !ACTION_BUTTONS.every((b) => hidden.has(b)) } },
   });
 
-  const activeFilters = [query.stage, query.temperature, query.niche, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
+  const activeFilters = [query.stage, query.temperature, query.niche, query.source, query.owner, query.from, query.overdue || null, query.archived || null].filter(Boolean).length;
   const clearAll = () => {
     setSearchInput("");
-    set({ q: null, stage: null, temp: null, niche: null, owner: null, from: null, to: null, overdue: null, archived: null });
+    set({ q: null, stage: null, temp: null, niche: null, source: null, owner: null, from: null, to: null, overdue: null, archived: null });
   };
   const fetching = isFetching && !isInitialLoading;
 
@@ -277,6 +283,17 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
         placeholder="All niches"
         className="lg:w-[180px]"
       />
+      <Select value={query.source ?? "__all"} onValueChange={(v) => set({ source: v === "__all" ? null : v })}>
+        <SelectTrigger className="w-full lg:w-[160px]" aria-label="Source"><SelectValue placeholder="All sources" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all">All sources</SelectItem>
+          <SelectItem value="facebook">Facebook</SelectItem>
+          {(sources.data ?? []).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+          {query.source && query.source !== "facebook" && sources.data && !sources.data.some((s) => s.id === query.source) ? (
+            <SelectItem value={query.source}>Selected source</SelectItem>
+          ) : null}
+        </SelectContent>
+      </Select>
       {isAdmin ? <StaffSelect value={query.owner} onChange={(v) => set({ owner: v })} allowAny className="w-full lg:w-[170px]" /> : null}
       {/* On desktop the date picker sits in the page header. */}
       <div className="lg:hidden">{datePicker}</div>
@@ -383,7 +400,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
         viewingOther ? (
           <EmptyState title="Nothing starred or pinned" description={`${otherName} hasn't starred or pinned any leads.`} />
         ) : (
-          <EmptyState title="No starred leads" description="Tap the star on any lead to keep it here. Pin a lead to keep it on top of every list (up to 10)." />
+          <EmptyState title="No starred leads" description="Tap the star on any lead to keep it here. Pin a lead to keep it on top of every list (up to 50)." />
         )
       ) : data && data.total === 0 ? (
         <EmptyState
@@ -427,6 +444,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
                   </div>
                   <div className={cn("mt-2 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground", "pr-[4.5rem]")}>
                     {hidden.has("niche") ? null : <span>{l.niche.name}</span>}
+                    {hidden.has("source") ? null : (l.source_name || l.source === "facebook") ? <span>{l.source_name ?? "Facebook"}</span> : null}
                     {isAdmin && !hidden.has("owner") ? <span>{l.owner.display_name}</span> : null}
                     {l.next_follow_up_at && !hidden.has("next") ? (
                       <span className={cn(l.overdue && "font-medium text-red-700")}>

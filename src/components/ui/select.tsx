@@ -6,9 +6,22 @@ import { Select as SelectPrimitive } from "radix-ui"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
 function Select({
+  value,
+  onValueChange,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  // Next keeps visited pages alive but hidden (React <Activity>). While hidden, Radix loses its trigger and
+  // renders a hidden native <select>; when the page shows again, that select fires a "change" with "" (or the
+  // unchanged value). That reset the Leads page size to 50 on coming back from a lead. Radix never allows ""
+  // as an item value and a real pick always differs from the current value, so those calls are dropped.
+  const handleChange = React.useCallback(
+    (next: string) => {
+      if (next === "" || (value !== undefined && next === value)) return
+      onValueChange?.(next)
+    },
+    [value, onValueChange]
+  )
+  return <SelectPrimitive.Root data-slot="select" value={value} onValueChange={handleChange} {...props} />
 }
 
 function SelectGroup({

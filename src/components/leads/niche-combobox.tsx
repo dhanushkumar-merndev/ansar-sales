@@ -9,38 +9,47 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
-import { searchNiches } from "@/lib/queries";
+import { searchNiches, searchSources } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
 import type { NicheOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export type NicheValue = { id?: string; newName?: string; label: string } | null;
 
+/** The same picker serves niches and lead sources (both: a saved option or a new name, created on save). */
+const KINDS = {
+  niche: { search: searchNiches, table: "niches", noun: "niche", plural: "niches", any: "Any niche", max: 60, placeholder: "Select niche" },
+  source: { search: searchSources, table: "lead_sources", noun: "source", plural: "sources", any: "No source", max: 40, placeholder: "Select source" },
+} as const;
+
 /**
  * Searchable niche picker with a "Create" option. A new niche is only persisted
  * when the lead is saved (the server upserts it by normalized name).
  */
 export function NicheCombobox({
-  value, onChange, initialOptions, allowCreate = true, placeholder = "Select niche", id, invalid, className,
+  value, onChange, initialOptions, allowCreate = true, placeholder, id, invalid, className, kind = "niche", clearable,
 }: {
   value: NicheValue; onChange: (v: NicheValue) => void; initialOptions: NicheOption[]; allowCreate?: boolean;
-  placeholder?: string; id?: string; invalid?: boolean; className?: string;
+  placeholder?: string; id?: string; invalid?: boolean; className?: string; kind?: keyof typeof KINDS;
+  /** Offer an option that clears the choice (always on when creating isn't allowed, i.e. as a filter). */
+  clearable?: boolean;
 }) {
+  const k = KINDS[kind];
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const term = useDebouncedValue(cleanSearch(input), SEARCH_DEBOUNCE_MS);
   const typing = cleanSearch(input) !== term;
 
   const { data, isFetching, error } = useLiveQuery({
-    queryKey: `niches:${term}`,
-    fetcher: (signal) => searchNiches(term, signal),
-    tables: ["niches"],
+    queryKey: `${k.plural}:${term}`,
+    fetcher: (signal) => k.search(term, signal),
+    tables: [k.table],
     enabled: open,
     pollMs: 0,
   });
   useEffect(() => {
-    if (error) toast.error(error, { id: "niche-search-error" });
-  }, [error]);
+    if (error) toast.error(error, { id: `${kind}-search-error` });
+  }, [error, kind]);
 
   const options = useMemo(() => {
     const list = data?.options ?? (term ? [] : initialOptions.slice(0, 20));
@@ -67,7 +76,7 @@ export function NicheCombobox({
           className={cn("w-full justify-between font-normal", !value && "text-muted-foreground", className)}
         >
           <span className="truncate">
-            {value ? value.label : placeholder}
+            {value ? value.label : placeholder ?? k.placeholder}
             {value?.newName ? <span className="ml-1 text-xs text-muted-foreground">(new)</span> : null}
           </span>
           <ChevronsUpDown className="size-4 opacity-50" />
@@ -75,19 +84,19 @@ export function NicheCombobox({
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) min-w-64 p-0" align="start">
         <Command shouldFilter={false}>
-          <CommandInput placeholder="Search niches…" value={input} onValueChange={setInput} maxLength={60} />
+          <CommandInput placeholder={`Search ${k.plural}…`} value={input} onValueChange={setInput} maxLength={k.max} />
           <CommandList>
             {(typing || isFetching) && (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Searching…</div>
             )}
-            {!typing && !isFetching && options.length === 0 && !showCreate ? <CommandEmpty>No niches found.</CommandEmpty> : null}
+            {!typing && !isFetching && options.length === 0 && !showCreate ? <CommandEmpty>No {k.plural} found.</CommandEmpty> : null}
             {exact && (exact.archived_at || exact.merged_into_id) && !options.some((o) => o.id === exact.id) ? (
-              <div className="px-3 py-2 text-xs text-muted-foreground">“{exact.name}” is archived. Choose another niche.</div>
+              <div className="px-3 py-2 text-xs text-muted-foreground">“{exact.name}” is archived. Choose another {k.noun}.</div>
             ) : null}
             <CommandGroup>
-              {!allowCreate && value ? (
+              {(!allowCreate || clearable) && value ? (
                 <CommandItem value="__clear" onSelect={() => { onChange(null); setOpen(false); }}>
-                  <span className="text-muted-foreground">Any niche</span>
+                  <span className="text-muted-foreground">{k.any}</span>
                 </CommandItem>
               ) : null}
               {options.map((o) => (

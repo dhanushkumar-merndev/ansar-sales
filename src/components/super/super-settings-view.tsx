@@ -12,6 +12,7 @@ import { UsageView } from "@/components/settings/usage-view";
 import { AdsTab } from "@/components/super/ads-tab";
 import { FinanceMergeTab } from "@/components/super/finance-merge-tab";
 import { SalesTeamTab } from "@/components/super/sales-team-tab";
+import { WhatsAppTab } from "@/components/super/whatsapp-tab";
 import { MetaLeadsTab } from "@/components/automation/facebook-leads";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ import { formatDate } from "@/lib/time";
 import { switchCompany, type CompanySummary } from "@/server/actions/companies";
 import { setCompanyFeature } from "@/server/actions/features";
 
-const TABS = { companies: "Companies", sales: "Sales team", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", usage: "Usage" } as const;
+const TABS = { companies: "Companies", sales: "Sales team", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", whatsapp: "WhatsApp", usage: "Usage" } as const;
 type Tab = keyof typeof TABS;
 
 const DESCRIPTIONS: Record<Tab, string> = {
@@ -37,6 +38,7 @@ const DESCRIPTIONS: Record<Tab, string> = {
   books: "Let several companies share one finance account, and choose which of them may edit it.",
   facebook: "Each company's Facebook Lead Ads connection, and who receives its new leads.",
   ads: "Ads managers and the companies they handle, and ad accounts shared between companies.",
+  whatsapp: "WhatsApp alerts for everyone: the business number, the webhook for Meta, and whether messages get through.",
   usage: "How much of the Supabase plan all companies use together, and what you can clean up.",
 };
 
@@ -52,7 +54,7 @@ export function SuperSettingsView() {
           {(Object.keys(TABS) as Tab[]).map((t) => <TabsTrigger key={t} value={t}>{TABS[t]}</TabsTrigger>)}
         </TabsList>
       </Tabs>
-      {tab === "usage" ? <UsageView /> : tab === "sales" ? <SalesTeamTab /> : tab === "books" ? <FinanceMergeTab /> : tab === "facebook" ? <MetaLeadsTab /> : tab === "ads" ? <AdsTab /> : <CompaniesTab />}
+      {tab === "usage" ? <UsageView /> : tab === "sales" ? <SalesTeamTab /> : tab === "books" ? <FinanceMergeTab /> : tab === "facebook" ? <MetaLeadsTab /> : tab === "ads" ? <AdsTab /> : tab === "whatsapp" ? <WhatsAppTab /> : <CompaniesTab />}
     </div>
   );
 }

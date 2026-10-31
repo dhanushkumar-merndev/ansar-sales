@@ -6,7 +6,7 @@ import { formatDateTime } from "@/lib/time";
 export type ExportedLead = {
   id: string; name: string; company_name: string | null; phone: string; email: string | null;
   niche: string | null; stage: string | null; status: "open" | "won" | "lost"; owner: string | null;
-  source: "manual" | "facebook" | null; created_at: string; next_follow_up_at: string | null;
+  source: "manual" | "facebook" | null; source_name?: string | null; created_at: string; next_follow_up_at: string | null;
 };
 
 const STATUS = { open: "Open", won: "Won", lost: "Lost" } as const;
@@ -21,7 +21,8 @@ const COLUMNS: { header: string; width: number; value: (l: ExportedLead) => stri
   { header: "Stage", width: 16, value: (l) => l.stage ?? "" },
   { header: "Result", width: 10, value: (l) => STATUS[l.status] ?? l.status },
   { header: "Owner", width: 18, value: (l) => l.owner ?? "" },
-  { header: "Source", width: 16, value: (l) => (l.source ? SOURCE[l.source] ?? l.source : "") },
+  // The picked source (Website, Referral, …); otherwise how the lead came in.
+  { header: "Source", width: 16, value: (l) => l.source_name || (l.source ? SOURCE[l.source] ?? l.source : "") },
   { header: "Added (IST)", width: 22, value: (l) => formatDateTime(l.created_at) },
   { header: "Next follow-up (IST)", width: 22, value: (l) => (l.next_follow_up_at ? formatDateTime(l.next_follow_up_at) : "") },
 ];

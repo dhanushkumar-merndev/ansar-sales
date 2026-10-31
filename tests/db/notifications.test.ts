@@ -97,11 +97,11 @@ describe("preferences and delivery-time checks", () => {
     await expect(asUser(db, admin, (tx) => tx.query("select * from public.claim_due_notifications(10, 60)"))).rejects.toThrow(/permission denied/);
   });
 
-  it("test message requires a connected Telegram", async () => {
+  it("test message requires a connected channel (Telegram or WhatsApp)", async () => {
     await asUser(db, salesA, (tx) => tx.query("select public.send_test_notification()"));
     expect(await recipients("kind = 'test' and recipient_id = $1", [salesA])).toEqual(new Set([salesA]));
     await expect(asUser(db, salesA, (tx) => tx.query("select public.send_test_notification()"))).rejects.toThrow(/test_too_soon/);
-    await expect(asUser(db, offline, (tx) => tx.query("select public.send_test_notification()"))).rejects.toThrow(/telegram_not_connected/);
+    await expect(asUser(db, offline, (tx) => tx.query("select public.send_test_notification()"))).rejects.toThrow(/channel_not_connected/);
   });
 });
 

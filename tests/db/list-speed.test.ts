@@ -37,8 +37,12 @@ type Result = { items?: { id: string }[]; total?: number };
 // totals must match, and the rows when they all fit on one page, in any order (stars.test.ts checks the new order).
 const byId = (r: Result) => ({ ...r, items: r.items && [...r.items].sort((a, b) => a.id.localeCompare(b.id)) });
 
+// 20261008005700 added source_name to each lead; the old version doesn't have it.
+const withoutSourceName = (r: Result): Result =>
+  r.items ? { ...r, items: r.items.map((i) => { const rest = { ...(i as Record<string, unknown>) }; delete rest.source_name; return rest as { id: string }; }) } : r;
+
 async function same(fn: string, userId: string, args: Record<string, unknown>) {
-  const [before, after] = [await call(`${fn}_before`, userId, args) as Result, await call(fn, userId, args) as Result];
+  const [before, after] = [await call(`${fn}_before`, userId, args) as Result, withoutSourceName(await call(fn, userId, args) as Result)];
   const newFirst = fn === "list_leads" && (args.p_sort ?? "created_at") === "created_at" && (args.p_dir ?? "desc") === "desc";
   if (newFirst) {
     expect(after.total, `${fn} ${JSON.stringify(args)}`).toBe(before.total);

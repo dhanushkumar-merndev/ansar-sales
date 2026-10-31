@@ -76,8 +76,21 @@ describe("checking rows", () => {
     expect(out[3].errors[0]).toMatch(/isn't an active salesperson/);
   });
 
-  it("asks for a niche when there is no default", () => {
-    expect(checkLeadRows([row(2, { name: "A", phone: "9876543210" })], ctx({ defaultNiche: null }))[0].errors[0]).toMatch(/Niche is missing/);
+  it("reads an optional Source and refuses one longer than 40 characters", () => {
+    const [withSource, without, tooLong] = checkLeadRows([
+      row(2, { name: "A", phone: "9876543210", source: "  Insta   gram " }),
+      row(3, { name: "B", phone: "9876543211" }),
+      row(4, { name: "C", phone: "9876543212", source: "x".repeat(41) }),
+    ], ctx({}));
+    expect(withSource.lead?.source).toEqual({ newName: "Insta gram" });
+    expect(without.lead?.source).toBeUndefined();
+    expect(tooLong.errors).toContain("Source is longer than 40 characters");
+  });
+
+  it("puts rows without a niche in \"General\" when no default is picked", () => {
+    const [r] = checkLeadRows([row(2, { name: "A", phone: "9876543210" })], ctx({ defaultNiche: null }));
+    expect(r.errors).toEqual([]);
+    expect(r.lead?.niche).toEqual({ newName: "General" });
   });
 
   it("writes rows not imported with their reason", async () => {

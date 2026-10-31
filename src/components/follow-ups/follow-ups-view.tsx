@@ -90,7 +90,7 @@ export function FollowUpsView({ initial }: { initial?: Initial<StarredPageResult
       {error && !data ? <ErrorState message={error} onRetry={refetch} /> : isInitialLoading ? <ListSkeleton /> : !data?.total ? (
         <EmptyState
           title={query.view === "overdue" ? "Nothing overdue" : query.view === "starred" && !query.q ? "No starred follow-ups" : "No follow-ups here"}
-          description={query.view === "today" ? "No tasks due today." : query.view === "starred" && !query.q ? "Tap the star on any task to keep it here. Pin up to 10 to keep them on top." : undefined}
+          description={query.view === "today" ? "No tasks due today." : query.view === "starred" && !query.q ? "Tap the star on any task to keep it here. Pin up to 50 to keep them on top." : undefined}
         />
       ) : (
         <div className={cn(isStale && "opacity-60")}>

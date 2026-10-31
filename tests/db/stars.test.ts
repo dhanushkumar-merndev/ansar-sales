@@ -89,15 +89,15 @@ describe("lead stars", () => {
     expect((await list("Echo")).items.map((i) => i.id)).toEqual([ids.Echo]);
   });
 
-  it("allows at most 10 pins; unpinning frees a slot", async () => {
+  it("allows at most 50 pins; unpinning frees a slot", async () => {
     const user = await createUser(db, "sales.limit", "sales", "Limit");
     const ids: string[] = [];
-    for (let i = 0; i < 11; i++) ids.push(await createLead(db, user, { name: `Limit ${i}` }));
-    for (const id of ids.slice(0, 10)) await pin(user, id);
-    await expect(pin(user, ids[10])).rejects.toThrow(/pin_limit/);
+    for (let i = 0; i < 51; i++) ids.push(await createLead(db, user, { name: `Limit ${i}` }));
+    for (const id of ids.slice(0, 50)) await pin(user, id);
+    await expect(pin(user, ids[50])).rejects.toThrow(/pin_limit/);
     expect((await pin(user, ids[0])).pinned_at).not.toBeNull(); // re-pinning an existing pin is fine
     await pin(user, ids[0], false);
-    expect((await pin(user, ids[10])).pinned_at).not.toBeNull();
+    expect((await pin(user, ids[50])).pinned_at).not.toBeNull();
     // Direct table writes hit the same limit (a starred, unpinned row).
     await star(user, ids[0]);
     await expect(asUser(db, user, (tx) => tx.query("update public.lead_stars set pinned_at = now() where lead_id = $1", [ids[0]]))).rejects.toThrow(/pin_limit/);

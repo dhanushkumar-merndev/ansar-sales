@@ -33,12 +33,19 @@ export const nicheChoiceSchema = z
   .object({ id: z.uuid().optional(), newName: optionalText(60) })
   .refine((v) => Boolean(v.id || v.newName), { message: "Choose or create a niche" });
 
+/** Optional lead source: a saved one, a new name, or none. */
+export const sourceChoiceSchema = z
+  .object({ id: z.uuid().optional(), newName: optionalText(40) })
+  .nullish()
+  .transform((v) => (v && (v.id || v.newName) ? v : null));
+
 export const leadCreateSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(120),
   companyName: optionalText(120),
   phone: phoneSchema,
   email: z.union([z.literal(""), z.email("Enter a valid email").max(254)]).optional().transform((v) => v || undefined),
   niche: nicheChoiceSchema,
+  source: sourceChoiceSchema,
   /** Pipeline stage; the database uses the company's first stage when omitted. */
   stageId: z.uuid().optional(),
   ownerId: z.uuid().optional(),
@@ -50,7 +57,7 @@ export const leadCreateSchema = z.object({
 
 /** Excel import: up to 500 leads, each checked like one added by hand (no follow-up). */
 export const importLeadsSchema = z.object({
-  rows: z.array(leadCreateSchema.pick({ name: true, companyName: true, phone: true, email: true, niche: true, stageId: true, ownerId: true, note: true }))
+  rows: z.array(leadCreateSchema.pick({ name: true, companyName: true, phone: true, email: true, niche: true, source: true, stageId: true, ownerId: true, note: true }))
     .min(1, "The file has no leads").max(500, "At most 500 leads at once"),
   allowDuplicates: z.boolean().default(false),
 });
@@ -63,6 +70,7 @@ export const leadUpdateSchema = z.object({
   phone: phoneSchema,
   email: z.union([z.literal(""), z.email("Enter a valid email").max(254)]).optional().transform((v) => v || undefined),
   niche: nicheChoiceSchema,
+  source: sourceChoiceSchema,
   allowDuplicate: z.boolean().default(false),
 });
 

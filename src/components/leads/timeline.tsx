@@ -42,7 +42,7 @@ function describe(a: Activity, callAction?: React.ReactNode): { title: string; d
       if (m.source === "facebook") {
         return { title: `came in from a Facebook lead form${m.form ? ` (${m.form})` : ""}`, detail: [m.owner && `Assigned to ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
       }
-      return { title: "created the lead", detail: [m.niche && `Niche: ${m.niche}`, m.owner && `Owner: ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
+      return { title: "created the lead", detail: [m.niche && `Niche: ${m.niche}`, m.source && `Source: ${m.source}`, m.owner && `Owner: ${m.owner}`, `Stage: ${status(m.status)}`].filter(Boolean).join(" · ") };
     case "note": {
       // The answers a Facebook lead gave on the form, written by the system when the lead came in.
       const answers = a.actor ? null : parseFormAnswers(a.body);

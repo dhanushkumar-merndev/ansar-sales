@@ -15,7 +15,7 @@ import { setNotificationPref } from "@/server/actions/telegram";
 type Channel = "app" | "telegram";
 
 /** Per-type switches for the signed-in user's roles: in the app (the bell) and on Telegram, separately. */
-export function NotificationsCard({ connected }: { connected: boolean }) {
+export function NotificationsCard({ connected, channel = "Telegram" }: { connected: boolean; channel?: "Telegram" | "WhatsApp" }) {
   const profile = useProfile();
   const kinds = notificationKindsFor(profile.roles, profile.features);
   const settings = useLiveQuery({ queryKey: `notification-settings:${profile.id}`, fetcher: fetchNotificationSettings });
@@ -41,8 +41,8 @@ export function NotificationsCard({ connected }: { connected: boolean }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base"><BellRing className="size-4" /> Notifications</CardTitle>
         <CardDescription>
-          Choose what reaches you in the CRM (the bell at the top) and on Telegram.
-          {connected ? " Each Telegram message has a button to open it in the CRM." : " Connect Telegram above to also get them there."}
+          Choose what reaches you in the CRM (the bell at the top) and on {channel}.
+          {connected ? ` Each ${channel} message has a button to open it in the CRM.` : ` Connect ${channel} above to also get them there.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
@@ -51,7 +51,7 @@ export function NotificationsCard({ connected }: { connected: boolean }) {
             <div className="flex items-center gap-3 border-b px-3 py-2 text-xs font-medium text-muted-foreground">
               <span className="flex-1">Notification</span>
               <span className="w-16 text-center">In app</span>
-              <span className="w-16 text-center">Telegram</span>
+              <span className="w-16 text-center">{channel}</span>
             </div>
             <ul className="divide-y">
               {kinds.map((k) => (
@@ -64,9 +64,9 @@ export function NotificationsCard({ connected }: { connected: boolean }) {
                     <Checkbox checked={enabled(k.kind, "app")} disabled={saving === key(k.kind, "app")} aria-label={`${k.label} in the app`}
                       onCheckedChange={(c) => void toggle(k.kind, "app", c === true)} />
                   </span>
-                  <span className="flex w-16 justify-center" title={connected ? undefined : "Connect Telegram first"}>
+                  <span className="flex w-16 justify-center" title={connected ? undefined : `Connect ${channel} first`}>
                     <Checkbox checked={connected && enabled(k.kind, "telegram")} disabled={!connected || saving === key(k.kind, "telegram")}
-                      aria-label={`${k.label} on Telegram`} onCheckedChange={(c) => void toggle(k.kind, "telegram", c === true)} />
+                      aria-label={`${k.label} on ${channel}`} onCheckedChange={(c) => void toggle(k.kind, "telegram", c === true)} />
                   </span>
                 </li>
               ))}

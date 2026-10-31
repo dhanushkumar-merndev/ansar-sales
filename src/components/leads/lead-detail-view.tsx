@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, ArrowDownUp, ArrowLeft, CalendarPlus, Check, Loader2, Mail, MoreHorizontal, Pencil, Phone, Send, StickyNote, UserRoundCog, X } from "lucide-react";
 import { toast } from "sonner";
 import { LeadAdsClientButton } from "@/components/ads/lead-ads-client-button";
@@ -32,7 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { forLead, useLiveQuery } from "@/hooks/use-live-query";
-import { useLeadsReturnHref } from "@/lib/leads-return";
+import { leadsReturnHref, useLeadsReturnHref } from "@/lib/leads-return";
 import { leadFollowUpsKey, leadKey, TIMELINE_PAGE, timelineKey, type LeadDetail, type TimelinePage } from "@/lib/lead-queries";
 import type { Initial } from "@/lib/list-queries";
 import { fetchLead, fetchLeadFollowUps, fetchTimeline, type Activity, type LeadFollowUp } from "@/lib/queries";
@@ -54,6 +55,13 @@ type LeadPageInitial = { lead: Initial<LeadDetail | null>; followUps: Initial<Le
 export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: string; initialNiches: NicheOption[]; initial?: LeadPageInitial }) {
   const profile = useProfile();
   const backHref = useLeadsReturnHref();
+  const router = useRouter();
+  // Read the list address again on click: this page may have been kept from an earlier visit.
+  const goBack = (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    router.push(leadsReturnHref());
+  };
   const isAdmin = profile.role === "admin";
   const [timelineLimit, setTimelineLimit] = useState(TIMELINE_PAGE);
 
@@ -113,7 +121,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
       <EmptyState
         title="Lead not available"
         description="It doesn't exist, was archived, or was reassigned so you no longer have access."
-        action={<Button variant="outline" asChild><Link href={backHref}><ArrowLeft /> Back to leads</Link></Button>}
+        action={<Button variant="outline" asChild><Link href={backHref} onClick={goBack}><ArrowLeft /> Back to leads</Link></Button>}
       />
     );
   }
@@ -124,7 +132,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
   return (
     <>
       <div className="mb-4 flex items-center justify-between gap-2">
-        <Button variant="ghost" size="sm" asChild className="-ml-2"><Link href={backHref}><ArrowLeft /> Leads</Link></Button>
+        <Button variant="ghost" size="sm" asChild className="-ml-2"><Link href={backHref} onClick={goBack}><ArrowLeft /> Leads</Link></Button>
         <FetchingIndicator show={lead.isFetching || followUps.isFetching || timeline.isFetching} />
       </div>
 
@@ -153,6 +161,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
             {l.source === "facebook" ? <SourceBadge meta={l.source_meta} /> : null}
             {l.company_name ? <><span className="text-foreground">{l.company_name}</span><span aria-hidden>·</span></> : null}
             <span>{l.niche.name}</span>
+            {l.lead_source ? <><span aria-hidden>·</span><span>Source: <span className="text-foreground">{l.lead_source.name}</span></span></> : null}
             <span aria-hidden>·</span>
             <span>Owner: <span className="text-foreground">{l.owner.display_name}</span></span>
           </div>
@@ -333,7 +342,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
         open={editOpen}
         onOpenChange={setEditOpen}
         initialNiches={initialNiches}
-        lead={editOpen && editSnapshot ? { id: l.id, version: editSnapshot.version, name: l.name, company_name: l.company_name, phone: l.phone, email: l.email, niche: l.niche } : undefined}
+        lead={editOpen && editSnapshot ? { id: l.id, version: editSnapshot.version, name: l.name, company_name: l.company_name, phone: l.phone, email: l.email, niche: l.niche, source: l.lead_source } : undefined}
         latestVersion={l.version}
         onSaved={refreshAll}
       />

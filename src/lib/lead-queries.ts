@@ -20,6 +20,8 @@ export type LeadDetail = {
   source: "manual" | "facebook"; source_meta: { form_name?: string; ad_name?: string; campaign_name?: string };
   version: number; created_at: string; updated_at: string; archived_at: string | null; owner_id: string;
   niche: NicheOption; owner: { id: string; display_name: string }; creator: { display_name: string } | null;
+  /** The picked source (Website, Referral, …); Facebook leads show their Facebook badge instead. */
+  lead_source: NicheOption | null;
   stars: { starred: boolean; pinned_at: string | null }[];
   /** Projects module: handed to admins, and the project made from it (when visible to this user). */
   handoff_at: string | null; handoff_note: string | null;
@@ -32,6 +34,7 @@ export async function readLead(client: Client, id: string, signal?: AbortSignal)
     .select(
       "id, name, company_name, phone, phone_normalized, email, status, stage_id, temperature, source, source_meta, version, created_at, updated_at, archived_at, owner_id, " +
         "niche:niches!leads_niche_id_fkey(id, name), owner:profiles!leads_owner_id_fkey(id, display_name), creator:profiles!leads_created_by_fkey(display_name), " +
+        "lead_source:lead_sources!leads_source_id_fkey(id, name), " +
         "stars:lead_stars(starred, pinned_at), handoff_at, handoff_note, projects(id, code)", // RLS: only the user's own star; projects they may see
     )
     .eq("id", id);

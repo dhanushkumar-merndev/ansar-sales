@@ -55,6 +55,9 @@ async function fromPages(userId: string, filters: Record<string, unknown>, a: nu
   };
 }
 
+// 20261008005700 added source_name to each lead; 5500's version doesn't have it.
+const withoutSourceName = (p: Page) => ({ ...p, items: p.items.map((i) => { const rest: Item & { source_name?: string } = { ...i }; delete rest.source_name; return rest; }) });
+
 const summary = (userId: string | null, filters: Record<string, unknown>, from: number | null, to: number | null) =>
   call<Summary>("lead_range_summary", userId, { ...filters, p_from: from, p_to: to });
 
@@ -109,13 +112,13 @@ describe("list_leads after the move to lead_list_page", () => {
         for (const dir of ["asc", "desc"]) {
           for (const p_offset of [0, 20, 60]) {
             const args = { p_dir: dir, ...f, p_limit: 20, p_offset };
-            expect(await call("list_leads", user, args), JSON.stringify(args)).toEqual(await call("list_leads_before", user, args));
+            expect(withoutSourceName(await call<Page>("list_leads", user, args)), JSON.stringify(args)).toEqual(await call("list_leads_before", user, args));
           }
         }
       }
     }
     const byA = { p_starred_only: true, p_starred_by: salesA, p_limit: 50 };
-    expect(await call("list_leads", admin, byA)).toEqual(await call("list_leads_before", admin, byA));
+    expect(withoutSourceName(await call<Page>("list_leads", admin, byA))).toEqual(await call("list_leads_before", admin, byA));
   });
 });
 

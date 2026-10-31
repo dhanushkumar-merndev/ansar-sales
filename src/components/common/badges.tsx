@@ -40,6 +40,12 @@ export function DueBadge({ overdue, state }: { overdue: boolean; state?: "pendin
 const REMINDER_TEXT: Record<string, string> = {
   telegram_not_connected: "Telegram not connected",
   telegram_blocked: "Bot blocked in Telegram",
+  whatsapp_not_connected: "WhatsApp not connected",
+  whatsapp_blocked: "WhatsApp can't reach this number",
+  whatsapp_undeliverable: "WhatsApp can't reach this number",
+  whatsapp_window_expired: "WhatsApp was paused for 3 days",
+  whatsapp_token_invalid: "WhatsApp isn't set up correctly (ask the super admin)",
+  whatsapp_not_configured: "WhatsApp isn't set up (ask the super admin)",
   max_attempts_reached: "Gave up after retries",
 };
 
@@ -52,6 +58,9 @@ export function ReminderBadge({ reminder }: { reminder: { state: ReminderState; 
         <BellOff className="size-3" />Reminder failed{reminder.last_error ? `: ${REMINDER_TEXT[reminder.last_error] ?? reminder.last_error}` : ""}
       </span>
     );
+  }
+  if (reminder.state === "pending" && reminder.last_error === "whatsapp_window_closed") {
+    return <span className="inline-flex items-center gap-1 text-xs text-amber-400" title="Send any message to the CRM on WhatsApp to get it"><BellRing className="size-3" />Reminder waiting for WhatsApp</span>;
   }
   if ((reminder.state === "pending" || reminder.state === "processing") && reminder.attempts > 0) {
     return <span className="inline-flex items-center gap-1 text-xs text-amber-400"><BellRing className="size-3" />Retrying reminder ({reminder.attempts})</span>;

@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { normalizePhone } from "@/lib/phone";
 
+/** The niche of rows without one when no default is picked on the import screen (created if missing). */
+export const DEFAULT_IMPORT_NICHE = "General";
+
 /** Most leads one import may hold (the database refuses more). */
 export const MAX_IMPORT_ROWS = 500;
 
-export type ImportField = "name" | "phone" | "email" | "company" | "niche" | "stage" | "owner" | "note";
+export type ImportField = "name" | "phone" | "email" | "company" | "niche" | "source" | "stage" | "owner" | "note";
 
 /** The template's columns, in order. `aliases`: other headings accepted for the same column. */
 export const IMPORT_COLUMNS: { field: ImportField; header: string; width: number; aliases: string[]; adminOnly?: boolean }[] = [
@@ -13,6 +16,7 @@ export const IMPORT_COLUMNS: { field: ImportField; header: string; width: number
   { field: "email", header: "Email", width: 26, aliases: ["e-mail", "email address", "mail"] },
   { field: "company", header: "Company", width: 22, aliases: ["company name", "business", "organisation", "organization"] },
   { field: "niche", header: "Niche", width: 18, aliases: ["category"] },
+  { field: "source", header: "Source", width: 16, aliases: ["lead source", "channel", "came from", "medium"] },
   { field: "stage", header: "Stage", width: 14, aliases: ["status"] },
   { field: "owner", header: "Owner", width: 18, aliases: ["assigned to", "salesperson", "sales person"], adminOnly: true },
   { field: "note", header: "Note", width: 36, aliases: ["notes", "remarks", "remark", "comment", "comments"] },
@@ -85,7 +89,7 @@ export type CheckedRow = {
 /** One lead as sent to the server (re-validated there with `importLeadSchema`). */
 export type ImportLead = {
   name: string; phone: string; email?: string; companyName?: string;
-  niche: { id?: string; newName?: string }; stageId?: string; ownerId?: string; note?: string;
+  niche: { id?: string; newName?: string }; source?: { newName: string }; stageId?: string; ownerId?: string; note?: string;
 };
 
 export type CheckContext = {
@@ -130,8 +134,11 @@ export function checkLeadRows(rows: ParsedRow[], ctx: CheckContext): CheckedRow[
     if (nicheText) {
       if (nicheText.length > 60) errors.push("Niche is longer than 60 characters");
       else niche = { newName: nicheText };
-    } else if (ctx.defaultNiche) niche = ctx.defaultNiche;
-    else errors.push("Niche is missing: fill it in or choose a default niche above");
+    } else niche = ctx.defaultNiche ?? { newName: DEFAULT_IMPORT_NICHE };
+
+    // Source: optional; a name matches a saved source in any case or spacing, a new one is created.
+    const sourceText = values.source?.replace(/\s+/g, " ").trim();
+    if (sourceText && sourceText.length > 40) errors.push("Source is longer than 40 characters");
 
     let stageId: string | undefined;
     if (values.stage) {
@@ -151,7 +158,7 @@ export function checkLeadRows(rows: ParsedRow[], ctx: CheckContext): CheckedRow[
     const lead: ImportLead | null = errors.length || !phone || !niche ? null : {
       name, phone: phone.display, niche,
       ...(email ? { email } : {}), ...(company ? { companyName: company } : {}), ...(note ? { note } : {}),
-      ...(stageId ? { stageId } : {}), ...(ownerId ? { ownerId } : {}),
+      ...(stageId ? { stageId } : {}), ...(ownerId ? { ownerId } : {}), ...(sourceText ? { source: { newName: sourceText } } : {}),
     };
     return { row, values, errors, inCrm: Boolean(phone && ctx.inCrm.has(phone.e164)), lead };
   });
@@ -169,7 +176,7 @@ export async function leadImportTemplate(opts: { stages: string[]; admin: boolea
   ws.getColumn(columns.findIndex((c) => c.field === "phone") + 1).numFmt = "@";
   const example: Record<ImportField, string> = {
     name: "Ravi Kumar", phone: "+91 98765 43210", email: "ravi@example.com", company: "Ravi Builders",
-    niche: "Real estate", stage: opts.stages[0] ?? "", owner: "", note: "Asked for a call back next week",
+    niche: "Real estate", source: "Referral", stage: opts.stages[0] ?? "", owner: "", note: "Asked for a call back next week",
   };
   ws.addRow(columns.map((c) => example[c.field]));
 
@@ -181,7 +188,8 @@ export async function leadImportTemplate(opts: { stages: string[]; admin: boolea
     phone: "Required. Indian numbers can be 10 digits; other countries need +country code. A number already in the CRM is skipped unless you choose to import it anyway.",
     email: "Optional.",
     company: "Optional. The lead's company.",
-    niche: "Optional. Leave empty to use the default niche you pick on the import screen. A new name creates the niche.",
+    niche: "Optional. Leave empty to use the niche picked on the import screen (\"General\" if none). A new name creates the niche.",
+    source: "Optional. Where the lead came from, e.g. Website, Referral, Instagram, Walk-in. A new name is added to the list of sources.",
     stage: `Optional. One of: ${opts.stages.join(", ") || "your pipeline stages"}. Empty means the first stage.`,
     owner: "Optional. The salesperson's or admin's name exactly as shown in Users. Empty means the default owner you pick on the import screen.",
     note: "Optional. Saved as the first note on the lead's timeline.",
@@ -210,6 +218,9 @@ export const IMPORT_ROW_ERRORS: Record<string, string> = {
   duplicate_phone: "Already in the CRM",
   invalid_owner: "The owner can't take leads here",
   niche_not_found: "The niche no longer exists",
+  source_not_found: "The source no longer exists",
+  source_archived: "The source is archived",
+  source_too_long: "Source is longer than 40 characters",
   invalid_stage: "The stage no longer exists",
   forbidden: "You can't add leads",
 };

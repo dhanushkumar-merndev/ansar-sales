@@ -17,7 +17,7 @@ import { useLiveQuery } from "@/hooks/use-live-query";
 import { useShowMore } from "@/hooks/use-show-more";
 import { formatCount } from "@/lib/format";
 import {
-  type CheckedRow, checkLeadRows, IMPORT_ROW_ERRORS, leadImportTemplate, MAX_IMPORT_ROWS, type ParsedRow, parseLeadFile, problemRowsWorkbook,
+  type CheckedRow, checkLeadRows, DEFAULT_IMPORT_NICHE, IMPORT_ROW_ERRORS, leadImportTemplate, MAX_IMPORT_ROWS, type ParsedRow, parseLeadFile, problemRowsWorkbook,
 } from "@/lib/lead-import";
 import { normalizePhone } from "@/lib/phone";
 import { fetchStaff } from "@/lib/queries";
@@ -167,13 +167,15 @@ export function ImportLeadsDialog({ open, onOpenChange, initialNiches, onImporte
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1" onScroll={loaded ? paging.onScroll : undefined}>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor="import-niche">Niche for rows without one</FieldLabel>
-                <NicheCombobox id="import-niche" value={niche} onChange={setNiche} initialOptions={initialNiches} />
+                <FieldLabel htmlFor="import-niche">Niche for rows without one (optional)</FieldLabel>
+                <NicheCombobox id="import-niche" value={niche} onChange={setNiche} initialOptions={initialNiches} placeholder={`${DEFAULT_IMPORT_NICHE} (default)`} />
               </Field>
               {isAdmin ? (
                 <Field>
                   <FieldLabel htmlFor="import-owner">Owner for rows without one</FieldLabel>
-                  <StaffSelect id="import-owner" value={ownerId} onChange={setOwnerId} />
+                  {/* Rows without an Owner go to you; "Me" also shows for a super admin, who isn't in the staff list. */}
+                  <StaffSelect id="import-owner" value={ownerId === me.id ? null : ownerId} onChange={(v) => setOwnerId(v ?? me.id)}
+                    allowAny anyLabel={`Me (${me.display_name})`} />
                 </Field>
               ) : null}
             </div>
@@ -196,7 +198,7 @@ export function ImportLeadsDialog({ open, onOpenChange, initialNiches, onImporte
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm">
                   <span className="text-muted-foreground">
-                    Columns: Name and Phone are required; Email, Company, Niche, Stage{isAdmin ? ", Owner" : ""} and Note are optional.
+                    Columns: Name and Phone are required; Email, Company, Niche, Source, Stage{isAdmin ? ", Owner" : ""} and Note are optional.
                   </span>
                   <Button variant="outline" size="sm" onClick={() => void downloadTemplate()}><Download /> Download template</Button>
                 </div>

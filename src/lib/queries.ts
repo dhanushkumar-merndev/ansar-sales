@@ -99,6 +99,36 @@ export async function searchNiches(term: string, signal: AbortSignal) {
   return { options: list.data as NicheOption[], exact: exact.data as (NicheOption & { archived_at: string | null; merged_into_id: string | null }) | null };
 }
 
+/** Up to 20 saved lead sources matching the term, plus an exact normalized-match check for the create option. */
+export async function searchSources(term: string, signal: AbortSignal) {
+  const norm = cleanSearch(term).toLowerCase();
+  const base = () => sb().from("lead_sources").select("id, name").is("archived_at", null);
+  const listQ = (norm ? base().ilike("normalized_name", `%${escapeLike(norm)}%`) : base())
+    .order("normalized_name")
+    .order("id")
+    .limit(20)
+    .abortSignal(signal);
+  const exactQ = norm
+    ? sb().from("lead_sources").select("id, name, archived_at").eq("normalized_name", norm).abortSignal(signal).maybeSingle()
+    : Promise.resolve({ data: null, error: null });
+  const [list, exact] = await Promise.all([listQ, exactQ]);
+  // Before the database update the table is missing: no saved sources yet.
+  if (list.error?.code === "42P01" || list.error?.code === "PGRST205") return { options: [] as NicheOption[], exact: null };
+  if (list.error) throw list.error;
+  if (exact.error) throw exact.error;
+  const ex = exact.data as (NicheOption & { archived_at: string | null }) | null;
+  return { options: list.data as NicheOption[], exact: ex ? { ...ex, merged_into_id: null } : null };
+}
+
+/** The company's saved sources for the Leads filter (bounded). */
+export async function fetchSourceOptions(signal: AbortSignal): Promise<NicheOption[]> {
+  const { data, error } = await sb().from("lead_sources").select("id, name").is("archived_at", null)
+    .order("normalized_name").order("id").limit(100).abortSignal(signal);
+  if (error?.code === "42P01" || error?.code === "PGRST205") return [];
+  if (error) throw error;
+  return data;
+}
+
 export async function fetchUsers(p: { q: string; role: string | null; inactive: boolean; page: number; pageSize: number }, signal: AbortSignal) {
   const { data, error } = await sb()
     .rpc("admin_list_users", {
@@ -208,6 +238,32 @@ export async function fetchTelegramStatus(signal: AbortSignal) {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+export type NotifyChannels = {
+  active: "telegram" | "whatsapp";
+  whatsapp: null | {
+    status: "connected" | "blocked";
+    /** +91 ••••• 43210 */
+    masked: string;
+    connected_at: string;
+    /** End of the free window, or null when it has closed (alerts wait). */
+    window_until: string | null;
+    held: number;
+    last_error: string | null;
+  };
+  /** The database doesn't have WhatsApp yet (migration 20261008005800). */
+  unavailable?: boolean;
+};
+
+/** The signed-in person's active alert channel and WhatsApp state (number masked by the database). */
+export async function fetchNotifyChannels(signal: AbortSignal): Promise<NotifyChannels> {
+  const { data, error } = await sb().rpc("my_notify_channels").abortSignal(signal);
+  if (error) {
+    if (error.code === "PGRST202") return { active: "telegram", whatsapp: null, unavailable: true };
+    throw error;
+  }
+  return data as unknown as NotifyChannels;
 }
 
 /** Notification types the signed-in user switched off, per channel (RLS: own row only). */

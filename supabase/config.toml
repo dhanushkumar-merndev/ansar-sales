@@ -23,3 +23,7 @@ sign_in_sign_ups = 30
 [functions.reminder-worker]
 # Called by pg_cron with a dedicated secret header (x-worker-secret), not a user JWT.
 verify_jwt = false
+
+[functions.whatsapp-webhook]
+# Called by Meta; authenticated by Meta's X-Hub-Signature-256 (app secret), not a user JWT.
+verify_jwt = false

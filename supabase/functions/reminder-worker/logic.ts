@@ -3,7 +3,12 @@
 export type ClaimedReminder = {
   delivery_id: string;
   lease_token: string;
-  chat_id: number;
+  /** Telegram chat when the person's active channel is Telegram; otherwise null. */
+  chat_id: number | null;
+  /** The active channel at claim time (older databases don't return it: Telegram). */
+  channel?: "telegram" | "whatsapp" | null;
+  /** WhatsApp number when the active channel is WhatsApp. */
+  wa_id?: string | null;
   lead_id: string;
   lead_name: string;
   lead_phone: string | null;
@@ -84,14 +89,16 @@ export type NotificationKind =
   | "ads_client_new" | "ad_account_problem"
   | "lead_handed_off" | "project_assigned" | "phase_assigned" | "phase_due_soon" | "phase_overdue" | "phase_submitted"
   | "phase_changes" | "project_at_risk" | "site_visit_reminder" | "payment_due" | "payment_overdue" | "payment_received"
-  | "boq_status" | "snag_assigned" | "project_completed" | "client_feedback";
+  | "boq_status" | "snag_assigned" | "project_completed" | "client_feedback" | "whatsapp_paused";
 
 const MEMBER_ROLE: Record<string, string> = { architect_manager: "Architect manager", landscape_designer: "Landscape designer", execution: "Execution manager" };
 
 export type ClaimedNotification = {
   notification_id: string;
   lease_token: string;
-  chat_id: number;
+  chat_id: number | null;
+  channel?: "telegram" | "whatsapp" | null;
+  wa_id?: string | null;
   kind: NotificationKind;
   /** Display data written by the database for this kind (see the enqueue functions in SQL). */
   payload: Record<string, unknown>;
@@ -230,7 +237,11 @@ export function describeNotification(kind: NotificationKind, payload: Record<str
         "Syncing is paused until the token or access is fixed.",
       ], s(p.ads_client_id) ? `/ads/clients/${p.ads_client_id}` : "/ads", [], "Open");
     case "test":
-      return fin(["✅ Test message", `Hi ${p.name}, Telegram notifications from the CRM are working.`], "/dashboard");
+      return fin(["✅ Test message", `Hi ${p.name}, ${p.channel === "whatsapp" ? "WhatsApp" : "Telegram"} notifications from the CRM are working.`], "/dashboard");
+    case "whatsapp_paused":
+      // Bell only (filed by the database when an alert has to wait for the WhatsApp window).
+      return fin(["⏸️ WhatsApp alerts paused", "WhatsApp only lets the CRM message you for 24 hours after your last message to it.",
+        "Send any message to the CRM's WhatsApp number to get the waiting alerts."], "/settings", [], "Open settings");
 
     // ----- Projects (Star Gardens) -----
     case "lead_handed_off":

@@ -1667,6 +1667,34 @@ export type Database = {
           },
         ]
       }
+      lead_sources: {
+        Row: {
+          archived_at: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          normalized_name: string
+        }
+        Insert: {
+          archived_at?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          archived_at?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           archived_at: string | null
@@ -1687,6 +1715,7 @@ export type Database = {
           phone_normalized: string
           source: string
           source_meta: Json
+          source_id: string | null
           stage_id: string
           status: Database["public"]["Enums"]["lead_outcome"]
           temperature: Database["public"]["Enums"]["lead_temperature"] | null
@@ -1712,6 +1741,7 @@ export type Database = {
           phone_normalized: string
           source?: string
           source_meta?: Json
+          source_id?: string | null
           stage_id: string
           status?: Database["public"]["Enums"]["lead_outcome"]
           temperature?: Database["public"]["Enums"]["lead_temperature"] | null
@@ -1737,6 +1767,7 @@ export type Database = {
           phone_normalized?: string
           source?: string
           source_meta?: Json
+          source_id?: string | null
           stage_id?: string
           status?: Database["public"]["Enums"]["lead_outcome"]
           temperature?: Database["public"]["Enums"]["lead_temperature"] | null
@@ -4348,10 +4379,12 @@ export type Database = {
         Returns: {
           notification_id: string
           lease_token: string
-          chat_id: number
+          chat_id: number | null
           kind: string
           payload: Json
           attempts: number
+          channel: string
+          wa_id: string | null
         }[]
       }
       claim_due_reminders: {
@@ -4369,6 +4402,8 @@ export type Database = {
           task: string
           due_at: string
           attempts: number
+          channel: string
+          wa_id: string | null
         }[]
       }
       complete_follow_up: {
@@ -4442,6 +4477,8 @@ export type Database = {
           p_follow_up_task?: string
           p_allow_duplicate?: boolean
           p_company_name?: string
+          p_source_id?: string
+          p_new_source?: string
         }
         Returns: string
       }
@@ -4516,6 +4553,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      create_whatsapp_link: { Args: never; Returns: string }
+      disconnect_whatsapp: { Args: never; Returns: undefined }
+      my_notify_channels: { Args: never; Returns: Json }
+      set_notify_channel: { Args: { p_channel: string }; Returns: string }
+      super_whatsapp_status: { Args: never; Returns: Json }
+      whatsapp_bot_summary: { Args: { p_wa_id: string }; Returns: Json }
+      whatsapp_inbound: { Args: { p_wa_id: string; p_code?: string }; Returns: Json }
+      whatsapp_silence_nag: { Args: { p_wa_id: string; p_follow_up_id: string }; Returns: Json }
+      whatsapp_delivery_status: { Args: { p_external_id: string; p_status: string; p_error_code?: number }; Returns: string }
+      claim_whatsapp_prompts: {
+        Args: { p_limit?: number; p_reopen?: boolean }
+        Returns: { user_id: string; wa_id: string; kind: string; name: string; held: number }[]
+      }
       disconnect_telegram: {
         Args: never
         Returns: undefined
@@ -4581,6 +4631,7 @@ export type Database = {
           p_result: string
           p_error?: string
           p_retry_after_seconds?: number
+          p_external_id?: string
         }
         Returns: string
       }
@@ -4592,6 +4643,7 @@ export type Database = {
           p_error?: string
           p_retry_after_seconds?: number
           p_message_id?: number
+          p_external_id?: string
         }
         Returns: string
       }
@@ -4773,6 +4825,7 @@ export type Database = {
           p_starred_by?: string
           p_from: number
           p_to: number
+          p_source?: string
         }
         Returns: Json
       }
@@ -4793,6 +4846,7 @@ export type Database = {
           p_starred_only?: boolean
           p_temperature?: Database["public"]["Enums"]["lead_temperature"] | null
           p_starred_by?: string
+          p_source?: string
         }
         Returns: Json
       }
@@ -5730,6 +5784,9 @@ export type Database = {
           p_new_niche?: string
           p_allow_duplicate?: boolean
           p_company_name?: string
+          p_set_source?: boolean
+          p_source_id?: string
+          p_new_source?: string
         }
         Returns: number
       }
