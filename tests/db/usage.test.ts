@@ -73,7 +73,7 @@ describe("admin usage", () => {
     expect(Number(u.storage_objects)).toBe(5);
     expect(u.library).toEqual({ active_files: 2, active_bytes: 3500, archived_files: 1, archived_bytes: 7000, unregistered_files: 2, unregistered_bytes: 500 });
     expect(u.by_folder).toEqual([{ name: "Star Growth Hub · Brochures", bytes: 3000, files: 1 }, { name: "Star Growth Hub · Photos", bytes: 500, files: 1 }]);
-    expect(u.by_type).toEqual({ pdf_bytes: 10000, image_bytes: 500 });
+    expect(u.by_type).toEqual({ pdf_bytes: 10000, image_bytes: 500, video_bytes: 0 });
     expect(u.shares).toEqual({ active_links: 1, total_opens: 0 });
   });
 

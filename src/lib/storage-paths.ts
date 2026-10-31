@@ -6,7 +6,7 @@ export type StorageBucket = "library" | "logos" | "projects";
 export const storageKey = (bucket: StorageBucket, name: string) => `${bucket}/${name}`;
 
 /** A library file: "<folderId>/<uuid>.<ext>" (the database checks the folder part again). */
-export const LIBRARY_FILE_RE = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(pdf|png|jpg|jpeg|webp)$/;
+export const LIBRARY_FILE_RE = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(pdf|png|jpg|jpeg|webp|mp4|webm|mov)$/;
 /** A library preview: "<folderId>/thumbs/<uuid>.webp". */
 export const LIBRARY_THUMB_RE = /^[0-9a-f-]{36}\/thumbs\/[0-9a-f-]{36}\.webp$/;
 /** A company logo: "<companyId>/<uuid>.<ext>". */

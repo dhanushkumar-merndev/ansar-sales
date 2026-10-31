@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { asUser, createDb, createLead, createUser, one, rows, type Db } from "./harness";
+import { asUser, createCompany, createDb, createLead, createUser, one, rows, stageId, type Db } from "./harness";
 
 let db: Db;
 let admin: string, salesA: string, salesB: string, account: string;
@@ -43,11 +43,21 @@ describe("lead stars", () => {
     await expect(asUser(db, salesB, (tx) => tx.query("insert into public.lead_stars (user_id, lead_id) values ($1, $2)", [salesA, a]))).rejects.toThrow();
   });
 
-  it("pinning stars the lead and unstarring removes the pin", async () => {
+  it("keeps star and pin separate: a pin doesn't star, unstarring keeps the pin", async () => {
     const a = await createLead(db, salesB, { name: "PinStar" });
-    expect((await pin(salesB, a)).starred).toBe(true);
-    expect((await star(salesB, a, false))).toEqual({ starred: false, pinned_at: null });
-    expect((await starred(salesB)).items.map((i) => i.id)).not.toContain(a);
+    expect(await pin(salesB, a)).toMatchObject({ starred: false });
+    expect((await starred(salesB)).items.map((i) => i.id)).not.toContain(a); // pinned only: not in Starred
+    expect((await star(salesB, a)).starred).toBe(true);
+    const both = await star(salesB, a, false);
+    expect(both.starred).toBe(false);
+    expect(both.pinned_at).not.toBeNull(); // the pin stays
+    expect(await pin(salesB, a, false)).toEqual({ starred: false, pinned_at: null });
+    expect(await asUser(db, salesB, (tx) => rows(tx, "select 1 from public.lead_stars where lead_id = $1", [a]))).toHaveLength(0);
+    // Star then pin, then unpin: the star stays.
+    await star(salesB, a);
+    await pin(salesB, a);
+    expect(await pin(salesB, a, false)).toEqual({ starred: true, pinned_at: null });
+    expect((await starred(salesB)).items.map((i) => i.id)).toContain(a);
   });
 
   it("lists pinned leads first, latest pin on top, then the rest in the chosen sort", async () => {
@@ -85,10 +95,11 @@ describe("lead stars", () => {
     for (let i = 0; i < 11; i++) ids.push(await createLead(db, user, { name: `Limit ${i}` }));
     for (const id of ids.slice(0, 10)) await pin(user, id);
     await expect(pin(user, ids[10])).rejects.toThrow(/pin_limit/);
-    expect(await pin(user, ids[0])).toMatchObject({ starred: true }); // re-pinning an existing pin is fine
+    expect((await pin(user, ids[0])).pinned_at).not.toBeNull(); // re-pinning an existing pin is fine
     await pin(user, ids[0], false);
     expect((await pin(user, ids[10])).pinned_at).not.toBeNull();
-    // Direct table writes hit the same limit.
+    // Direct table writes hit the same limit (a starred, unpinned row).
+    await star(user, ids[0]);
     await expect(asUser(db, user, (tx) => tx.query("update public.lead_stars set pinned_at = now() where lead_id = $1", [ids[0]]))).rejects.toThrow(/pin_limit/);
   });
 
@@ -101,6 +112,84 @@ describe("lead stars", () => {
     expect((await one<{ n: number }>(db, "select count(*)::int as n from public.lead_stars where lead_id = $1 and user_id = $2", [a, admin])).n).toBe(1);
     await asUser(db, admin, (tx) => tx.query("update public.leads set archived_at = now() where id = $1", [a]));
     expect((await one<{ n: number }>(db, "select count(*)::int as n from public.lead_stars where lead_id = $1", [a])).n).toBe(0);
+  });
+});
+
+describe("lead order: New first on the default sort", () => {
+  it("puts New-stage leads first (newest first), then pins, then the rest; other sorts keep pins first", async () => {
+    const user = await createUser(db, "sales.newfirst", "sales", "New first");
+    const contacted = await stageId(db, "Contacted");
+    const ids: Record<string, string> = {};
+    for (const n of ["Old pinned", "Old contacted", "New one", "New two"]) {
+      ids[n] = await createLead(db, user, { name: n });
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    for (const n of ["Old pinned", "Old contacted"]) {
+      await asUser(db, user, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [ids[n], contacted]));
+    }
+    await pin(user, ids["Old pinned"]);
+    const list = (sort = "created_at", dir = "desc") => asUser(db, user, async (tx) =>
+      (await one<{ r: Page }>(tx, "select public.list_leads(p_sort => $1, p_dir => $2, p_limit => 100) as r", [sort, dir])).r.items.map((i) => i.id));
+    expect(await list()).toEqual([ids["New two"], ids["New one"], ids["Old pinned"], ids["Old contacted"]]);
+    // Contacting a lead drops it below the pins.
+    await asUser(db, user, (tx) => tx.query("update public.leads set stage_id = $2 where id = $1", [ids["New two"], contacted]));
+    expect(await list()).toEqual([ids["New one"], ids["Old pinned"], ids["New two"], ids["Old contacted"]]);
+    // Any other sort: pins first, then the sort.
+    expect(await list("name", "asc")).toEqual([ids["Old pinned"], ids["New one"], ids["New two"], ids["Old contacted"]]);
+    expect((await list("created_at", "asc"))[0]).toBe(ids["Old pinned"]);
+  });
+});
+
+describe("admin view of another user's stars and pins", () => {
+  type ByPage = Page & { items: { id: string; starred: boolean; pinned_at: string | null }[] };
+  const starredBy = (viewer: string, target: string | null) => asUser(db, viewer, async (tx) => (await one<{ r: ByPage }>(tx,
+    "select public.list_leads(p_starred_only => true, p_starred_by => $1, p_sort => 'name', p_dir => 'asc', p_limit => 100) as r", [target])).r);
+  let target: string, starredLead: string, pinnedLead: string, plainLead: string;
+
+  beforeAll(async () => {
+    target = await createUser(db, "sales.target", "sales", "Target");
+    starredLead = await createLead(db, target, { name: "T starred" });
+    pinnedLead = await createLead(db, target, { name: "T pinned" });
+    plainLead = await createLead(db, target, { name: "T plain" });
+    await star(target, starredLead);
+    await pin(target, pinnedLead);
+    await star(admin, plainLead); // the admin's own star must not show in the target's view
+  });
+
+  it("shows an admin the user's starred and pinned leads with the user's marks", async () => {
+    const page = await starredBy(admin, target);
+    expect(page.items.map((i) => i.id)).toEqual([pinnedLead, starredLead]);
+    expect(page.items[0]).toMatchObject({ starred: false });
+    expect(page.items[0].pinned_at).not.toBeNull();
+    expect(page.items[1]).toMatchObject({ starred: true, pinned_at: null });
+    expect(page.total).toBe(2);
+    // The admin's own Starred tab is unchanged.
+    expect((await starredBy(admin, null)).items.map((i) => i.id)).toContain(plainLead);
+  });
+
+  it("works for a super admin of the company", async () => {
+    const owner = await createUser(db, "owner.stars", "super_admin", "Owner");
+    expect((await starredBy(owner, target)).items.map((i) => i.id)).toEqual([pinnedLead, starredLead]);
+  });
+
+  it("is ignored for sales, and refused for other companies and deactivated users", async () => {
+    await star(salesA, await createLead(db, salesA, { name: "A own star" }));
+    const own = await starredBy(salesA, target);
+    expect(own.items.map((i) => i.id)).not.toContain(starredLead);
+    expect(own.items.length).toBeGreaterThan(0);
+
+    const other = await createCompany(db, "Stars Elsewhere");
+    const otherAdmin = await createUser(db, "stars.other.admin", "admin", "Other admin", other);
+    await expect(starredBy(otherAdmin, target)).rejects.toThrow(/not_found/);
+
+    const gone = await createUser(db, "sales.gone", "sales", "Gone");
+    await db.query("update public.profiles set is_active = false where id = $1", [gone]);
+    await expect(starredBy(admin, gone)).rejects.toThrow(/not_found/);
+  });
+
+  it("leaves lead_stars readable only by their owner", async () => {
+    const seen = await asUser(db, admin, (tx) => rows(tx, "select 1 from public.lead_stars where user_id = $1", [target]));
+    expect(seen).toHaveLength(0);
   });
 });
 

@@ -16,6 +16,6 @@ export type UsageSummary = {
   database_bytes: number; storage_bytes: number; storage_objects: number;
   library: { active_files: number; active_bytes: number; archived_files: number; archived_bytes: number; unregistered_files: number; unregistered_bytes: number };
   by_folder: { name: string; bytes: number; files: number }[];
-  by_type: { pdf_bytes: number; image_bytes: number };
+  by_type: { pdf_bytes: number; image_bytes: number; video_bytes?: number };
   shares: { active_links: number; total_opens: number };
 };

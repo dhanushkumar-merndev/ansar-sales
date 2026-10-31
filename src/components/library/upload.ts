@@ -2,38 +2,80 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { isLibraryMime, LIBRARY_MAX_BYTES } from "@/lib/library";
-import { attachThumbnail, putObject } from "@/lib/thumbnail";
+import { formatBytes, isLibraryMime, isVideoMime, LIBRARY_MIME_TYPES, libraryLimitLabel, libraryMaxBytes } from "@/lib/library";
+import { MULTIPART_ABOVE, UploadCancelled, uploadObject } from "@/lib/multipart-upload";
+import { attachThumbnail, checkVideo } from "@/lib/thumbnail";
 import type { LibraryFile } from "@/lib/library-queries";
 import { registerLibraryFile } from "@/server/actions/library";
-import { copyLibraryFile, createLibraryUpload } from "@/server/actions/storage";
+import { copyLibraryFile, signLibraryUpload } from "@/server/actions/storage";
 
-/** Uploads files one by one into a folder, with a single progress toast. */
+/** Uploads files one by one into a folder, with a single progress toast (percent and MB for big files). */
 export async function uploadLibraryFiles(folderId: string, picked: File[], folderName?: string) {
   if (!picked.length) return;
   const into = folderName ? ` to ${folderName}` : "";
-  const label = (i: number) => (picked.length === 1 ? `Uploading ${picked[0].name}${into}…` : `Uploading ${i + 1} of ${picked.length}${into}…`);
-  const toastId = toast.loading(label(0));
+  const ctrl = new AbortController();
+  const total = picked.reduce((s, f) => s + f.size, 0);
+  let doneBytes = 0;
+  const cancel = { label: "Cancel", onClick: () => ctrl.abort() };
+  const label = (i: number, sent: number) => {
+    const what = picked.length === 1 ? picked[0].name : `${i + 1} of ${picked.length}`;
+    if (total <= MULTIPART_ABOVE) return `Uploading ${what}${into}…`;
+    const pct = Math.floor(((doneBytes + sent) / total) * 100);
+    return `Uploading ${what}${into}… ${pct}% (${formatBytes(doneBytes + sent)} of ${formatBytes(total)})`;
+  };
+  const toastId = toast.loading(label(0, 0), { action: cancel, duration: Infinity });
+  const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+  window.addEventListener("beforeunload", warn);
   const failed: string[] = [];
+  const cautions: string[] = [];
+  let ok = 0;
+  let last = 0;
 
-  for (const [i, file] of picked.entries()) {
-    toast.loading(label(i), { id: toastId });
-    if (!isLibraryMime(file.type)) { failed.push(`${file.name}: only PDF, PNG, JPEG or WEBP`); continue; }
-    if (file.size > LIBRARY_MAX_BYTES) { failed.push(`${file.name}: larger than 25 MB`); continue; }
-    if (file.size === 0) { failed.push(`${file.name}: empty file`); continue; }
-    // The server checks the folder and returns a short-lived Tigris URL; the bytes go straight there.
-    const target = await createLibraryUpload({ folderId, mime: file.type, size: file.size });
-    if (!target.ok) { failed.push(`${file.name}: ${target.error}`); continue; }
-    if (!(await putObject(target.data.url, file, file.type))) { failed.push(`${file.name}: upload failed`); continue; }
-    const path = target.data.path;
-    const r = await registerLibraryFile({ folderId, name: file.name.slice(0, 200), storagePath: path });
-    if (!r.ok) { failed.push(`${file.name}: ${r.error}`); continue; }
-    await attachThumbnail({ id: r.data.id, mime_type: file.type }, file);
+  try {
+    for (const [i, file] of picked.entries()) {
+      if (ctrl.signal.aborted) break;
+      toast.loading(label(i, 0), { id: toastId, action: cancel, duration: Infinity });
+      if (!isLibraryMime(file.type)) { failed.push(`${file.name}: only PDF, PNG, JPEG, WEBP or MP4/WEBM/MOV video`); doneBytes += file.size; continue; }
+      if (file.size > libraryMaxBytes(file.type)) { failed.push(`${file.name}: larger than ${libraryLimitLabel(file.type)}`); doneBytes += file.size; continue; }
+      if (file.size === 0) { failed.push(`${file.name}: empty file`); continue; }
+      if (isVideoMime(file.type)) {
+        const check = await checkVideo(file);
+        if (check === "hevc") cautions.push(`${file.name}: recorded in HEVC (iPhone "High Efficiency"), which some Android phones can't play`);
+        else if (check === "unplayable") cautions.push(`${file.name}: this browser can't play it, so many phones may not either`);
+      }
+      try {
+        // The server checks the folder, type and size and signs each request; the bytes go straight to Tigris.
+        const path = await uploadObject({
+          file,
+          first: `req:${folderId}:${file.size}:${LIBRARY_MIME_TYPES[file.type]}`,
+          sign: signLibraryUpload,
+          signal: ctrl.signal,
+          onProgress: (sent) => {
+            const now = Date.now();
+            if (now - last < 200) return;
+            last = now;
+            toast.loading(label(i, sent), { id: toastId, action: cancel, duration: Infinity });
+          },
+        });
+        doneBytes += file.size;
+        const r = await registerLibraryFile({ folderId, name: file.name.slice(0, 200), storagePath: path });
+        if (!r.ok) { failed.push(`${file.name}: ${r.error}`); continue; }
+        ok++;
+        await attachThumbnail({ id: r.data.id, mime_type: file.type }, file);
+      } catch (e) {
+        if (e instanceof UploadCancelled || ctrl.signal.aborted) break;
+        failed.push(`${file.name}: ${e instanceof Error ? e.message : "upload failed"}`);
+        doneBytes += file.size;
+      }
+    }
+  } finally {
+    window.removeEventListener("beforeunload", warn);
   }
 
-  const ok = picked.length - failed.length;
-  if (!failed.length) toast.success(ok === 1 ? `${picked[0].name} uploaded${into}` : `${ok} files uploaded${into}`, { id: toastId });
-  else toast.error(ok ? `${ok} uploaded, ${failed.length} failed` : failed.length === 1 ? "Upload failed" : `${failed.length} uploads failed`, { id: toastId, description: failed.join("\n"), duration: 10_000 });
+  const description = [...failed, ...cautions.map((c) => `Heads up: ${c}. On iPhone, set Camera → Formats → Most Compatible, or send it through WhatsApp once and upload that copy.`)].join("\n") || undefined;
+  if (ctrl.signal.aborted) toast.info(ok ? `Upload cancelled · ${ok} uploaded` : "Upload cancelled", { id: toastId, action: undefined, duration: 4000 });
+  else if (!failed.length) toast.success(ok === 1 ? `${picked[0].name} uploaded${into}` : `${ok} files uploaded${into}`, { id: toastId, action: undefined, description, duration: cautions.length ? 15_000 : 4000 });
+  else toast.error(ok ? `${ok} uploaded, ${failed.length} failed` : failed.length === 1 ? "Upload failed" : `${failed.length} uploads failed`, { id: toastId, action: undefined, description, duration: 15_000 });
 }
 
 /** Copies files into a folder: the server copies each object in Tigris and registers the copy. */

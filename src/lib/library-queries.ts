@@ -2,6 +2,7 @@
 
 // Library and share reads, run in the browser as the signed-in user (RLS applies).
 import { toPageResult, rangeFor, type PageResult } from "@/lib/pagination";
+import type { ShareExpiry } from "@/lib/library";
 import { cleanSearch, escapeLike } from "@/lib/search";
 import { createClient } from "@/lib/supabase/client";
 import type { UsageSummary } from "@/lib/usage";
@@ -101,6 +102,41 @@ export async function searchShareableFiles(p: { q: string; folderId: string | nu
   const { data, error } = await q.order("created_at", { ascending: false }).order("id", { ascending: false }).limit(20).abortSignal(signal);
   if (error) throw error;
   return data as unknown as ShareableFile[];
+}
+
+export type ShareTemplate = {
+  id: string; name: string; message: string; expiry: ShareExpiry; created_by: string; archived_at: string | null; updated_at: string;
+  /** In order; a file archived since the template was saved (or in an archived folder) is marked unavailable. */
+  files: (ShareableFile & { available: boolean })[];
+};
+
+type TemplateRow = Omit<ShareTemplate, "files"> & {
+  files: { position: number; file: (Pick<LibraryFile, "id" | "name" | "mime_type" | "size_bytes" | "thumb_path" | "archived_at"> & { folder: { id: string; name: string; archived_at: string | null } }) | null }[];
+};
+
+/** The company's share templates by name (bounded), with their files. */
+export async function fetchShareTemplates(p: { archived: boolean }, signal: AbortSignal): Promise<ShareTemplate[]> {
+  let q = sb()
+    .from("share_templates")
+    .select(
+      "id, name, message, expiry, created_by, archived_at, updated_at, " +
+        "files:share_template_files(position, file:library_files(id, name, mime_type, size_bytes, thumb_path, archived_at, folder:library_folders!library_files_folder_id_fkey(id, name, archived_at)))",
+    );
+  q = p.archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
+  const { data, error } = await q.order("name").order("id").limit(100).abortSignal(signal);
+  if (error) throw error;
+  return (data as unknown as TemplateRow[]).map((t) => ({
+    ...t,
+    files: [...t.files].sort((a, b) => a.position - b.position).flatMap(({ file: f }) => (f ? [{
+      id: f.id, name: f.name, mime_type: f.mime_type, size_bytes: Number(f.size_bytes), thumb_path: f.thumb_path,
+      folder: { id: f.folder.id, name: f.folder.name }, available: !f.archived_at && !f.folder.archived_at,
+    }] : [])),
+  }));
+}
+
+/** A template's message for one lead: {name} → first name, {company} → the company's name. */
+export function fillShareMessage(template: string, leadName: string, companyName: string) {
+  return template.replaceAll("{name}", leadName.split(" ")[0] ?? "").replaceAll("{company}", companyName);
 }
 
 /** Active folders with full paths ("Brochures / 2026") for pickers (bounded to 300). */

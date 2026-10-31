@@ -3,7 +3,7 @@
 import { z } from "zod";
 import type { TablesInsert } from "@/lib/database.types";
 import { dbError } from "@/lib/errors";
-import { LIBRARY_MAX_BYTES, LIBRARY_MIME_TYPES, STORAGE_PATH_RE } from "@/lib/library";
+import { LIBRARY_MIME_TYPES, LIBRARY_VIDEO_MAX_BYTES, STORAGE_PATH_RE } from "@/lib/library";
 import { confirmUpload } from "@/lib/storage";
 import { LIBRARY_THUMB_RE } from "@/lib/storage-paths";
 import { runAction } from "@/server/action-utils";
@@ -68,7 +68,8 @@ export async function registerLibraryFile(input: unknown) {
   });
   return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
     if (!d.storagePath.startsWith(`${d.folderId}/`)) return { ok: false, error: "Invalid upload path.", code: "invalid_file" };
-    const problem = await confirmUpload("library", d.storagePath, { mimes: Object.keys(LIBRARY_MIME_TYPES), maxBytes: LIBRARY_MAX_BYTES });
+    // The per-type limit (25 MB documents, 500 MB videos) is checked again by the database.
+    const problem = await confirmUpload("library", d.storagePath, { mimes: Object.keys(LIBRARY_MIME_TYPES), maxBytes: LIBRARY_VIDEO_MAX_BYTES });
     if (problem) return dbError({ message: problem });
     const { data, error } = await supabase
       .from("library_files")

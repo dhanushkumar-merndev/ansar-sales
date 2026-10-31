@@ -1,30 +1,26 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Copy, FileText, ImageIcon, Loader2, Search, X } from "lucide-react";
+import { Check, Copy, Eye, Loader2, Plus, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useProfile } from "@/components/providers/profile-provider";
-import { ErrorState } from "@/components/common/states";
-import { Badge } from "@/components/ui/badge";
+import { LibraryFilePicker } from "@/components/library/file-picker";
+import { ShareTemplateEditor, useShareTemplates } from "@/components/library/share-templates";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
-import { formatBytes, isImageMime, SHARE_EXPIRY, SHARE_MAX_FILES, whatsappUrl, type ShareExpiry } from "@/lib/library";
-import { fetchFolderOptions, fetchLeadShareSummary, searchShareableFiles, signLibraryUrls, type ShareableFile } from "@/lib/library-queries";
-import { cleanSearch } from "@/lib/search";
+import { SHARE_EXPIRY, SHARE_MAX_FILES, whatsappUrl, type ShareExpiry } from "@/lib/library";
+import { fetchLeadShareSummary, fillShareMessage, type ShareableFile } from "@/lib/library-queries";
 import { formatDateTime } from "@/lib/time";
-import { cn } from "@/lib/utils";
 import { shareLeadFiles } from "@/server/actions/shares";
 
 type Created = { url: string; whatsapp: string; expiresAt: string | null };
+
+const NO_TEMPLATE = "__none";
 
 /** Default WhatsApp text that goes before the link. */
 export const shareMessage = (leadName: string, companyName: string) => `Hi ${leadName.split(" ")[0]}, here are the documents from ${companyName}:`;
@@ -32,11 +28,11 @@ export const shareMessage = (leadName: string, companyName: string) => `Hi ${lea
 export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, onShared }: {
   open: boolean; onOpenChange: (o: boolean) => void; leadId: string; leadName: string; phone: string; onShared?: () => void;
 }) {
-  const [folderId, setFolderId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Map<string, ShareableFile>>(new Map());
   const [expiry, setExpiry] = useState<ShareExpiry>("7d");
   const [message, setMessage] = useState("");
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<"new" | "save" | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
   const [pending, start] = useTransition();
   const [wasOpen, setWasOpen] = useState(false);
@@ -44,13 +40,11 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
   if (wasOpen !== open) {
     setWasOpen(open);
     if (open) {
-      setFolderId(null); setSearch(""); setSelected(new Map()); setExpiry("7d");
+      setSelected(new Map()); setExpiry("7d"); setTemplateId(null); setEditor(null);
       setMessage(shareMessage(leadName, company.name)); setCreated(null);
     }
   }
 
-  const q = useDebouncedValue(cleanSearch(search), SEARCH_DEBOUNCE_MS);
-  const folders = useLiveQuery({ queryKey: "share-folders", fetcher: fetchFolderOptions, tables: ["library_folders"], enabled: open });
   // The lead's existing link: its documents are shown as already included.
   const current = useLiveQuery({
     queryKey: `share-summary-dialog:${leadId}`,
@@ -61,29 +55,38 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
   });
   const hasLink = !!current.data?.link && !(current.data.link.expires_at && new Date(current.data.link.expires_at) <= new Date());
   const included = new Set((current.data?.files ?? []).map((f) => f.id));
-  const files = useLiveQuery({
-    queryKey: `share-files:${folderId}:${q}`,
-    fetcher: (s) => searchShareableFiles({ q, folderId }, s),
-    tables: ["library_files", "library_folders"],
-    enabled: open && !created,
-  });
-  // Small previews for the listed files: one batched signing request.
-  const thumbPaths = (files.data ?? []).map((f) => f.thumb_path).filter((p): p is string => !!p);
-  const thumbs = useLiveQuery({
-    queryKey: `share-thumbs:${thumbPaths.join("|")}`,
-    fetcher: () => signLibraryUrls(thumbPaths),
-    enabled: open && !created && thumbPaths.length > 0,
-    pollMs: 300_000,
-  });
+  // What the customer's page shows today (a live link's available documents), for the preview.
+  const inLinkNow = hasLink ? (current.data?.files ?? []).filter((f) => f.available).map((f) => f.id) : [];
+  const templates = useShareTemplates(open && !created);
+  const template = templates.data?.find((t) => t.id === templateId) ?? null;
 
-  const toggle = (f: ShareableFile) =>
-    setSelected((cur) => {
-      const next = new Map(cur);
-      if (next.has(f.id)) next.delete(f.id);
-      else if (next.size < SHARE_MAX_FILES) next.set(f.id, f);
-      else toast.error(`You can share up to ${SHARE_MAX_FILES} files at once.`);
-      return next;
-    });
+  /** Fills the files (skipping ones already in the link or archived since), message and expiry. */
+  const applyTemplate = (id: string | null) => {
+    setTemplateId(id);
+    const t = templates.data?.find((x) => x.id === id);
+    if (!t) return;
+    setSelected(new Map(t.files.filter((f) => f.available && !included.has(f.id)).slice(0, SHARE_MAX_FILES).map((f) => [f.id, f])));
+    setMessage(fillShareMessage(t.message, leadName, company.name));
+    setExpiry(t.expiry);
+  };
+
+  /** The customer's page as it will look: what's already in the link, then the picked files. */
+  const preview = () => {
+    const ids = [...inLinkNow, ...selected.keys()];
+    const url = `/share-preview?${new URLSearchParams({ files: ids.join(","), lead: leadId, expiry })}`;
+    window.open(url, "_blank", "noopener");
+  };
+
+  // What "Save as template" starts from: the picked files, and the message with this lead's name and the
+  // company's name turned back into {name} / {company}, so the template fits every lead.
+  const firstName = leadName.split(" ")[0] ?? "";
+  const generic = (text: string) => {
+    let t = text;
+    if (company.name) t = t.split(company.name).join("{company}");
+    if (firstName.length >= 2) t = t.split(firstName).join("{name}");
+    return t;
+  };
+  const draft = { files: [...selected.values()], message: generic(message), expiry };
 
   const submit = () => {
     if (!selected.size || pending) return;
@@ -140,66 +143,30 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
           </div>
         ) : (
           <div className="min-w-0 space-y-3">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Select value={folderId ?? "__all"} onValueChange={(v) => setFolderId(v === "__all" ? null : v)}>
-                <SelectTrigger className="w-full sm:w-44" aria-label="Folder"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all">All folders</SelectItem>
-                  {(folders.data ?? []).map((f) => <SelectItem key={f.id} value={f.id}>{f.path}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input className="pl-8" placeholder="Search files" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search files" />
-              </div>
+            <div className="flex items-end gap-2">
+              <Field className="min-w-0 flex-1">
+                <FieldLabel htmlFor="share-template">Template</FieldLabel>
+                <Select value={templateId ?? NO_TEMPLATE} onValueChange={(v) => applyTemplate(v === NO_TEMPLATE ? null : v)}>
+                  <SelectTrigger id="share-template" className="w-full">
+                    <SelectValue placeholder={templates.isInitialLoading ? "Loading…" : "No template"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_TEMPLATE} className="text-muted-foreground">No template</SelectItem>
+                    {(templates.data ?? []).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name} · {t.files.length} {t.files.length === 1 ? "file" : "files"}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Button variant="outline" onClick={() => setEditor("new")}><Plus /> New template</Button>
             </div>
-
-            <div className="max-h-56 overflow-y-auto rounded-md border" aria-busy={files.isFetching}>
-              {files.error && !files.data ? (
-                <div className="p-2"><ErrorState message={files.error} onRetry={files.refetch} /></div>
-              ) : files.isInitialLoading ? (
-                <div className="space-y-1 p-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9 w-full" />)}</div>
-              ) : !files.data?.length ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">{q || folderId ? "No files match." : "The library is empty. Upload files from Library first."}</p>
-              ) : (
-                <ul className={cn("divide-y", files.isStale && "opacity-60")}>
-                  {files.data.map((f) => {
-                    const inLink = included.has(f.id);
-                    const checked = inLink || selected.has(f.id);
-                    const Icon = isImageMime(f.mime_type) ? ImageIcon : FileText;
-                    const thumb = f.thumb_path ? thumbs.data?.[f.thumb_path] : undefined;
-                    return (
-                      <li key={f.id}>
-                        <label className={cn("flex items-center gap-3 px-3 py-2", inLink ? "opacity-60" : "cursor-pointer hover:bg-white/[0.04]")}>
-                          <Checkbox checked={checked} disabled={inLink} onCheckedChange={() => toggle(f)} aria-label={inLink ? `${f.name} is already in the link` : undefined} />
-                          {thumb ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Tigris URL
-                            <img src={thumb} alt="" className="size-10 shrink-0 rounded border object-cover object-top" />
-                          ) : (
-                            <span className="flex size-10 shrink-0 items-center justify-center rounded border bg-muted/40"><Icon className="size-4 text-muted-foreground" /></span>
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm">{f.name}</span>
-                            <span className="block truncate text-xs text-muted-foreground">{inLink ? "Already in the link · " : ""}{f.folder.name} · {formatBytes(f.size_bytes)}</span>
-                          </span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-
-            {selected.size ? (
-              <div className="flex flex-wrap gap-1.5" aria-label="Selected files">
-                {[...selected.values()].map((f) => (
-                  <Badge key={f.id} variant="outline" className="max-w-full gap-1 pr-1">
-                    <span className="truncate">{f.name}</span>
-                    <button type="button" className="rounded-full p-0.5 hover:bg-white/10" onClick={() => toggle(f)} aria-label={`Remove ${f.name}`}><X className="size-3" /></button>
-                  </Badge>
-                ))}
-              </div>
+            {template && template.files.some((f) => !f.available) ? (
+              <p className="text-xs text-amber-300">
+                {template.files.filter((f) => !f.available).length === 1 ? "1 file in this template is" : `${template.files.filter((f) => !f.available).length} files in this template are`} no longer in the Library.
+              </p>
             ) : null}
+
+            <LibraryFilePicker enabled={open && !created} selected={selected} onChange={(next) => { setSelected(next); }} included={included} />
 
             <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
               <Field>
@@ -227,7 +194,9 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending} className="sm:mr-auto">Cancel</Button>
+              {selected.size ? <Button variant="ghost" onClick={() => setEditor("save")} disabled={pending}><Save /> Save as template</Button> : null}
+              <Button variant="outline" onClick={preview} disabled={pending || (!selected.size && !inLinkNow.length)} title="See the customer's page before sending"><Eye /> Preview</Button>
               <Button onClick={submit} disabled={pending || !selected.size}>
                 {pending && <Loader2 className="animate-spin" />}
                 {selected.size ? `Share ${selected.size} ${selected.size === 1 ? "file" : "files"} on WhatsApp` : "Pick files to share"}
@@ -236,6 +205,12 @@ export function ShareFilesDialog({ open, onOpenChange, leadId, leadName, phone, 
           )}
         </DialogFooter>
       </DialogContent>
+      <ShareTemplateEditor
+        open={editor !== null}
+        onOpenChange={(o) => !o && setEditor(null)}
+        initial={editor === "save" ? draft : undefined}
+        onSaved={(id) => { void templates.refetch().then(() => setTemplateId(id)); }}
+      />
     </Dialog>
   );
 }

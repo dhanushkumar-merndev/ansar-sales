@@ -108,7 +108,9 @@ function describe(a: Activity, callAction?: React.ReactNode): { title: string; d
               <span className="mb-0.5 flex flex-wrap items-center gap-1">
                 <Timer className="size-3.5" aria-hidden />Talked <span className="font-medium text-foreground">{formatDuration(talked)}</span>
                 {m.duration_edited_at ? (
-                  <span title={`Edited ${dt(m.duration_edited_at)}`}>· edited{measured !== null ? `, was ${formatDuration(measured)}` : ""}</span>
+                  <span title={`Edited ${dt(m.duration_edited_at)}`}>
+                    · edited{typeof m.duration_edited_by === "string" ? ` by ${m.duration_edited_by}` : ""}{measured !== null ? `, was ${formatDuration(measured)}` : ""}
+                  </span>
                 ) : null}
                 {callAction}
               </span>

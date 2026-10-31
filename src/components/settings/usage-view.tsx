@@ -72,6 +72,7 @@ export function UsageView() {
                 </dl>
                 <p className="text-muted-foreground">
                   PDFs {formatBytes(Number(u.by_type.pdf_bytes))} · Images {formatBytes(Number(u.by_type.image_bytes))} ·{" "}
+                  {u.by_type.video_bytes ? <>Videos {formatBytes(Number(u.by_type.video_bytes))} ·{" "}</> : null}
                   {formatCount(Number(u.shares.active_links))} active share {Number(u.shares.active_links) === 1 ? "link" : "links"}, opened {formatCount(Number(u.shares.total_opens))}×
                 </p>
               </>

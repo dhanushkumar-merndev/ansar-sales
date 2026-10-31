@@ -38,7 +38,7 @@ describe("table columns", () => {
 });
 
 describe("call talk time", () => {
-  it("lets only the caller record it, within a day and a sane range", async () => {
+  it("lets only the caller (or an admin, see call-wrap-up) record it, within a day and a sane range", async () => {
     const lead = await createLead(db, salesA, { name: "Talk time" });
     const call = await asUser(db, salesA, async (tx) => (await one<{ id: string }>(tx, "select public.log_call($1) as id", [lead])).id);
     const setTime = (userId: string, seconds: number) =>
@@ -56,7 +56,6 @@ describe("call talk time", () => {
 
     await expect(setTime(salesA, -1)).rejects.toThrow(/invalid_duration/);
     await expect(setTime(salesA, 86401)).rejects.toThrow(/invalid_duration/);
-    await expect(setTime(admin, 10)).rejects.toThrow(/not_found/);
     await expect(setTime(salesB, 10)).rejects.toThrow(/not_found/);
 
     await asService(db, (tx) => tx.query("update public.lead_activities set created_at = now() - interval '25 hours' where id = $1", [call]));

@@ -32,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { forLead, useLiveQuery } from "@/hooks/use-live-query";
+import { useLeadsReturnHref } from "@/lib/leads-return";
 import { leadFollowUpsKey, leadKey, TIMELINE_PAGE, timelineKey, type LeadDetail, type TimelinePage } from "@/lib/lead-queries";
 import type { Initial } from "@/lib/list-queries";
 import { fetchLead, fetchLeadFollowUps, fetchTimeline, type Activity, type LeadFollowUp } from "@/lib/queries";
@@ -52,6 +53,7 @@ type LeadPageInitial = { lead: Initial<LeadDetail | null>; followUps: Initial<Le
 
 export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: string; initialNiches: NicheOption[]; initial?: LeadPageInitial }) {
   const profile = useProfile();
+  const backHref = useLeadsReturnHref();
   const isAdmin = profile.role === "admin";
   const [timelineLimit, setTimelineLimit] = useState(TIMELINE_PAGE);
 
@@ -111,7 +113,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
       <EmptyState
         title="Lead not available"
         description="It doesn't exist, was archived, or was reassigned so you no longer have access."
-        action={<Button variant="outline" asChild><Link href="/leads"><ArrowLeft /> Back to leads</Link></Button>}
+        action={<Button variant="outline" asChild><Link href={backHref}><ArrowLeft /> Back to leads</Link></Button>}
       />
     );
   }
@@ -122,7 +124,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
   return (
     <>
       <div className="mb-4 flex items-center justify-between gap-2">
-        <Button variant="ghost" size="sm" asChild className="-ml-2"><Link href="/leads"><ArrowLeft /> Leads</Link></Button>
+        <Button variant="ghost" size="sm" asChild className="-ml-2"><Link href={backHref}><ArrowLeft /> Leads</Link></Button>
         <FetchingIndicator show={lead.isFetching || followUps.isFetching || timeline.isFetching} />
       </div>
 
@@ -138,7 +140,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
             <h1 className="truncate text-2xl font-semibold tracking-tight">{l.name}</h1>
             {canEdit ? (
               <>
-                <StarButton id={l.id} starred={l.stars.length > 0} action={toggleLeadStar} onChanged={lead.refetch} />
+                <StarButton id={l.id} starred={!!l.stars[0]?.starred} action={toggleLeadStar} onChanged={lead.refetch} />
                 <PinButton id={l.id} pinned={!!l.stars[0]?.pinned_at} action={toggleLeadPin} onChanged={lead.refetch} />
               </>
             ) : null}
@@ -312,7 +314,7 @@ export function LeadDetailView({ leadId, initialNiches, initial }: { leadId: str
                     <Timeline
                       items={displayedTimeline}
                       renderNoteActions={(a) => (canEdit && (a.actor_id === profile.id || isAdmin) ? <CorrectNote note={a} onDone={timeline.refetch} /> : null)}
-                      renderCallActions={(a) => (canEdit && a.actor_id === profile.id ? <EditTalkTime call={a} onDone={timeline.refetch} /> : null)}
+                      renderCallActions={(a) => (canEdit && (isAdmin || a.actor_id === profile.id) ? <EditTalkTime call={a} anyAge={isAdmin} onDone={timeline.refetch} /> : null)}
                     />
                   )}
                   {timeline.data?.hasMore && timelineLimit < TIMELINE_MAX ? (
@@ -462,8 +464,8 @@ function CorrectNote({ note, onDone }: { note: Activity; onDone: () => void }) {
   );
 }
 
-/** Pencil beside the talk time of the person's own call; editable for a day after the call, as the database allows. */
-function EditTalkTime({ call, onDone }: { call: Activity; onDone: () => void }) {
+/** Pencil beside a call's talk time: the caller's own call for a day after it, any call for admins (as the database allows). */
+function EditTalkTime({ call, anyAge, onDone }: { call: Activity; anyAge: boolean; onDone: () => void }) {
   const current = typeof call.meta?.duration_seconds === "number" ? call.meta.duration_seconds : null;
   const [now] = useState(() => Date.now());
   const [open, setOpen] = useState(false);
@@ -472,7 +474,7 @@ function EditTalkTime({ call, onDone }: { call: Activity; onDone: () => void }) 
   const [pending, start] = useTransition();
   const total = (Number(minutes) || 0) * 60 + (Number(seconds) || 0);
   const valid = (minutes !== "" || seconds !== "") && total <= 86400;
-  if (now - new Date(call.created_at).getTime() >= CALL_EDIT_MS) return null;
+  if (!anyAge && now - new Date(call.created_at).getTime() >= CALL_EDIT_MS) return null;
   const openEditor = () => {
     setMinutes(current === null ? "" : String(Math.floor(current / 60)));
     setSeconds(current === null ? "" : String(current % 60));

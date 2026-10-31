@@ -7,6 +7,7 @@ import {
   Archive,
   ArchiveRestore,
   FileText,
+  LayoutTemplate,
   Folder,
   FolderPlus,
   Info,
@@ -26,6 +27,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
+import { ShareTemplatesDialog } from "@/components/library/share-templates";
 import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/common/states";
 import { ArchiveItemDialog, BackgroundContextMenu, LibraryActionsProvider, type LibraryItemActions } from "@/components/library/context-menus";
@@ -141,6 +143,7 @@ export function LibraryView() {
 
   const [creating, setCreating] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   // The top level holds folders only.
   const arrangement = useLibraryArrange(null, data?.items ?? [], refetch);
@@ -177,7 +180,7 @@ export function LibraryView() {
       {/* Page Header */}
       <PageHeader
         title="Library"
-        description="Brochures, price lists and photos to share with customers. PDF, PNG, JPEG or WEBP, up to 25 MB each."
+        description="Brochures, price lists, photos and videos to share with customers. PDF, PNG, JPEG or WEBP up to 25 MB; MP4, MOV or WEBM videos up to 500 MB."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -190,6 +193,10 @@ export function LibraryView() {
             >
               <Info className="size-4" />
             </Button>
+            <Button variant="outline" onClick={() => setTemplatesOpen(true)} className="gap-2" title="Ready-made document sets for Share files">
+              <LayoutTemplate className="size-4" />
+              Templates
+            </Button>
             <Button onClick={() => setCreating(true)} className="gap-2 shadow-sm font-medium">
               <FolderPlus className="size-4" />
               New folder
@@ -197,6 +204,7 @@ export function LibraryView() {
           </div>
         }
       />
+      <ShareTemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
 
       {/* Floating Drag-over notification hint */}
       {isWindowDragging ? (
@@ -866,7 +874,7 @@ export function LibraryInfoDialog({
               <span className="text-sm">Supported File Formats &amp; Limits</span>
             </div>
             <p className="text-muted-foreground leading-relaxed pl-8.5">
-              Upload marketing collaterals, price lists, project specifications, and site photos.
+              Upload marketing collaterals, price lists, project specifications, site photos and walkthrough videos.
             </p>
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5 pl-8.5">
               <Badge variant="secondary" className="px-2 py-0.5 text-[11px] font-mono border border-white/[0.08] bg-white/[0.05] text-zinc-300">
@@ -881,7 +889,10 @@ export function LibraryInfoDialog({
               <Badge variant="secondary" className="px-2 py-0.5 text-[11px] font-mono border border-white/[0.08] bg-white/[0.05] text-zinc-300">
                 WEBP
               </Badge>
-              <span className="text-muted-foreground ml-1">· Up to 25 MB each</span>
+              <Badge variant="secondary" className="px-2 py-0.5 text-[11px] font-mono border border-white/[0.08] bg-white/[0.05] text-zinc-300">
+                MP4 / MOV / WEBM
+              </Badge>
+              <span className="text-muted-foreground ml-1">· Documents up to 25 MB, videos up to 500 MB (they stream, no full download)</span>
             </div>
           </div>
 

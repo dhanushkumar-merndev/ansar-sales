@@ -3,8 +3,8 @@
 import { z } from "zod";
 import type { TablesInsert } from "@/lib/database.types";
 import { dbError } from "@/lib/errors";
-import { isLibraryMime, LIBRARY_MAX_BYTES, LIBRARY_MIME_TYPES } from "@/lib/library";
-import { copyObject, headObject, presignGet, presignPut, recordConfirmed, recordPending } from "@/lib/storage";
+import { isLibraryMime, LIBRARY_MIME_TYPES, libraryLimitLabel, libraryMaxBytes, type LibraryMimeType } from "@/lib/library";
+import { copyObject, headObject, isPendingUpload, presignGet, presignPut, presignUploadRequest, recordConfirmed, recordPending } from "@/lib/storage";
 import { isLibraryObjectPath, isLogoMime, LIBRARY_FILE_RE, LIBRARY_THUMB_RE, LOGO_MAX_BYTES, LOGO_MIME_TYPES } from "@/lib/storage-paths";
 import { runAction } from "@/server/action-utils";
 
@@ -19,7 +19,7 @@ export async function createLibraryUpload(input: unknown) {
   const schema = z.object({ folderId: z.uuid(), mime: z.string().max(100), size: z.number().int().positive() });
   return runAction([...LEAD_ROLES], schema, input, async (d, { supabase }) => {
     if (!isLibraryMime(d.mime)) return dbError({ message: "invalid_file_type" });
-    if (d.size > LIBRARY_MAX_BYTES) return { ok: false, error: "Files can be at most 25 MB.", code: "too_large" };
+    if (d.size > libraryMaxBytes(d.mime)) return { ok: false, error: `Files of this type can be at most ${libraryLimitLabel(d.mime)}.`, code: "too_large" };
     const { data: folder, error } = await supabase.from("library_folders").select("id").eq("id", d.folderId).is("archived_at", null).maybeSingle();
     if (error) return dbError(error);
     if (!folder) return dbError({ message: "folder_not_found" });
@@ -29,6 +29,54 @@ export async function createLibraryUpload(input: unknown) {
       return { ok: true, data: { path, url: await presignPut("library", path, d.mime, d.size) } };
     } catch (e) {
       console.error("createLibraryUpload", e instanceof Error ? e.message : "unknown");
+      return uploadFailed;
+    }
+  });
+}
+
+const signSchema = z.object({
+  method: z.enum(["PUT", "POST", "DELETE"]),
+  key: z.string().max(300),
+  uploadId: z.string().max(1024).optional(),
+  partNumber: z.number().int().min(1).max(10000).optional(),
+});
+/** The first request: "req:<folderId>:<size>:<ext>"; the server picks the object name. */
+const REQ_RE = /^req:([0-9a-f-]{36}):(\d{1,13}):([a-z0-9]{2,5})$/;
+const EXT_MIME = Object.fromEntries(Object.entries(LIBRARY_MIME_TYPES).map(([mime, ext]) => [ext, mime])) as Record<string, LibraryMimeType>;
+
+/**
+ * Signs each request of a library upload (src/lib/multipart-upload.ts): one PUT for small files, or the
+ * multipart steps for large videos. Later steps are signed only for an upload this server started, into
+ * a folder the user can see.
+ */
+export async function signLibraryUpload(input: unknown) {
+  return runAction<typeof signSchema, { url: string; key?: string; headers?: Record<string, string> }>([...LEAD_ROLES], signSchema, input, async (d, { supabase }) => {
+    const start = d.key.match(REQ_RE);
+    try {
+      if (start) {
+        const [, folderId, sizeText, ext] = start;
+        const size = Number(sizeText);
+        const mime = EXT_MIME[ext];
+        if (!mime) return dbError({ message: "invalid_file_type" });
+        if (size <= 0 || size > libraryMaxBytes(mime)) return { ok: false, error: `Files of this type can be at most ${libraryLimitLabel(mime)}.`, code: "too_large" };
+        const { data: folder, error } = await supabase.from("library_folders").select("id").eq("id", folderId).is("archived_at", null).maybeSingle();
+        if (error) return dbError(error);
+        if (!folder) return dbError({ message: "folder_not_found" });
+        const name = `${folderId}/${crypto.randomUUID()}.${ext}`;
+        await recordPending("library", name);
+        const op = d.method === "PUT" ? ({ op: "put", contentType: mime } as const) : ({ op: "create", contentType: mime } as const);
+        return { ok: true, data: { url: await presignUploadRequest("library", name, op), key: name, headers: { "Content-Type": mime } } };
+      }
+      const m = d.key.match(LIBRARY_FILE_RE);
+      if (!m || !d.uploadId) return { ok: false, error: "Invalid upload request.", code: "invalid_file" };
+      const { data: folder } = await supabase.from("library_folders").select("id").eq("id", d.key.slice(0, 36)).maybeSingle();
+      if (!folder || !(await isPendingUpload("library", d.key))) return dbError({ message: "forbidden" });
+      const op = d.method === "PUT" && d.partNumber ? ({ op: "part", uploadId: d.uploadId, partNumber: d.partNumber } as const)
+        : d.method === "POST" ? ({ op: "complete", uploadId: d.uploadId } as const)
+        : ({ op: "abort", uploadId: d.uploadId } as const);
+      return { ok: true, data: { url: await presignUploadRequest("library", d.key, op) } };
+    } catch (e) {
+      console.error("signLibraryUpload", e instanceof Error ? e.message : "unknown");
       return uploadFailed;
     }
   });

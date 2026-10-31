@@ -10,6 +10,7 @@ import {
   Download,
   ExternalLink,
   FileImage,
+  Film,
   FileText,
   Folder,
   FolderOpen,
@@ -17,6 +18,7 @@ import {
   Info,
   LayoutGrid,
   List,
+  Play,
   Loader2,
   MoreVertical,
   Search,
@@ -55,7 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
 import { uploadLibraryFiles, useFileDrop } from "@/components/library/upload";
-import { formatBytes, isImageMime, LIBRARY_ACCEPT, LIBRARY_MAX_BYTES } from "@/lib/library";
+import { formatBytes, isImageMime, isVideoMime, LIBRARY_ACCEPT, LIBRARY_MAX_BYTES } from "@/lib/library";
 import { fetchLibraryFolder, fetchLibraryItems, signLibraryUrl, signLibraryUrls, type LibraryFile, type LibraryFolder, type LibraryItem } from "@/lib/library-queries";
 import { lastPage, parsePaging } from "@/lib/pagination";
 import { can } from "@/lib/permissions";
@@ -652,6 +654,7 @@ function FileCard({
 }) {
   const archived = !!file.archived_at;
   const pdf = file.mime_type === "application/pdf";
+  const video = isVideoMime(file.mime_type);
 
   // Same shape as the folder card: preview on the left, name in the middle, actions on the right.
   return (
@@ -666,7 +669,7 @@ function FileCard({
       <div
         className={cn(
           "relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border",
-          pdf ? "border-red-500/25 bg-red-500/10 text-red-400" : "border-sky-500/25 bg-sky-500/10 text-sky-400",
+          pdf ? "border-red-500/25 bg-red-500/10 text-red-400" : video ? "border-violet-500/25 bg-violet-500/10 text-violet-400" : "border-sky-500/25 bg-sky-500/10 text-sky-400",
         )}
       >
         {preview ? (
@@ -676,9 +679,12 @@ function FileCard({
           <span className="size-full animate-pulse bg-white/[0.05]" />
         ) : pdf ? (
           <FileText className="size-4" />
+        ) : video ? (
+          <Film className="size-4" />
         ) : (
           <FileImage className="size-4" />
         )}
+        {video && preview ? <Play className="absolute size-3 fill-white text-white drop-shadow" aria-hidden /> : null}
       </div>
 
       {/* Middle: name (the whole card opens the file) and details */}
@@ -776,6 +782,7 @@ function FileListItem({
 }) {
   const archived = !!file.archived_at;
   const pdf = file.mime_type === "application/pdf";
+  const video = isVideoMime(file.mime_type);
 
   return (
     <div className="grid grid-cols-12 items-center gap-3 px-4 py-2.5 text-xs transition-colors hover:bg-white/[0.04]">
@@ -785,10 +792,12 @@ function FileListItem({
             "flex size-7 shrink-0 items-center justify-center rounded-lg border",
             pdf
               ? "border-red-500/25 bg-red-500/10 text-red-400"
-              : "border-sky-500/25 bg-sky-500/10 text-sky-400",
+              : video
+                ? "border-violet-500/25 bg-violet-500/10 text-violet-400"
+                : "border-sky-500/25 bg-sky-500/10 text-sky-400",
           )}
         >
-          {pdf ? <FileText className="size-3.5" /> : <FileImage className="size-3.5" />}
+          {pdf ? <FileText className="size-3.5" /> : video ? <Film className="size-3.5" /> : <FileImage className="size-3.5" />}
         </div>
         <button
           type="button"
@@ -803,7 +812,7 @@ function FileListItem({
       <div className="col-span-3 sm:col-span-3 flex items-center gap-2 text-muted-foreground">
         <span>{formatBytes(file.size_bytes)}</span>
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px] bg-white/[0.04] text-muted-foreground uppercase">
-          {pdf ? "pdf" : "image"}
+          {pdf ? "pdf" : video ? "video" : "image"}
         </Badge>
       </div>
 

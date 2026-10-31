@@ -1,7 +1,7 @@
 "use client";
 
-// Small WEBP previews made in the browser: page 1 of a PDF (Mozilla pdf.js) or a
-// resized image. Stored next to the file so every view shows a light preview
+// Small WEBP previews made in the browser: page 1 of a PDF (Mozilla pdf.js), a
+// resized image, or a frame of a video (its poster). Stored next to the file so every view shows a light preview
 // instead of downloading the full document.
 import { setLibraryThumbnail } from "@/server/actions/library";
 import { createThumbnailUpload } from "@/server/actions/storage";
@@ -54,10 +54,73 @@ async function renderImage(source: Blob) {
   }
 }
 
-/** Returns a WEBP preview, or null when one can't be made (corrupt/locked PDF, no WEBP encoder). */
+/** Loads a video file in a hidden element until its first frame is decoded (throws if this browser can't). */
+function loadVideo(source: Blob) {
+  const url = URL.createObjectURL(source);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  const done = () => { URL.revokeObjectURL(url); video.removeAttribute("src"); video.load(); };
+  const ready = new Promise<HTMLVideoElement>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), 20_000);
+    video.onloadeddata = () => { clearTimeout(timer); if (video.videoWidth > 0) resolve(video); else reject(new Error("no picture")); };
+    video.onerror = () => { clearTimeout(timer); reject(new Error("can't play")); };
+  });
+  video.src = url;
+  return { ready, done };
+}
+
+async function renderVideo(source: Blob) {
+  const { ready, done } = loadVideo(source);
+  try {
+    const video = await ready;
+    // A frame a moment in (the very first one is often black).
+    const at = Number.isFinite(video.duration) ? Math.min(1, video.duration / 2) : 0;
+    if (at > 0) {
+      await new Promise<void>((resolve) => { video.onseeked = () => resolve(); video.currentTime = at; setTimeout(resolve, 5000); });
+    }
+    const scale = Math.min(1, THUMB_WIDTH / video.videoWidth);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  } finally {
+    done();
+  }
+}
+
+/**
+ * Whether a video will play for most customers: this browser must decode it, and it must not be HEVC
+ * (iPhone's "High Efficiency" format), which many Android phones and Firefox can't play. The codec is
+ * read from the file's index ("hvc1"/"hev1"), found in its first or last few MB.
+ */
+export async function checkVideo(source: Blob): Promise<"ok" | "hevc" | "unplayable"> {
+  const MB2 = 2 * 1024 * 1024;
+  const text = async (b: Blob) => new TextDecoder("latin1").decode(await b.arrayBuffer());
+  try {
+    const head = await text(source.slice(0, MB2));
+    const tail = source.size > MB2 ? await text(source.slice(Math.max(MB2, source.size - MB2))) : "";
+    if (/hvc1|hev1/.test(head) || /hvc1|hev1/.test(tail)) return "hevc";
+  } catch {
+    // Unreadable here: fall through to the playback check.
+  }
+  const { ready, done } = loadVideo(source);
+  try {
+    await ready;
+    return "ok";
+  } catch {
+    return "unplayable";
+  } finally {
+    done();
+  }
+}
+
+/** Returns a WEBP preview, or null when one can't be made (corrupt/locked PDF, unplayable video, no WEBP encoder). */
 export async function makeThumbnail(source: Blob, mime: string): Promise<Blob | null> {
   try {
-    const canvas = mime === "application/pdf" ? await renderPdf(source) : await renderImage(source);
+    const canvas = mime === "application/pdf" ? await renderPdf(source) : mime.startsWith("video/") ? await renderVideo(source) : await renderImage(source);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.8));
     // Browsers without a WEBP encoder silently return PNG; the database only accepts WEBP previews.
     return blob && blob.type === "image/webp" ? blob : null;

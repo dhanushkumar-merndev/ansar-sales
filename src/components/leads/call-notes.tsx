@@ -22,19 +22,27 @@ import { formatDateTime, formatDuration } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { reorderLeadNotes, setLeadNoteColor } from "@/server/actions/leads";
 
-/**
- * The lead's notes and call notes beside the call screen as cards (three a row on wide screens), newest unsorted ones first.
- * Drag the handle (or focus it and use Space + arrow keys) to put them in any order; the order is
- * saved for the lead, so everyone who can see it gets the same list.
- */
-export function CallNotes({ leadId, className }: { leadId: string; className?: string }) {
+/** A lead's notes and call notes, as the call screen shows them. */
+export function useLeadNotes(leadId: string, enabled = true) {
   const profile = useProfile();
-  const notes = useLiveQuery({
+  return useLiveQuery({
     queryKey: `lead-notes:${profile.id}:${leadId}`,
     fetcher: (s) => fetchLeadNotes(leadId, s),
     tables: ["lead_activities", "leads"],
     match: forLead(leadId),
+    enabled,
   });
+}
+
+/**
+ * The lead's notes and call notes beside the call screen as cards (three a row on wide screens), newest unsorted ones first.
+ * Drag the handle (or focus it and use Space + arrow keys) to put them in any order; the order is
+ * saved for the lead, so everyone who can see it gets the same list.
+ * `notes`: the caller's own useLeadNotes, when it needs them too (the call screen's form answers).
+ */
+export function CallNotes({ leadId, className, notes: given }: { leadId: string; className?: string; notes?: ReturnType<typeof useLeadNotes> }) {
+  const own = useLeadNotes(leadId, !given);
+  const notes = given ?? own;
   // The dragged order, shown until the server's list catches up.
   const [order, setOrder] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -77,7 +85,7 @@ export function CallNotes({ leadId, className }: { leadId: string; className?: s
         {items.length > 1 ? <span className="text-xs text-muted-foreground">Drag to reorder</span> : null}
       </div>
       {notes.isInitialLoading ? (
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-44" /><Skeleton className="h-44" /><Skeleton className="h-44" /></div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-36" /><Skeleton className="h-36" /><Skeleton className="h-36" /></div>
       ) : notes.error && !notes.data ? (
         <p className="py-8 text-center text-xs text-muted-foreground">Couldn&apos;t load notes. {notes.error}</p>
       ) : items.length === 0 ? (
@@ -163,7 +171,7 @@ function NoteCard({ leadId, note, disabled, onChanged }: { leadId: string; note:
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition, ...tint(color) }}
-      className={cn("relative flex h-44 gap-2 rounded-md border bg-card p-2.5", isDragging && "z-10 shadow-lg")}
+      className={cn("relative flex h-36 gap-2 rounded-md border bg-card p-2.5", isDragging && "z-10 shadow-lg")}
     >
       <div className="-ml-1 flex shrink-0 flex-col items-center gap-1">
         <button

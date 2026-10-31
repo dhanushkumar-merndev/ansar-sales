@@ -1633,18 +1633,21 @@ export type Database = {
           created_at: string
           lead_id: string
           pinned_at: string | null
+          starred: boolean
           user_id: string
         }
         Insert: {
           created_at?: string
           lead_id: string
           pinned_at?: string | null
+          starred?: boolean
           user_id?: string
         }
         Update: {
           created_at?: string
           lead_id?: string
           pinned_at?: string | null
+          starred?: boolean
           user_id?: string
         }
         Relationships: [
@@ -3783,6 +3786,96 @@ export type Database = {
           },
         ]
       }
+      share_template_files: {
+        Row: {
+          file_id: string
+          position: number
+          template_id: string
+        }
+        Insert: {
+          file_id: string
+          position: number
+          template_id: string
+        }
+        Update: {
+          file_id?: string
+          position?: number
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "share_template_files_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "library_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "share_template_files_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "share_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      share_templates: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          expiry: string
+          id: string
+          message: string
+          name: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          expiry?: string
+          id?: string
+          message?: string
+          name: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          expiry?: string
+          id?: string
+          message?: string
+          name?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "share_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "share_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_visits: {
         Row: {
           assigned_to: string
@@ -4470,6 +4563,17 @@ export type Database = {
         }
         Returns: Json
       }
+      finish_call: {
+        Args: {
+          p_activity_id: string
+          p_note?: string
+          p_outcome: string
+          p_set_temperature?: boolean
+          p_stage_id?: string
+          p_temperature?: Database["public"]["Enums"]["lead_temperature"] | null
+        }
+        Returns: undefined
+      }
       finish_notification: {
         Args: {
           p_id: string
@@ -4667,7 +4771,8 @@ export type Database = {
           p_limit?: number
           p_offset?: number
           p_starred_only?: boolean
-          p_temperature?: Database["public"]["Enums"]["lead_temperature"]
+          p_temperature?: Database["public"]["Enums"]["lead_temperature"] | null
+          p_starred_by?: string
         }
         Returns: Json
       }
@@ -5137,6 +5242,16 @@ export type Database = {
         }
         Returns: string
       }
+      save_share_template: {
+        Args: {
+          p_expiry: string
+          p_file_ids: string[]
+          p_id: string | null
+          p_message: string
+          p_name: string
+        }
+        Returns: string
+      }
       send_test_notification: {
         Args: never
         Returns: undefined
@@ -5405,6 +5520,10 @@ export type Database = {
           p_user_id: string
           p_company_ids: string[]
         }
+        Returns: undefined
+      }
+      set_share_template_archived: {
+        Args: { p_archived: boolean; p_id: string }
         Returns: undefined
       }
       set_won_to_ads_client: {

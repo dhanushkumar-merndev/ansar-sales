@@ -10,7 +10,7 @@ import { ClearFiltersButton } from "@/components/common/clear-filters-button";
 import { DataPagination } from "@/components/common/data-pagination";
 import { PageHeader } from "@/components/common/page-header";
 import { pastPresets, RangePicker } from "@/components/common/range-picker";
-import { PinButton, PinnedBadge, PinnedCount, StarButton } from "@/components/common/star-pin-buttons";
+import { PinButton, PinnedBadge, PinnedCount, ReadOnlyMarks, StarButton } from "@/components/common/star-pin-buttons";
 import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/components/common/states";
 import { FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { CallButton } from "@/components/leads/call-button";
@@ -41,9 +41,10 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { useUrlState } from "@/hooks/use-url-state";
 import { LEAD_TEMPERATURES, SEARCH_DEBOUNCE_MS, TEMPERATURE_LABELS } from "@/lib/constants";
+import { rememberLeadsList } from "@/lib/leads-return";
 import { lastPage } from "@/lib/pagination";
 import { leadsQueryKey, parseLeadQuery, type Initial, type StarredPageResult } from "@/lib/list-queries";
-import { fetchLeads, type LeadQuery } from "@/lib/queries";
+import { fetchLeads, fetchStaff, type LeadQuery } from "@/lib/queries";
 import { cleanSearch } from "@/lib/search";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/time";
 import type { LeadListItem, NicheOption } from "@/lib/types";
@@ -72,6 +73,14 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
 
   // Parse and sanitize URL state (the database validates again).
   const query: LeadQuery = useMemo(() => parseLeadQuery(params, isAdmin), [params, isAdmin]);
+  // Remember this list's address so the lead page's "← Leads" comes back here (tab, filters, page).
+  const listUrl = params.toString();
+  useEffect(() => rememberLeadsList(listUrl ? `/leads?${listUrl}` : "/leads"), [listUrl]);
+
+  // Admin, Starred tab: another user's stars and pins, shown read-only.
+  const viewingOther = !!query.by && query.by !== profile.id;
+  const staff = useLiveQuery({ queryKey: "staff", fetcher: fetchStaff, tables: ["profiles"], pollMs: 0, enabled: viewingOther });
+  const otherName = viewingOther ? (staff.data?.find((s) => s.id === query.by)?.display_name ?? "This person") : "";
 
   // Immediate local input; URL (and the query) follow after a 300 ms debounce.
   const [searchInput, setSearchInput] = useState(query.q);
@@ -124,7 +133,9 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
       {
         id: "star",
         header: () => <span className="sr-only">Star</span>,
-        cell: ({ row: { original: l } }) => (
+        cell: ({ row: { original: l } }) => viewingOther ? (
+          <ReadOnlyMarks starred={l.starred} pinned={!!l.pinned_at} who={otherName} />
+        ) : (
           <div className="flex items-center">
             <StarButton id={l.id} starred={l.starred} action={toggleLeadStar} onChanged={refetch} />
             <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />
@@ -202,7 +213,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
     );
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, query.sort, query.dir, refetch, hiddenKey]);
+  }, [isAdmin, query.sort, query.dir, refetch, hiddenKey, viewingOther, otherName]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
@@ -300,12 +311,22 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Tabs value={query.starred ? "starred" : "all"} onValueChange={(v) => set({ tab: v === "starred" ? "starred" : null })} className="shrink-0">
+        <Tabs value={query.starred ? "starred" : "all"} onValueChange={(v) => set({ tab: v === "starred" ? "starred" : null, by: null })} className="shrink-0">
           <TabsList>
             <TabsTrigger value="all">All leads</TabsTrigger>
             <TabsTrigger value="starred">Starred</TabsTrigger>
           </TabsList>
         </Tabs>
+        {isAdmin && query.starred ? (
+          <StaffSelect
+            value={query.by}
+            onChange={(v) => set({ by: v && v !== profile.id ? v : null })}
+            allowAny
+            anyLabel="Starred by me"
+            ariaLabel="Whose stars and pins to show"
+            className="w-full sm:w-[190px]"
+          />
+        ) : null}
         <div className="relative w-full min-w-0 flex-1 sm:min-w-[200px]">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -338,7 +359,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
             <SelectItem value="updated_at:desc">Recently updated</SelectItem>
           </SelectContent>
         </Select>
-        {data && data.pinnedCount > 0 ? <PinnedCount count={data.pinnedCount} /> : null}
+        {data && data.pinnedCount > 0 && !viewingOther ? <PinnedCount count={data.pinnedCount} /> : null}
         <span className="lg:hidden"><FetchingIndicator show={fetching} /></span>
       </div>
 
@@ -347,7 +368,11 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
       ) : isInitialLoading ? (
         <ListSkeleton />
       ) : data && data.total === 0 && query.starred && !query.q && !activeFilters ? (
-        <EmptyState title="No starred leads" description="Tap the star on any lead to keep it here. Pin up to 10 to keep them on top." />
+        viewingOther ? (
+          <EmptyState title="Nothing starred or pinned" description={`${otherName} hasn't starred or pinned any leads.`} />
+        ) : (
+          <EmptyState title="No starred leads" description="Tap the star on any lead to keep it here. Pin a lead to keep it on top of every list (up to 10)." />
+        )
       ) : data && data.total === 0 ? (
         <EmptyState
           title={query.q || activeFilters ? "No leads match" : "No leads yet"}
@@ -413,8 +438,14 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
                   {hidden.has("actions") ? null : (
                     <Button size="icon-sm" variant="ghost" aria-label={`Notes for ${l.name}`} onClick={() => setNotesFor({ id: l.id, name: l.name })}><StickyNote /></Button>
                   )}
-                  <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />
-                  <StarButton id={l.id} starred={l.starred} action={toggleLeadStar} onChanged={refetch} />
+                  {viewingOther ? (
+                    <ReadOnlyMarks starred={l.starred} pinned={!!l.pinned_at} who={otherName} />
+                  ) : (
+                    <>
+                      <PinButton id={l.id} pinned={!!l.pinned_at} action={toggleLeadPin} onChanged={refetch} />
+                      <StarButton id={l.id} starred={l.starred} action={toggleLeadStar} onChanged={refetch} />
+                    </>
+                  )}
                 </div>
               </li>
             ))}

@@ -36,15 +36,17 @@ beforeAll(async () => {
 
 describe("list_leads pagination", () => {
   it("pages through tied timestamps without gaps or duplicates", async () => {
-    const seen: string[] = [];
+    const seen: { id: string; stage_id: string }[] = [];
     for (let page = 1; page <= 3; page++) {
       const r = await list(salesA, { p_limit: 20, p_offset: (page - 1) * 20 });
       expect(r.total).toBe(45);
       expect(r.items.length).toBe(page < 3 ? 20 : 5);
-      seen.push(...r.items.map((i) => i.id));
+      seen.push(...r.items);
     }
-    expect(new Set(seen).size).toBe(45);
-    expect(seen).toEqual([...seen].sort().reverse()); // created_at tie → id desc
+    expect(new Set(seen.map((i) => i.id)).size).toBe(45);
+    // Default sort: New-stage leads first (20261008005500), then the rest; created_at tie → id desc in each.
+    const desc = (xs: typeof seen) => xs.map((i) => i.id).sort().reverse();
+    expect(seen.map((i) => i.id)).toEqual([...desc(seen.filter((i) => i.stage_id === newStage)), ...desc(seen.filter((i) => i.stage_id !== newStage))]);
     const beyond = await list(salesA, { p_limit: 20, p_offset: 60 });
     expect(beyond.items).toEqual([]);
     expect(beyond.total).toBe(45);

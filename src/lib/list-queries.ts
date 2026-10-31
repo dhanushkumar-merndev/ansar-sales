@@ -37,6 +37,8 @@ export type LeadQuery = {
   /** Pipeline stage id. */
   q: string; stage: string | null; niche: string | null; owner: string | null; temperature: LeadTemperature | null;
   from: string | null; to: string | null; overdue: boolean; archived: boolean; starred: boolean;
+  /** Admin only, Starred tab: whose stars and pins to show (null = mine). */
+  by: string | null;
   sort: string; dir: "asc" | "desc"; page: number; pageSize: number;
 };
 
@@ -56,6 +58,7 @@ export function parseLeadQuery(params: Params, isAdmin: boolean): LeadQuery {
     overdue: params.get("overdue") === "1",
     archived: isAdmin && params.get("archived") === "1",
     starred: params.get("tab") === "starred",
+    by: isAdmin && params.get("tab") === "starred" && UUID_RE.test(params.get("by") ?? "") ? params.get("by") : null,
     sort: LEAD_SORTS.includes(sort as (typeof LEAD_SORTS)[number]) ? sort! : "created_at",
     dir: params.get("dir") === "asc" ? "asc" : "desc",
     page,
@@ -81,6 +84,7 @@ export function leadListArgs(p: LeadQuery) {
     p_offset: (p.page - 1) * p.pageSize,
     p_starred_only: p.starred,
     p_temperature: p.temperature ?? undefined,
+    p_starred_by: p.by ?? undefined,
   };
 }
 

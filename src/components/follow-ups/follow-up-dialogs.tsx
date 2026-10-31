@@ -127,6 +127,7 @@ function CompleteFollowUpContent({
     start(async () => {
       // The call is already in the timeline; its result and the notes are saved with the completion.
       if (call.activityId && callResult) {
+        await call.halt(); // the talk time is saved on the same row first
         const c = await setCallOutcome({ activityId: call.activityId, outcome: callResult, note: outcome.trim() || undefined });
         if (!c.ok) return void toast.error(c.fieldErrors?.note?.[0] ?? c.error);
       }

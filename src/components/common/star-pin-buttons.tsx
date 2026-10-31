@@ -107,6 +107,18 @@ export function PinButton({ id, pinned, action, onChanged, className }: {
   );
 }
 
+/** Someone else's star and pin, shown but not changeable (admin "Starred by" view). */
+export function ReadOnlyMarks({ starred, pinned, who, className }: { starred: boolean; pinned: boolean; who: string; className?: string }) {
+  const label = [starred && `Starred by ${who}`, pinned && `Pinned by ${who}`].filter(Boolean).join(", ") || `Not marked by ${who}`;
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 px-1.5", className)} title={label}>
+      <Star aria-hidden className={cn("size-4", starred ? "fill-amber-400 text-amber-500" : "text-muted-foreground/40")} />
+      <Pin aria-hidden className={cn("size-4", pinned ? "fill-foreground text-foreground" : "text-muted-foreground/40")} />
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 export function PinnedBadge() {
   return <Badge variant="outline" className="gap-1 font-normal"><Pin className="size-3" /> Pinned</Badge>;
 }
