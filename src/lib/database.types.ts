@@ -4563,8 +4563,8 @@ export type Database = {
       whatsapp_silence_nag: { Args: { p_wa_id: string; p_follow_up_id: string }; Returns: Json }
       whatsapp_delivery_status: { Args: { p_external_id: string; p_status: string; p_error_code?: number }; Returns: string }
       claim_whatsapp_prompts: {
-        Args: { p_limit?: number; p_reopen?: boolean }
-        Returns: { user_id: string; wa_id: string; kind: string; name: string; held: number }[]
+        Args: { p_limit?: number; p_reopen?: boolean; p_now?: string }
+        Returns: { user_id: string; wa_id: string; kind: string; name: string; held: number; window_until: string | null; upcoming: number }[]
       }
       disconnect_telegram: {
         Args: never

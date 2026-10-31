@@ -84,10 +84,19 @@ export function templateBody(to: string, name: string, language: string) {
 }
 
 /** About an hour before the window closes: one free message with buttons, any tap renews it. */
-export function nudgeMessage(name: string): WaMessage {
+const istTime = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+
+/**
+ * The daily "keep alerts on" message. With the window's closing time it says when alerts pause, and how many
+ * follow-ups are due after that, so a reminder later in the day isn't missed.
+ */
+export function nudgeMessage(name: string, windowUntil?: string | null, upcoming = 0): WaMessage {
+  const until = windowUntil ? new Date(windowUntil) : null;
+  const pause = until && !Number.isNaN(until.getTime()) ? `Your CRM alerts here pause at ${istTime.format(until)}` : "Your CRM alerts here pause soon";
+  const due = upcoming > 0 ? ` and you have ${upcoming} follow-up${upcoming === 1 ? "" : "s"} due after that` : "";
   return {
     kind: "buttons",
-    text: `Hi ${name}, WhatsApp only lets the CRM message you for 24 hours after your last message. Tap below (or send anything) to keep your alerts coming for another day.`,
+    text: `Hi ${name}, ${pause}${due}. Tap “Keep alerts on” (or send anything) to keep them coming for another 24 hours.`,
     buttons: [KEEP_BUTTON, SUMMARY_BUTTON],
   };
 }

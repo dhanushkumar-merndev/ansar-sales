@@ -42,6 +42,12 @@ export async function setNotifyChannel(input: unknown) {
   });
 }
 
+/**
+ * The database's region. Meta calls the webhook from the US, so without this the function would run there and
+ * every database call would cross to Mumbai and back (about 1 second slower per reply).
+ */
+const FUNCTION_REGION = process.env.SUPABASE_FUNCTION_REGION || "ap-south-1";
+
 /** For Super settings: the business number and the webhook address to paste into Meta (no secrets). */
 export async function whatsappSetupInfo() {
   return runAction("super_admin", z.undefined(), undefined, async () => {
@@ -50,7 +56,7 @@ export async function whatsappSetupInfo() {
       ok: true,
       data: {
         number: number ? `+${number}` : null,
-        webhookUrl: publicEnv.supabaseUrl ? `${publicEnv.supabaseUrl.replace(/\/+$/, "")}/functions/v1/whatsapp-webhook` : null,
+        webhookUrl: publicEnv.supabaseUrl ? `${publicEnv.supabaseUrl.replace(/\/+$/, "")}/functions/v1/whatsapp-webhook?forceFunctionRegion=${FUNCTION_REGION}` : null,
       },
     };
   });

@@ -67,20 +67,27 @@ Deno.serve(async (req) => {
   const { messages, statuses } = parseWebhook(body, env("WHATSAPP_PHONE_NUMBER_ID") || null);
 
   // Delivery reports: only failures change anything (window closed → wait again; undeliverable → blocked).
-  for (const s of statuses) {
-    if (s.status !== "failed") continue;
+  // They run alongside the replies so a report never delays a reply.
+  const reports = Promise.all(statuses.filter((s) => s.status === "failed").map(async (s) => {
     const { error } = await supabase.rpc("whatsapp_delivery_status", { p_external_id: s.id, p_status: s.status, p_error_code: s.errorCode ?? undefined });
     if (error) console.error("status failed", error.code);
-  }
+  }));
 
   for (const m of messages.slice(0, 20)) {
     const code = extractLinkCode(m.text);
-    const { data, error } = await supabase.rpc("whatsapp_inbound", { p_wa_id: m.from, p_code: code ?? undefined });
-    if (error) {
-      console.error("inbound failed", error.code);
+    const action = parseAction(m);
+    // A typed message or "Today's summary" gets the dashboard: fetch it at the same time as recording the
+    // message instead of one after the other (each database round trip is the slow part).
+    const wantsSummary = !code && (action.type === "other" || action.type === "summary");
+    const [inbound, summary] = await Promise.all([
+      supabase.rpc("whatsapp_inbound", { p_wa_id: m.from, p_code: code ?? undefined }),
+      wantsSummary ? supabase.rpc("whatsapp_bot_summary", { p_wa_id: m.from }) : Promise.resolve(null),
+    ]);
+    if (inbound.error) {
+      console.error("inbound failed", inbound.error.code);
       continue;
     }
-    const r = (data ?? {}) as { connected?: boolean; linked?: boolean; name?: string; released?: number; code_invalid?: boolean; active?: boolean };
+    const r = (inbound.data ?? {}) as { connected?: boolean; linked?: boolean; name?: string; released?: number; code_invalid?: boolean; active?: boolean };
     if (!r.connected) {
       await reply(m.from, { kind: "text", text: r.code_invalid ? BAD_CODE_TEXT : NOT_LINKED_TEXT });
       continue;
@@ -90,7 +97,6 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const action = parseAction(m);
     if (action.type === "silence") {
       const { data: s } = await supabase.rpc("whatsapp_silence_nag", { p_wa_id: m.from, p_follow_up_id: action.followUpId });
       const ok = (s as { ok?: boolean; lead_name?: string } | null)?.ok;
@@ -104,8 +110,7 @@ Deno.serve(async (req) => {
       continue;
     }
     // Anything else (a typed message or "Today's summary"): the same dashboard summary the Telegram bot shows.
-    const { data: summary } = await supabase.rpc("whatsapp_bot_summary", { p_wa_id: m.from });
-    const sum = summary as BotSummary | null;
+    const sum = (summary?.data ?? null) as BotSummary | null;
     const lines = sum?.connected ? dashboardLines(sum, appUrl) : [`Hi ${r.name ?? ""}`];
     await reply(m.from, {
       kind: "buttons",
@@ -113,6 +118,7 @@ Deno.serve(async (req) => {
       buttons: [SUMMARY_BUTTON, KEEP_BUTTON],
     });
   }
+  await reports;
 
   // Always 200 once the signature is valid, so Meta does not retry.
   return new Response("ok");

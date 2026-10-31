@@ -224,18 +224,52 @@ describe("the free window", () => {
       .toEqual({ state: "pending", attempts: 0, last_error: "whatsapp_window_closed" });
   });
 
-  it("nudges once per window, about an hour before it closes", async () => {
+  it("nudges once per window in the last 2 hours, only in the daytime, and the evening before an overnight close", async () => {
     const u = await createUser(db, "sales.nudge", "sales", "Nudge");
     await linkWa(u, "919800013131");
-    const prompts = () => asService(db, (tx) => rows<{ user_id: string; kind: string }>(tx, "select * from public.claim_whatsapp_prompts(25, true)"));
-    expect((await prompts()).filter((p) => p.user_id === u)).toEqual([]);
-    await quietWindow(u, "23 hours");
-    expect((await prompts()).filter((p) => p.user_id === u).map((p) => p.kind)).toEqual(["nudge"]);
-    expect((await prompts()).filter((p) => p.user_id === u)).toEqual([]);
-    // A reply starts a new window: a new nudge ~23 hours later.
-    await inbound("919800013131");
-    await quietWindow(u, "23 hours");
-    expect((await prompts()).filter((p) => p.user_id === u).map((p) => p.kind)).toEqual(["nudge"]);
+    // Times in IST, so the test doesn't depend on the clock.
+    const at = (ist: string) => new Date(`${ist}+05:30`).toISOString();
+    const lastMessage = (iso: string) => db.query("update public.whatsapp_connections set last_inbound_at = $2, nudged_at = null where user_id = $1", [u, iso]);
+    const prompts = (now: string) => asService(db, (tx) => rows<{ user_id: string; kind: string; window_until: string; upcoming: number }>(tx,
+      "select * from public.claim_whatsapp_prompts(25, true, $1)", [now])).then((r) => r.filter((p) => p.user_id === u));
+
+    // Last message 15:00 → the window closes 14:55 the next day.
+    await lastMessage(at("2026-11-02T15:00:00"));
+    expect(await prompts(at("2026-11-03T12:00:00"))).toEqual([]); // 3 hours before: too early
+    const [n] = await prompts(at("2026-11-03T13:00:00"));
+    expect(n).toMatchObject({ kind: "nudge", upcoming: 0 });
+    expect(new Date(n.window_until).toISOString()).toBe(at("2026-11-03T14:55:00"));
+    expect(await prompts(at("2026-11-03T13:30:00"))).toEqual([]); // once per window
+    // A reply starts a new window and a new nudge.
+    await lastMessage(at("2026-11-03T13:30:00"));
+    expect(await prompts(at("2026-11-04T11:40:00"))).toMatchObject([{ kind: "nudge" }]);
+
+    // Closes at 02:55: nobody is asked at night, so the nudge comes the evening before.
+    await lastMessage(at("2026-11-04T03:00:00"));
+    expect(await prompts(at("2026-11-05T01:00:00"))).toEqual([]);
+    expect(await prompts(at("2026-11-04T19:59:00"))).toEqual([]);
+    expect(await prompts(at("2026-11-04T20:00:00"))).toMatchObject([{ kind: "nudge" }]);
+  });
+
+  it("drops event alerts that are more than 6 hours late instead of sending a flood", async () => {
+    const u = await createUser(db, "sales.stale", "sales", "Stale");
+    await linkWa(u, "919800016161");
+    await enqueueTest(u);
+    const id = (await one<{ id: string }>(db, "select id from public.telegram_notifications where recipient_id = $1 order by created_at desc limit 1", [u])).id;
+    await db.query("update public.telegram_notifications set next_attempt_at = now() - interval '7 hours' where id = $1", [id]);
+    await db.query("select private.expire_stale_alerts()");
+    expect(await one(db, "select state, last_error from public.telegram_notifications where id = $1", [id])).toEqual({ state: "skipped", last_error: "stale" });
+  });
+
+  it("wakes the worker when an alert is queued, at most once every 2 seconds", async () => {
+    const u = await createUser(db, "sales.kick", "sales", "Kick");
+    await linkWa(u, "919800017171");
+    await db.query("update private.worker_kick set last_at = '-infinity'");
+    await enqueueTest(u);
+    const first = (await one<{ last_at: Date }>(db, "select last_at from private.worker_kick")).last_at;
+    expect(Date.now() - new Date(first).getTime()).toBeLessThan(60_000);
+    await db.query("insert into public.telegram_notifications (recipient_id, kind, payload, dedupe_key) values ($1, 'test', '{}', 'kick-2')", [u]);
+    expect((await one<{ last_at: Date }>(db, "select last_at from private.worker_kick")).last_at).toEqual(first);
   });
 
   it("offers the paid reopen message only when asked, once per closed window with alerts waiting", async () => {

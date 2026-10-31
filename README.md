@@ -164,7 +164,7 @@ WhatsApp is a second channel next to Telegram (migration `…5800`). Each person
    pnpm dlx supabase functions deploy reminder-worker --no-verify-jwt
    pnpm dlx supabase functions deploy whatsapp-webhook --no-verify-jwt
    ```
-6. WhatsApp → **Configuration** → Webhook: URL `https://<project-ref>.supabase.co/functions/v1/whatsapp-webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`, then subscribe to **messages**. (Super settings → WhatsApp shows the exact URL.)
+6. WhatsApp → **Configuration** → Webhook: URL `https://<project-ref>.supabase.co/functions/v1/whatsapp-webhook?forceFunctionRegion=<db-region>` (e.g. `ap-south-1`; Meta calls from the US, and this keeps the function next to the database), verify token = `WHATSAPP_VERIFY_TOKEN`, then subscribe to **messages**. (Super settings → WhatsApp shows the exact URL.)
 7. In Vercel set `WHATSAPP_BUSINESS_NUMBER` (digits with country code). Without it, *Connect WhatsApp* stays hidden.
 8. Switch the Meta app to **Live** (in development mode only test numbers receive messages) and complete business verification for higher limits.
 

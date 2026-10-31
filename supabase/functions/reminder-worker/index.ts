@@ -165,9 +165,9 @@ Deno.serve(async (req) => {
   if (wa && Date.now() - started < MAX_RUNTIME_MS) {
     const { data, error } = await supabase.rpc("claim_whatsapp_prompts", { p_limit: BATCH_SIZE, p_reopen: !!reopenTemplate });
     if (error) console.error("prompt claim failed", error.code);
-    for (const p of (data ?? []) as { wa_id: string; kind: "nudge" | "reopen"; name: string }[]) {
+    for (const p of (data ?? []) as { wa_id: string; kind: "nudge" | "reopen"; name: string; window_until?: string | null; upcoming?: number | null }[]) {
       const outcome = p.kind === "nudge"
-        ? await sendWhatsApp(wa, p.wa_id, nudgeMessage(p.name))
+        ? await sendWhatsApp(wa, p.wa_id, nudgeMessage(p.name, p.window_until, p.upcoming ?? 0))
         : await postWhatsApp(wa, templateBody(p.wa_id, reopenTemplate, templateLang));
       if (outcome.result === "sent") prompted[p.kind]++;
       else {
