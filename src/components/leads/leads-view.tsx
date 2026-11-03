@@ -15,7 +15,7 @@ import { EmptyState, ErrorState, FetchingIndicator, ListSkeleton } from "@/compo
 import { FollowUpDialog } from "@/components/follow-ups/follow-up-dialogs";
 import { CallButton } from "@/components/leads/call-button";
 import { LeadNotesDialog } from "@/components/leads/call-notes";
-import { SlNo, useSlRange } from "@/components/leads/lead-range-summary";
+import { RangeReassignDialog, SlNo, useSlRange } from "@/components/leads/lead-range-summary";
 import { ImportLeadsDialog } from "@/components/leads/import-leads-dialog";
 import { LeadDownloadMenu } from "@/components/leads/lead-download-menu";
 import { LeadFormDialog } from "@/components/leads/lead-form-dialog";
@@ -500,6 +500,7 @@ export function LeadsView({ initialNiches, initial }: { initialNiches: NicheOpti
       <FollowUpDialog open={!!followUpFor} onOpenChange={(o) => !o && setFollowUpFor(null)} leadId={followUpFor ?? undefined} onDone={refetch} />
       {notesFor ? <LeadNotesDialog leadId={notesFor.id} leadName={notesFor.name} open onOpenChange={(o) => !o && setNotesFor(null)} /> : null}
       <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} initialNiches={initialNiches} onImported={() => refetch()} />
+      {isAdmin ? <RangeReassignDialog range={sl} query={query} onDone={refetch} /> : null}
     </>
   );
 }

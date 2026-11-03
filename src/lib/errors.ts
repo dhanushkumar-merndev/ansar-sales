@@ -60,6 +60,8 @@ const MESSAGES: Record<string, string> = {
   call_outcome_closed: "Calls can only be changed within 24 hours.",
   invalid_stage: "That status isn't in this company's pipeline. Refresh and pick again.",
   invalid_sl_range: "Pick a range of up to 10,000 rows.",
+  reassign_range_too_large: "Reassign up to 1,000 rows at a time. Pick a smaller range.",
+  range_changed: "The list changed since you looked. Check the preview again.",
   source_not_found: "That source no longer exists. Pick it again.",
   source_archived: "That source is archived. Pick another one.",
   source_too_long: "A source can be at most 40 characters.",

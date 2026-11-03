@@ -4,8 +4,10 @@ import { updateTag } from "next/cache";
 import { z } from "zod";
 import { LEAD_TEMPERATURES } from "@/lib/constants";
 import { dbError } from "@/lib/errors";
+import { LEAD_SORTS, leadListArgs } from "@/lib/list-queries";
 import { nichesTag } from "@/lib/niches-cache";
 import { STAGE_COLORS } from "@/lib/stages";
+import type { createClient } from "@/lib/supabase/server";
 import { runAction } from "@/server/action-utils";
 import { importLeadsSchema, leadCreateSchema, leadUpdateSchema, noteCorrectionSchema, noteSchema } from "@/lib/validation";
 
@@ -143,6 +145,58 @@ export async function assignLead(input: unknown) {
     if (error) return dbError(error);
     if (!data) return dbError({ message: "not_found" });
     return { ok: true, data: undefined };
+  });
+}
+
+/** The Leads list's filters and sort, as in the URL (the database checks them again). */
+const leadQuerySchema = z.object({
+  q: z.string().max(100),
+  stage: z.uuid().nullable(),
+  niche: z.uuid().nullable(),
+  source: z.union([z.literal("facebook"), z.uuid()]).nullable(),
+  owner: z.uuid().nullable(),
+  temperature: z.enum(LEAD_TEMPERATURES).nullable(),
+  from: z.iso.date().nullable(),
+  to: z.iso.date().nullable(),
+  overdue: z.boolean(),
+  archived: z.boolean(),
+  starred: z.boolean(),
+  by: z.uuid().nullable(),
+  sort: z.enum(LEAD_SORTS),
+  dir: z.enum(["asc", "desc"]),
+  page: z.int().positive(),
+  pageSize: z.int().positive().max(100),
+});
+
+const rangeSchema = z.object({ query: leadQuerySchema, from: z.int().positive(), to: z.int().positive(), ownerId: z.uuid() });
+
+export type RangeReassignPreview = {
+  from: number; to: number; count: number; fingerprint: string; moving: number; already_owned: number;
+  by_owner: { id: string; display_name: string; count: number }[];
+};
+export type RangeReassignResult = { from: number; to: number; count: number; moved: number };
+
+function reassignRangeRpc(supabase: Awaited<ReturnType<typeof createClient>>, d: z.output<typeof rangeSchema>, fingerprint: string | undefined) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the range replaces the page
+  const { p_limit, p_offset, ...filters } = leadListArgs(d.query);
+  return supabase.rpc("reassign_lead_range", { ...filters, p_from: d.from, p_to: d.to, p_new_owner_id: d.ownerId, p_fingerprint: fingerprint });
+}
+
+/** What reassigning Sl No from..to of the Leads list (its filters and sort) would do. Changes nothing. Admin only. */
+export async function previewLeadRangeReassign(input: unknown) {
+  return runAction(["admin"], rangeSchema, input, async (d, { supabase }) => {
+    const { data, error } = await reassignRangeRpc(supabase, d, undefined);
+    if (error) return dbError(error);
+    return { ok: true, data: data as unknown as RangeReassignPreview };
+  });
+}
+
+/** Reassigns the range, only if it still holds the leads the preview's fingerprint was taken from. Admin only. */
+export async function reassignLeadRange(input: unknown) {
+  return runAction(["admin"], rangeSchema.extend({ fingerprint: z.string().regex(/^[0-9a-f]{32}$/) }), input, async (d, { supabase }) => {
+    const { data, error } = await reassignRangeRpc(supabase, d, d.fingerprint);
+    if (error) return dbError(error);
+    return { ok: true, data: data as unknown as RangeReassignResult };
   });
 }
 
