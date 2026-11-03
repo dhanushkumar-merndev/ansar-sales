@@ -22,6 +22,25 @@ export async function switchCompany(input: unknown) {
   });
 }
 
+/**
+ * Super admin: the other companies of ours a user also works in, and as what (replaces the list). An Admin
+ * there is a full admin of that company (users and passwords included) and gets its admin alerts.
+ */
+export async function setUserCompanyAccess(input: unknown) {
+  const schema = z.object({
+    id: z.uuid(),
+    access: z.array(z.object({ companyId: z.uuid(), role: z.enum(["sales", "admin"]) })).max(50)
+      .refine((a) => new Set(a.map((x) => x.companyId)).size === a.length, "Each company once"),
+  });
+  return runAction("super_admin", schema, input, async (d, { supabase }) => {
+    const { error } = await supabase.rpc("set_user_company_access", {
+      p_user_id: d.id, p_access: d.access.map((x) => ({ company_id: x.companyId, role: x.role })),
+    });
+    if (error) return dbError(error);
+    return { ok: true, data: undefined };
+  });
+}
+
 /** Super admin: the other companies of ours a sales user also works in (replaces the list). */
 export async function setSalesUserCompanies(input: unknown) {
   return runAction("super_admin", z.object({ id: z.uuid(), companyIds: z.array(z.uuid()).max(50) }), input, async (d, { supabase }) => {

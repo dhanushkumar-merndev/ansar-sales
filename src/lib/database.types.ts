@@ -5720,6 +5720,11 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      super_list_team_access: { Args: never; Returns: Json }
+      set_user_company_access: {
+        Args: { p_access: Json; p_user_id: string }
+        Returns: undefined
+      }
       super_list_sales_users: {
         Args: never
         Returns: Json

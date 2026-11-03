@@ -22,16 +22,17 @@ export type CurrentProfile = {
   /** The company this user works in now (the super admin's active company). */
   company: CompanyBrand;
   /**
-   * Companies this user can switch between (super admin: all; ads manager: assigned; a sales user: their own
-   * plus the ones the super admin ticked for them); empty otherwise.
+   * Companies this user can switch between (super admin: all; ads manager: assigned; a sales user or admin:
+   * their own plus the ones the super admin gave them); empty otherwise.
    */
   companies: CompanyBrand[];
   /** Optional modules switched on for the current company (e.g. "projects"). */
   features: CompanyFeature[];
   /** Set when the current company is an ads client's CRM. */
   workspace: Workspace | null;
-  /** A sales user working in another of our companies, where they are Sales only. */
+  /** Working in another of our companies the super admin gave them, as Sales or as Admin (visitingRole). */
   visiting: boolean;
+  visitingRole: "admin" | "sales" | null;
 };
 
 /** An ads client's CRM: a company of its own under the agency that runs the client's ads. */
@@ -46,6 +47,8 @@ export type Workspace = {
 type Context = {
   company_id: string;
   visiting?: boolean;
+  /** 20261008006300: what a visitor is there. Missing before that migration (then Sales). */
+  visiting_role?: "admin" | "sales" | null;
   workspace: { parent_id: string; parent_name: string; member: boolean; ads_client_id: string | null } | null;
 };
 
@@ -64,7 +67,7 @@ async function readSession(supabase: Awaited<ReturnType<typeof createClient>>, u
   const [{ data: profile }, { data: companies }, { data: context }] = await Promise.all([
     supabase.from("profiles").select("id, username, display_name, role, extra_roles, is_active").eq("id", uid).maybeSingle(),
     // RLS: the user's own company; every company for the super admin; the assigned ones for an ads
-    // manager or a sales user who works in several; plus the client CRMs the agency's staff may enter.
+    // manager or a sales user / admin who works in several; plus the client CRMs the agency's staff may enter.
     supabase.from("companies").select("id, name, brand_highlight, logo_path, features, parent_company_id").is("archived_at", null).order("created_at").order("id"),
     // Where the database says this user is working now (private.current_company_id()).
     supabase.rpc("my_context"),
@@ -83,6 +86,7 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
   const isSuperAdmin = profile.role === "super_admin";
   const rows = companies ?? [];
   const visiting = Boolean(ctx?.visiting);
+  const visitingRole = visiting ? (ctx?.visiting_role === "admin" ? "admin" : "sales") : null;
   // A sales user sees more than one of our companies only when the super admin ticked some for them.
   const switches = isSuperAdmin || profile.role === "ads_manager" || rows.filter((c) => !c.parent_company_id).length > 1;
   const currentRow = rows.find((c) => c.id === ctx?.company_id);
@@ -91,9 +95,9 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
     ? { parentId: ctx.workspace.parent_id, parentName: ctx.workspace.parent_name, adsClientId: ctx.workspace.ads_client_id, member: ctx.workspace.member }
     : null;
   const main: AppRole = profile.role === "super_admin" ? "admin" : profile.role;
-  // The agency's staff act as Admin inside a client CRM, and a visiting sales user is Sales only (private.my_roles()).
+  // The agency's staff act as Admin inside a client CRM; a visitor is Admin or Sales only there (private.my_roles()).
   const roles: AppRole[] = workspace && !workspace.member ? ["admin"]
-    : visiting ? ["sales"]
+    : visitingRole ? [visitingRole]
       : [main, ...(profile.extra_roles as AppRole[]).filter((r) => r !== main)];
   return {
     id: profile.id,
@@ -110,6 +114,7 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
     features: (currentRow?.features ?? []) as CompanyFeature[],
     workspace,
     visiting,
+    visitingRole,
   };
 });
 

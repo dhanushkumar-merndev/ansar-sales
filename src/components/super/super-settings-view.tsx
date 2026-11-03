@@ -29,7 +29,7 @@ import { formatDate } from "@/lib/time";
 import { switchCompany, type CompanySummary } from "@/server/actions/companies";
 import { setCompanyFeature } from "@/server/actions/features";
 
-const TABS = { companies: "Companies", sales: "Sales team", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", whatsapp: "WhatsApp", usage: "Usage" } as const;
+const TABS = { companies: "Companies", sales: "Team", books: "Finance merge", facebook: "Facebook leads", ads: "Ads", whatsapp: "WhatsApp", usage: "Usage" } as const;
 type Tab = keyof typeof TABS;
 
 const DESCRIPTIONS: Record<Tab, string> = {

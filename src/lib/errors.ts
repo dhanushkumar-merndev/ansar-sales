@@ -62,6 +62,7 @@ const MESSAGES: Record<string, string> = {
   invalid_sl_range: "Pick a range of up to 10,000 rows.",
   reassign_range_too_large: "Reassign up to 1,000 rows at a time. Pick a smaller range.",
   range_changed: "The list changed since you looked. Check the preview again.",
+  invalid_access: "A person can only be given a role they already have in their own company.",
   source_not_found: "That source no longer exists. Pick it again.",
   source_archived: "That source is archived. Pick another one.",
   source_too_long: "A source can be at most 40 characters.",
